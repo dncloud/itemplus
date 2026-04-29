@@ -12,6 +12,7 @@ from itemplus.core.websocket import ws_manager
 from itemplus.models.device import DeviceSession
 from itemplus.models.user import User
 from itemplus.routers.auth import validate_ws_ticket
+from itemplus.services.printer import render_entity_tspl
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -327,6 +328,76 @@ async def _handle_message(data: dict, user_id: int, session_id: int, device_type
                 "item_id": item_id,
                 "attachment_id": attachment_id,
             })
+
+        case "print.request":
+            entity_type = data.get("entity_type", "item")
+            entity_id = data.get("entity_id") or data.get("item_id")
+            realm = data.get("realm", "archive")
+            request_id = data.get("request_id", "")
+            copies = data.get("copies", 1)
+            if not isinstance(copies, int) or copies < 1:
+                copies = 1
+
+            if not await _check_permission(user_id, "print"):
+                await ws_manager.send_to_session(session_id, "print.failed", {
+                    "request_id": request_id,
+                    "detail": "Print permission required",
+                })
+                return
+
+            if entity_id is None or entity_type not in {"item", "location"}:
+                await ws_manager.send_to_session(session_id, "print.failed", {
+                    "request_id": request_id,
+                    "detail": "Invalid print target",
+                })
+                return
+
+            if not ws_manager.has_ios_devices(user_id):
+                await ws_manager.send_to_session(session_id, "print.failed", {
+                    "request_id": request_id,
+                    "detail": "No iOS bridge connected",
+                })
+                return
+
+            async with async_session() as db:
+                try:
+                    tspl, _ = await render_entity_tspl(db, realm, entity_type, int(entity_id), copies=copies)
+                except ValueError as exc:
+                    await ws_manager.send_to_session(session_id, "print.failed", {
+                        "request_id": request_id,
+                        "detail": str(exc),
+                    })
+                    return
+
+            title = "Item QR" if entity_type == "item" else "Location QR"
+            await ws_manager.send_to_user_ios(user_id, "print.request", {
+                "request_id": request_id,
+                "entity_id": int(entity_id),
+                "entity_type": entity_type,
+                "realm": realm,
+                "copies": copies,
+                "tspl": tspl,
+                "title": title,
+                "from_session": session_id,
+            })
+
+        case "print.result":
+            request_id = data.get("request_id", "")
+            success = bool(data.get("success"))
+            detail = data.get("detail", "")
+            target_session = data.get("target_session")
+            payload = {"request_id": request_id, "detail": detail}
+
+            if isinstance(target_session, int) and ws_manager.session_belongs_to_user(target_session, user_id):
+                if success:
+                    await ws_manager.send_to_session(target_session, "print.done", payload)
+                else:
+                    await ws_manager.send_to_session(target_session, "print.failed", payload)
+            else:
+                if success:
+                    await ws_manager.send_to_user_browsers(user_id, "print.done", payload)
+                else:
+                    await ws_manager.send_to_user_browsers(user_id, "print.failed", payload)
 
         # ── Request list of connected devices ──
         case "devices.list":

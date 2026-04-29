@@ -19,7 +19,7 @@ import { useDeleteFlow, ConfirmDelete } from "@/components/confirm-delete";
 import SelectPicker from "@/components/select-picker";
 
 export default function LocationsPage() {
-  const { realm, can, fmtDateTime, t } = useApp();
+  const { realm, can, fmtDateTime, printLocationQR, t } = useApp();
   const router = useRouter();
   const [locations, setLocations] = useState<Location[]>([]);
   const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
@@ -137,7 +137,7 @@ export default function LocationsPage() {
               onEdit={() => { setEditLoc({ ...loc }); setIsNew(false); }}
               onDelete={() => remove(loc.id)}
               onShowItems={() => router.push(`/items?location=${loc.id}`)}
-              onPrintQR={() => { void api.printLocationQR(loc.id); }}
+              onPrintQR={() => { void printLocationQR(loc.id); }}
               canWrite={can("locations.write")}
               canDelete={can("locations.delete")}
               canPrint={can("print")}
@@ -159,7 +159,7 @@ export default function LocationsPage() {
                           onEdit={() => { setEditLoc({ ...child }); setIsNew(false); }}
                           onDelete={() => remove(child.id)}
                           onShowItems={() => router.push(`/items?location=${child.id}`)}
-                          onPrintQR={() => { void api.printLocationQR(child.id); }}
+                          onPrintQR={() => { void printLocationQR(child.id); }}
                           canWrite={can("locations.write")}
                           canDelete={can("locations.delete")}
                           canPrint={can("print")}
@@ -181,7 +181,7 @@ export default function LocationsPage() {
                                       onEdit={(loc) => { setEditLoc({ ...loc }); setIsNew(false); }}
                                       onDelete={(id) => remove(id)}
                                       onShowItems={(id) => router.push(`/items?location=${id}`)}
-                                      onPrintQR={(id) => { void api.printLocationQR(id); }}
+                                      onPrintQR={(id) => { void printLocationQR(id); }}
                                       canWrite={can("locations.write")}
                                       canDelete={can("locations.delete")}
                                       canPrint={can("print")}
@@ -206,7 +206,7 @@ export default function LocationsPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="w-full max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t("locations.title")}</h1>
         {can("locations.write") && (
@@ -276,7 +276,7 @@ export default function LocationsPage() {
             />
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Farbe</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{t("common.color")}</label>
               <div className="flex items-center gap-2">
                 <input
                   type="color"
@@ -290,7 +290,7 @@ export default function LocationsPage() {
                     onClick={() => setEditLoc({ ...editLoc, color: undefined })}
                     className="text-xs text-gray-400 hover:text-red-500"
                   >
-                    Entfernen
+                    {t("common.remove")}
                   </button>
                 )}
               </div>

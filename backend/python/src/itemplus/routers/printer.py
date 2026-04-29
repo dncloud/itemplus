@@ -12,14 +12,23 @@ import qrcode.constants
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from itemplus.core.config import settings
 from itemplus.core.database import get_db
 from itemplus.core.dependencies import get_current_admin, require_permission
-from itemplus.models import archive, collection
+from itemplus.models import LabelTemplate, archive, collection
 from itemplus.models.user import User
-from itemplus.services.printer import compact_qr, generate_qr_tspl, send_tspl, test_connection
+from itemplus.services.printer import calibration_tspl, compact_qr, render_entity_tspl, render_preview_tspl, send_tspl, test_connection
+from itemplus.services.label_templates import (
+    is_valid_label_template_target,
+    label_template_variables,
+    normalize_multiline,
+    nullable_trimmed_string,
+    supported_tspl_commands,
+    validate_label_template_definition,
+)
 
 router = APIRouter(prefix="/print", tags=["print"])
 
@@ -34,11 +43,27 @@ class PrintRequest(BaseModel):
 class PrinterConfigUpdate(BaseModel):
     host: str | None = None
     port: int | None = None
+
+
+class LabelTemplatePayload(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    target: str | None = None
+    dpi: int | None = None
+    width_mm: int | None = None
+    height_mm: int | None = None
+    gap_mm: float | None = None
     speed: int | None = None
     density: int | None = None
-    label_width: int | None = None
-    label_height: int | None = None
-    gap: float | None = None
+    direction: int | None = None
+    reference_x: int | None = None
+    reference_y: int | None = None
+    shift_x: int | None = None
+    shift_y: int | None = None
+    copies_default: int | None = None
+    is_default: bool | None = None
+    is_active: bool | None = None
+    tspl_template: str | None = None
 
 
 def _validate_printer_host(host: str) -> str:
@@ -59,6 +84,310 @@ def _validate_printer_host(host: str) -> str:
     return value
 
 
+def _serialize_label_template(template: LabelTemplate) -> dict[str, object]:
+    return {
+        "id": template.id,
+        "system_key": template.system_key,
+        "name": template.name,
+        "description": template.description,
+        "target": template.target,
+        "dpi": template.dpi,
+        "width_mm": template.width_mm,
+        "height_mm": template.height_mm,
+        "gap_mm": template.gap_mm,
+        "speed": template.speed,
+        "density": template.density,
+        "direction": template.direction,
+        "reference_x": template.reference_x,
+        "reference_y": template.reference_y,
+        "shift_x": template.shift_x,
+        "shift_y": template.shift_y,
+        "copies_default": template.copies_default,
+        "is_default": template.is_default,
+        "is_system": template.is_system,
+        "is_active": template.is_active,
+        "tspl_template": template.tspl_template,
+        "created_at": template.created_at.isoformat() if template.created_at else None,
+        "updated_at": template.updated_at.isoformat() if template.updated_at else None,
+    }
+
+
+async def _load_label_template(db: AsyncSession, template_id: int) -> LabelTemplate:
+    template = await db.get(LabelTemplate, template_id)
+    if template is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Label template not found")
+    return template
+
+
+async def _clear_template_defaults(db: AsyncSession, target: str, keep_id: int) -> None:
+    templates = (
+        await db.scalars(
+            select(LabelTemplate)
+            .where(LabelTemplate.target == target)
+        )
+    ).all()
+    for template in templates:
+        template.is_default = template.id == keep_id
+        if template.id == keep_id:
+            template.is_active = True
+
+
+async def _assign_replacement_default(db: AsyncSession, target: str) -> None:
+    candidates = (
+        await db.scalars(
+            select(LabelTemplate)
+            .where(LabelTemplate.is_active.is_(True))
+            .where(LabelTemplate.target == target)
+            .order_by(LabelTemplate.is_system.desc(), LabelTemplate.name.asc(), LabelTemplate.id.asc())
+        )
+    ).all()
+    if not candidates and target != "both":
+        candidates = (
+            await db.scalars(
+                select(LabelTemplate)
+                .where(LabelTemplate.is_active.is_(True))
+                .where(LabelTemplate.target == "both")
+                .order_by(LabelTemplate.is_system.desc(), LabelTemplate.name.asc(), LabelTemplate.id.asc())
+            )
+        ).all()
+
+    if not candidates:
+        return
+
+    replacement = candidates[0]
+    replacement.is_default = True
+    replacement.is_active = True
+
+
+@router.get("/templates/meta")
+async def get_label_template_meta(user: User = Depends(require_permission("print"))):
+    return {
+        "targets": ["item", "location", "both"],
+        "dpis": [203, 300, 600],
+        "supported_commands": supported_tspl_commands(),
+        "variables": label_template_variables(),
+    }
+
+
+@router.get("/templates")
+async def list_label_templates(
+    target: str = Query("", description="Optional template target filter"),
+    include_inactive: bool = Query(False),
+    user: User = Depends(require_permission("print")),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(LabelTemplate)
+    if target:
+        if not is_valid_label_template_target(target):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid template target")
+        stmt = stmt.where(LabelTemplate.target.in_([target, "both"]))
+    if not include_inactive:
+        stmt = stmt.where(LabelTemplate.is_active.is_(True))
+    stmt = stmt.order_by(LabelTemplate.is_default.desc(), LabelTemplate.is_system.desc(), LabelTemplate.name.asc())
+    templates = (await db.scalars(stmt)).all()
+    return [_serialize_label_template(template) for template in templates]
+
+
+@router.get("/templates/{template_id}")
+async def get_label_template(
+    template_id: int,
+    user: User = Depends(require_permission("print")),
+    db: AsyncSession = Depends(get_db),
+):
+    template = await _load_label_template(db, template_id)
+    return _serialize_label_template(template)
+
+
+@router.post("/templates", status_code=status.HTTP_201_CREATED)
+async def create_label_template(
+    body: LabelTemplatePayload,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if any(
+        value is None
+        for value in (
+            body.name,
+            body.target,
+            body.dpi,
+            body.width_mm,
+            body.height_mm,
+            body.gap_mm,
+            body.speed,
+            body.density,
+            body.direction,
+            body.copies_default,
+            body.tspl_template,
+        )
+    ):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Missing required fields")
+
+    name = body.name.strip()
+    description = nullable_trimmed_string(body.description)
+    target = body.target.strip()
+    tspl_template = normalize_multiline(body.tspl_template)
+
+    try:
+        validate_label_template_definition(
+            name=name,
+            target=target,
+            dpi=body.dpi,
+            width_mm=body.width_mm,
+            height_mm=body.height_mm,
+            gap_mm=body.gap_mm,
+            speed=body.speed,
+            density=body.density,
+            direction=body.direction,
+            copies_default=body.copies_default,
+            tspl_template=tspl_template,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    template = LabelTemplate(
+        name=name,
+        description=description,
+        target=target,
+        dpi=body.dpi,
+        width_mm=body.width_mm,
+        height_mm=body.height_mm,
+        gap_mm=body.gap_mm,
+        speed=body.speed,
+        density=body.density,
+        direction=body.direction,
+        reference_x=body.reference_x or 0,
+        reference_y=body.reference_y or 0,
+        shift_x=body.shift_x or 0,
+        shift_y=body.shift_y or 0,
+        copies_default=body.copies_default,
+        is_default=bool(body.is_default),
+        is_system=False,
+        is_active=True if body.is_active is None else body.is_active,
+        tspl_template=tspl_template,
+    )
+    db.add(template)
+    await db.flush()
+
+    if template.is_default:
+        await _clear_template_defaults(db, target, template.id)
+
+    await db.commit()
+    await db.refresh(template)
+    logger.info("[AUDIT] user=%d action=label_template.create template_id=%d", admin.id, template.id)
+    return _serialize_label_template(template)
+
+
+@router.put("/templates/{template_id}")
+async def update_label_template(
+    template_id: int,
+    body: LabelTemplatePayload,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    template = await _load_label_template(db, template_id)
+    old_target = template.target
+
+    if body.name is not None:
+        template.name = body.name.strip()
+    if body.description is not None:
+        template.description = nullable_trimmed_string(body.description)
+    if body.target is not None:
+        template.target = body.target.strip()
+    if body.dpi is not None:
+        template.dpi = body.dpi
+    if body.width_mm is not None:
+        template.width_mm = body.width_mm
+    if body.height_mm is not None:
+        template.height_mm = body.height_mm
+    if body.gap_mm is not None:
+        template.gap_mm = body.gap_mm
+    if body.speed is not None:
+        template.speed = body.speed
+    if body.density is not None:
+        template.density = body.density
+    if body.direction is not None:
+        template.direction = body.direction
+    if body.reference_x is not None:
+        template.reference_x = body.reference_x
+    if body.reference_y is not None:
+        template.reference_y = body.reference_y
+    if body.shift_x is not None:
+        template.shift_x = body.shift_x
+    if body.shift_y is not None:
+        template.shift_y = body.shift_y
+    if body.copies_default is not None:
+        template.copies_default = body.copies_default
+    if body.is_default is not None:
+        template.is_default = body.is_default
+    if body.is_active is not None:
+        template.is_active = body.is_active
+    if body.tspl_template is not None:
+        template.tspl_template = normalize_multiline(body.tspl_template)
+
+    try:
+        validate_label_template_definition(
+            name=template.name,
+            target=template.target,
+            dpi=template.dpi,
+            width_mm=template.width_mm,
+            height_mm=template.height_mm,
+            gap_mm=template.gap_mm,
+            speed=template.speed,
+            density=template.density,
+            direction=template.direction,
+            copies_default=template.copies_default,
+            tspl_template=template.tspl_template,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    if old_target != template.target and template.is_default:
+        old_target_templates = (
+            await db.scalars(select(LabelTemplate).where(LabelTemplate.target == old_target))
+        ).all()
+        for old_template in old_target_templates:
+            old_template.is_default = False
+
+    if template.is_default:
+        await _clear_template_defaults(db, template.target, template.id)
+
+    await db.commit()
+    await db.refresh(template)
+    logger.info("[AUDIT] user=%d action=label_template.update template_id=%d", admin.id, template.id)
+    return _serialize_label_template(template)
+
+
+@router.post("/templates/{template_id}/default")
+async def set_default_label_template(
+    template_id: int,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    template = await _load_label_template(db, template_id)
+    await _clear_template_defaults(db, template.target, template.id)
+    await db.commit()
+    await db.refresh(template)
+    logger.info("[AUDIT] user=%d action=label_template.default template_id=%d", admin.id, template.id)
+    return _serialize_label_template(template)
+
+
+@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_label_template(
+    template_id: int,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    template = await _load_label_template(db, template_id)
+    deleted_target = template.target
+    deleted_was_default = template.is_default
+    await db.delete(template)
+    await db.flush()
+    if deleted_was_default:
+        await _assign_replacement_default(db, deleted_target)
+    await db.commit()
+    logger.info("[AUDIT] user=%d action=label_template.delete template_id=%d", admin.id, template.id)
+
+
 @router.post("/{realm}/item/{item_id}")
 async def print_item_qr(
     realm: str,
@@ -76,8 +405,10 @@ async def print_item_qr(
     if not item:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Item not found")
 
-    qr = compact_qr(realm, "item", item_id)
-    tspl = generate_qr_tspl(qr, copies=body.copies)
+    try:
+        tspl, qr = await render_entity_tspl(db, realm, "item", item_id, copies=body.copies)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
     success = await send_tspl(tspl)
     if not success:
@@ -103,8 +434,10 @@ async def print_location_qr(
     if not location:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
 
-    qr = compact_qr(realm, "location", location_id)
-    tspl = generate_qr_tspl(qr, copies=body.copies)
+    try:
+        tspl, qr = await render_entity_tspl(db, realm, "location", location_id, copies=body.copies)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
     success = await send_tspl(tspl)
     if not success:
@@ -121,11 +454,6 @@ async def printer_status(admin: User = Depends(get_current_admin)):
         "reachable": reachable,
         "host": settings.printer_host,
         "port": settings.printer_port,
-        "speed": settings.printer_speed,
-        "density": settings.printer_density,
-        "label_width": settings.printer_label_width,
-        "label_height": settings.printer_label_height,
-        "gap": settings.printer_gap,
     }
 
 
@@ -182,16 +510,15 @@ async def qr_code_entity(realm: str, entity_type: str, entity_id: int, color: st
 
 
 @router.post("/calibrate")
-async def calibrate_printer(admin: User = Depends(get_current_admin)):
+async def calibrate_printer(
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """Send GAP calibration command. The printer feeds labels to detect the gap sensor."""
-    w = settings.printer_label_width
-    h = settings.printer_label_height
-    gap = settings.printer_gap
-
-    tspl = f"""SIZE {w} mm, {h} mm
-GAP {gap} mm, 0 mm
-GAPDETECT
-"""
+    try:
+        tspl = await calibration_tspl(db)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     success = await send_tspl(tspl)
     if not success:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Printer not reachable")
@@ -206,14 +533,16 @@ class TestPrintRequest(BaseModel):
 async def test_print(
     body: TestPrintRequest = TestPrintRequest(),
     admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
 ):
     """Send a test print. Optionally with custom TSPL commands."""
     if body.tspl:
         tspl = body.tspl
     else:
-        # Default test label
-        qr = compact_qr("archive", "item", 0)
-        tspl = generate_qr_tspl(qr, copies=1)
+        try:
+            tspl = await render_preview_tspl(db, "archive", "item", 0, copies=1)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
     success = await send_tspl(tspl)
     if not success:
@@ -222,10 +551,15 @@ async def test_print(
 
 
 @router.get("/test/preview")
-async def test_preview(admin: User = Depends(get_current_admin)):
+async def test_preview(
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """Get the default test TSPL for preview."""
-    qr = compact_qr("archive", "item", 0)
-    tspl = generate_qr_tspl(qr, copies=1)
+    try:
+        tspl = await render_preview_tspl(db, "archive", "item", 0, copies=1)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     return {"tspl": tspl}
 
 
@@ -241,22 +575,6 @@ async def update_printer_config(
         if body.port < 1 or body.port > 65535:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid printer port")
         settings.printer_port = body.port
-    if body.speed is not None:
-        settings.printer_speed = max(1, min(15, body.speed))
-    if body.density is not None:
-        settings.printer_density = max(0, min(15, body.density))
-    if body.label_width is not None:
-        if body.label_width < 10 or body.label_width > 200:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid label width")
-        settings.printer_label_width = body.label_width
-    if body.label_height is not None:
-        if body.label_height < 10 or body.label_height > 200:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid label height")
-        settings.printer_label_height = body.label_height
-    if body.gap is not None:
-        if body.gap < 0 or body.gap > 20:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid label gap")
-        settings.printer_gap = body.gap
 
     logger.info("[AUDIT] user=%d action=config.printer", admin.id)
     return {"status": "updated"}

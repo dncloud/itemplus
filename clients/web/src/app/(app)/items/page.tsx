@@ -27,7 +27,7 @@ import PropertyField from "@/components/property-field";
 export default function ItemsPage({ pageOverride }: { pageOverride?: number } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { realm, serverURL, can, locale, t } = useApp();
+  const { realm, serverURL, can, locale, printItemQR, t } = useApp();
   const [items, setItems] = useState<Item[]>([]);
   const [total, setTotal] = useState(0);
   const [totalQty, setTotalQty] = useState(0);
@@ -633,7 +633,7 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
                     {(can("items.write") || can("items.delete") || can("print")) && (
                       <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         {can("print") && (
-                          <button onClick={async () => { try { await api.printItemQR(item.id); } catch {} }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                          <button onClick={async () => { try { await printItemQR(item.id); } catch {} }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                             <PrinterIcon className="h-4 w-4 text-gray-400" />
                           </button>
                         )}

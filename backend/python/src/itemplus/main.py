@@ -16,10 +16,11 @@ if settings.debug_http:
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(message)s"))
         logger.addHandler(handler)
-from itemplus.core.database import Base, engine
-from itemplus.models import AppSetting, archive, collection  # noqa: F401 — register models
+from itemplus.core.database import Base, async_session, engine
+from itemplus.models import AppSetting, LabelTemplate, archive, collection  # noqa: F401 — register models
 from itemplus.routers import admin, auth, branding, checkout, device, printer, qr_login, stats, user, websocket
 from itemplus.routers.realm import create_realm_router
+from itemplus.services.label_templates import ensure_default_label_templates
 
 # Ensure upload directory exists before mounting
 Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
@@ -29,6 +30,8 @@ Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    async with async_session() as session:
+        await ensure_default_label_templates(session)
     yield
     await engine.dispose()
 

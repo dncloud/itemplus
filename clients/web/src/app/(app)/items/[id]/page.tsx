@@ -23,7 +23,7 @@ import {
 export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { realm, serverURL, can, fmtDate, fmtDateTime, t } = useApp();
+  const { realm, serverURL, can, fmtDate, fmtDateTime, printItemQR, t } = useApp();
   const [item, setItem] = useState<Item | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -220,7 +220,7 @@ export default function ItemDetailPage() {
   const printQR = async () => {
     setPrinting(true);
     try {
-      await api.printItemQR(Number(id));
+      await printItemQR(Number(id));
       setPrintDone(true);
       setTimeout(() => setPrintDone(false), 3000);
     } catch {}
@@ -245,7 +245,7 @@ export default function ItemDetailPage() {
   const locObj = locations.find((l) => l.id === item.location_id);
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="w-full max-w-3xl space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
         <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
@@ -623,7 +623,7 @@ function VendorCell({ label, name, info }: { label: string; name?: string; info?
 }
 
 function PropDisplay({ prop, val: rawVal }: { prop: Property; val: unknown }) {
-  const { locale } = useApp();
+  const { locale, t } = useApp();
   // Auto-parse JSON strings (e.g. "[\"A\",\"B\"]" → ["A","B"], "{\"value\":5}" → {value:5})
   let val = rawVal;
   if (typeof val === "string") {
@@ -700,7 +700,7 @@ function PropDisplay({ prop, val: rawVal }: { prop: Property; val: unknown }) {
       return <div>{lbl}<p className="font-medium">{String(val)}</p></div>;
     }
     case "boolean":
-      return <div>{lbl}<p className="font-medium">{val === true || val === "true" ? "Ja" : "Nein"}</p></div>;
+      return <div>{lbl}<p className="font-medium">{val === true || val === "true" ? t("common.yes") : t("common.no")}</p></div>;
     case "dimensions": {
       if (typeof val === "object" && val) {
         const d = val as Record<string, unknown>;

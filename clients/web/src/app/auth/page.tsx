@@ -137,7 +137,7 @@ export default function AuthPage() {
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM17 14.625v2.25m0 2.25v-2.25m0 0h2.25m-2.25 0h-2.25" />
                 </svg>
-                QR-Code
+                {t("auth.qrTab")}
               </button>
               <button
                 onClick={() => setAuthMode("email")}
@@ -148,7 +148,7 @@ export default function AuthPage() {
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
                 </svg>
-                E-Mail
+                {t("auth.emailTab")}
               </button>
             </div>
 
@@ -173,14 +173,14 @@ export default function AuthPage() {
                         className="w-48 h-48"
                       />
                     </div>
-                    <p className="text-xs text-gray-500">Scanne den QR-Code mit der item+ App</p>
+                    <p className="text-xs text-gray-500">{t("auth.scanQrHint")}</p>
                     <div className="text-sm text-gray-400">
                       <span className={`font-mono ${qrExpiry < 30 ? "text-red-500" : ""}`}>
                         {Math.floor(qrExpiry / 60)}:{String(qrExpiry % 60).padStart(2, "0")}
                       </span>
                       {qrExpiry <= 0 && (
                         <button onClick={requestQR} className="ml-2 text-blue-500 hover:text-blue-600 font-medium">
-                          Neu generieren
+                          {t("auth.regenerateQr")}
                         </button>
                       )}
                     </div>
@@ -203,10 +203,10 @@ export default function AuthPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
                       </svg>
                     </div>
-                    <p className="text-sm font-medium">E-Mail gesendet!</p>
-                    <p className="text-xs text-gray-500">Prüfe dein Postfach und klicke auf den Link in der E-Mail.</p>
+                    <p className="text-sm font-medium">{t("auth.emailSent")}</p>
+                    <p className="text-xs text-gray-500">{t("auth.emailSentHint")}</p>
                     <button onClick={() => setEmailStatus("idle")} className="text-xs text-gray-400 hover:text-gray-600">
-                      Andere E-Mail verwenden
+                      {t("auth.useAnotherEmail")}
                     </button>
                   </div>
                 ) : (
@@ -216,7 +216,7 @@ export default function AuthPage() {
                       value={email}
                       onChange={(e) => { setEmail(e.target.value); setEmailStatus("idle"); }}
                       onKeyDown={(e) => e.key === "Enter" && sendMagicLink()}
-                      placeholder="E-Mail-Adresse"
+                      placeholder={t("auth.emailPlaceholder")}
                       className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       autoFocus
                     />
@@ -225,12 +225,12 @@ export default function AuthPage() {
                       disabled={!email || emailStatus === "sending"}
                       className="w-full rounded-lg bg-blue-500 px-4 py-3 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50 transition"
                     >
-                      {emailStatus === "sending" ? "Wird gesendet..." : "Magic Link senden"}
+                      {emailStatus === "sending" ? t("auth.emailSending") : t("auth.sendMagicLink")}
                     </button>
                     {emailStatus === "error" && (
-                      <p className="text-xs text-red-500 text-center">E-Mail konnte nicht gesendet werden</p>
+                      <p className="text-xs text-red-500 text-center">{t("auth.emailSendFailed")}</p>
                     )}
-                    <p className="text-xs text-gray-400 text-center">Du erhältst einen Link per E-Mail mit dem du dich anmelden kannst.</p>
+                    <p className="text-xs text-gray-400 text-center">{t("auth.emailLoginHint")}</p>
                   </>
                 )}
               </div>

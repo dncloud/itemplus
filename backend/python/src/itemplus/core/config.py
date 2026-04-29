@@ -62,11 +62,6 @@ class Settings(BaseSettings):
     # TSC Printer
     printer_host: str
     printer_port: int
-    printer_speed: int
-    printer_density: int
-    printer_label_width: int
-    printer_label_height: int
-    printer_gap: float
 
     # SMTP (Magic Link)
     smtp_host: str

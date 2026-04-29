@@ -2,21 +2,82 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "@/lib/app-context";
-import { api, type User } from "@/lib/api";
+import { api, type LabelTemplate, type LabelTemplateMeta, type LabelTemplatePayload, type PrinterStatus, type User } from "@/lib/api";
+import { parseTSPLPreview } from "@/components/tspl-template-preview";
 import { LOCALES } from "@/lib/i18n";
 
+type LabelTemplateDraft = LabelTemplatePayload;
+
+function createEmptyTemplateDraft(): LabelTemplateDraft {
+  return {
+    name: "",
+    description: "",
+    target: "both",
+    dpi: 600,
+    width_mm: 20,
+    height_mm: 20,
+    gap_mm: 3,
+    speed: 4,
+    density: 8,
+    direction: 1,
+    reference_x: 0,
+    reference_y: 0,
+    shift_x: 0,
+    shift_y: 0,
+    copies_default: 1,
+    is_default: false,
+    is_active: true,
+    tspl_template: `SIZE 20 mm,20 mm
+GAP 3.0 mm,0 mm
+SPEED 4
+DENSITY 8
+DIRECTION 1
+CODEPAGE 1252
+CLS
+QRCODE 55,55,H,13,A,0,M2,"{{qr_content}}"
+PRINT 1`,
+  };
+}
+
+function draftFromTemplate(template: LabelTemplate): LabelTemplateDraft {
+  return {
+    name: template.name,
+    description: template.description || "",
+    target: template.target,
+    dpi: template.dpi,
+    width_mm: template.width_mm,
+    height_mm: template.height_mm,
+    gap_mm: template.gap_mm,
+    speed: template.speed,
+    density: template.density,
+    direction: template.direction,
+    reference_x: template.reference_x,
+    reference_y: template.reference_y,
+    shift_x: template.shift_x,
+    shift_y: template.shift_y,
+    copies_default: template.copies_default,
+    is_default: template.is_default,
+    is_active: template.is_active,
+    tspl_template: template.tspl_template,
+  };
+}
+
 export default function SettingsPage() {
-  const { locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, brandingLogo, brandingSubtitle, brandingWidth, refreshBranding, isAdmin, t } = useApp();
+  const { locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, brandingLogo, brandingSubtitle, brandingWidth, refreshBranding, isAdmin, can, t } = useApp();
   const [locIssues, setLocIssues] = useState<{ issues: { realm: string; id: number; name: string; type: string }[]; total_checked: number } | null>(null);
   const [locFixing, setLocFixing] = useState(false);
   const [sessions, setSessions] = useState<{ id: number; device_type: string; device_name: string | null; ip_address: string | null; is_online: boolean; last_seen: string | null }[]>([]);
   const [me, setMe] = useState<User | null>(null);
   const [profileName, setProfileName] = useState("");
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
-  const [printer, setPrinter] = useState<{ host: string; port: number; speed: number; density: number; label_width: number; label_height: number; gap: number; reachable: boolean } | null>(null);
+  const [printer, setPrinter] = useState<PrinterStatus | null>(null);
   const [printerStatus, setPrinterStatus] = useState<string | null>(null);
-  const [testTspl, setTestTspl] = useState<string>("");
   const [testPrintStatus, setTestPrintStatus] = useState<string | null>(null);
+  const [templateMeta, setTemplateMeta] = useState<LabelTemplateMeta | null>(null);
+  const [templates, setTemplates] = useState<LabelTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | "new" | null>(null);
+  const [templateDraft, setTemplateDraft] = useState<LabelTemplateDraft>(createEmptyTemplateDraft());
+  const [templateStatus, setTemplateStatus] = useState<string | null>(null);
   const [brandingStatus, setBrandingStatus] = useState<string | null>(null);
   const [subtitleDraft, setSubtitleDraft] = useState("");
   const [logoDraft, setLogoDraft] = useState<string | null>(null);
@@ -29,6 +90,13 @@ export default function SettingsPage() {
       setProfileName(u.name || "");
       if (u.is_admin) {
         api.getPrinterStatus().then(setPrinter).catch(() => {});
+      }
+      if (u.is_admin || (u.permissions || []).includes("print")) {
+        api.getLabelTemplateMeta().then(setTemplateMeta).catch(() => {});
+        api.getLabelTemplates(undefined, u.is_admin).then((list) => {
+          setTemplates(list);
+          setSelectedTemplateId((prev) => prev ?? (list[0]?.id ?? null));
+        }).catch(() => {});
       }
     }).catch(() => {});
     // Load sessions
@@ -49,6 +117,17 @@ export default function SettingsPage() {
   useEffect(() => {
     setWidthDraft(brandingWidth);
   }, [brandingWidth]);
+
+  useEffect(() => {
+    if (selectedTemplateId === "new") {
+      setTemplateDraft(createEmptyTemplateDraft());
+      return;
+    }
+    const selected = templates.find((tpl) => tpl.id === selectedTemplateId);
+    if (selected) {
+      setTemplateDraft(draftFromTemplate(selected));
+    }
+  }, [selectedTemplateId, templates]);
 
   const saveProfile = async () => {
     setProfileStatus(null);
@@ -119,8 +198,85 @@ export default function SettingsPage() {
     reader.readAsDataURL(file);
   };
 
+  const canManageTemplates = isAdmin;
+  const selectedTemplate = selectedTemplateId === "new" ? null : templates.find((tpl) => tpl.id === selectedTemplateId) || null;
+  const loadTemplates = async (includeInactive = isAdmin) => {
+    const list = await api.getLabelTemplates(undefined, includeInactive);
+    setTemplates(list);
+    setSelectedTemplateId((prev) => {
+      if (prev === "new") return prev;
+      if (prev && list.some((tpl) => tpl.id === prev)) return prev;
+      return list[0]?.id ?? null;
+    });
+    return list;
+  };
+
+  const saveTemplate = async () => {
+    setTemplateStatus(null);
+    try {
+      const parsed = parseTSPLPreview(templateDraft.tspl_template);
+      const payload: LabelTemplatePayload = {
+        ...templateDraft,
+        target: "both",
+        width_mm: parsed.widthMM,
+        height_mm: parsed.heightMM,
+        gap_mm: parsed.gapMM,
+        speed: parsed.speed,
+        density: parsed.density,
+        direction: parsed.direction,
+        reference_x: parsed.referenceX,
+        reference_y: parsed.referenceY,
+        shift_x: parsed.shiftX,
+        shift_y: parsed.shiftY,
+        name: templateDraft.name.trim(),
+        description: templateDraft.description?.trim() || null,
+        tspl_template: templateDraft.tspl_template,
+      };
+      let saved: LabelTemplate;
+      if (selectedTemplateId === "new" || !selectedTemplate) {
+        saved = await api.createLabelTemplate(payload);
+      } else {
+        saved = await api.updateLabelTemplate(selectedTemplate.id, payload);
+      }
+      const list = await loadTemplates(true);
+      const resolved = list.find((tpl) => tpl.id === saved.id);
+      setSelectedTemplateId(resolved?.id || saved.id);
+      setTemplateStatus(t("settings.templateSaved"));
+      setTimeout(() => setTemplateStatus(null), 2500);
+    } catch (err) {
+      setTemplateStatus(err instanceof Error ? err.message : t("settings.templateSaveFailed"));
+    }
+  };
+
+  const deleteTemplate = async () => {
+    if (!selectedTemplate) return;
+    setTemplateStatus(null);
+    try {
+      await api.deleteLabelTemplate(selectedTemplate.id);
+      const list = await loadTemplates(true);
+      setSelectedTemplateId(list[0]?.id ?? null);
+      setTemplateStatus(t("settings.templateDeleted"));
+      setTimeout(() => setTemplateStatus(null), 2500);
+    } catch (err) {
+      setTemplateStatus(err instanceof Error ? err.message : t("settings.templateDeleteFailed"));
+    }
+  };
+
+  const makeDefaultTemplate = async () => {
+    if (!selectedTemplate) return;
+    setTemplateStatus(null);
+    try {
+      await api.setDefaultLabelTemplate(selectedTemplate.id);
+      await loadTemplates(true);
+      setTemplateStatus(t("settings.templateDefaultSaved"));
+      setTimeout(() => setTemplateStatus(null), 2500);
+    } catch (err) {
+      setTemplateStatus(err instanceof Error ? err.message : t("settings.templateSaveFailed"));
+    }
+  };
+
   return (
-    <div className="space-y-8 max-w-2xl">
+    <div className="w-full max-w-none space-y-8">
       <h1 className="text-2xl font-bold">{t("settings.title")}</h1>
 
       {/* Profile */}
@@ -360,18 +516,46 @@ export default function SettingsPage() {
         )}
       </section>
 
-      {/* Admin-only sections */}
-      {isAdmin && (<>
-
       {/* Printer */}
+      {(can("print") || isAdmin) && (
       <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">{t("settings.printerTitle")}</h2>
-          {printer && (
+          <div>
+            <h2 className="text-lg font-semibold">{t("settings.printerTitle")}</h2>
+            <p className="mt-1 text-sm text-gray-500">{t("settings.templateSettingsMoved")}</p>
+          </div>
+          {printMode === "server" && printer && (
             <span className={`h-2.5 w-2.5 rounded-full ${printer.reachable ? "bg-emerald-500" : "bg-gray-300"}`} />
           )}
         </div>
-        {printer && (
+
+        <div className="space-y-2">
+          <label className="block text-xs font-medium text-gray-500">{t("settings.printMode")}</label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setPrintMode("server")}
+              className={`min-w-[13rem] rounded-lg border px-3 py-2 text-left transition ${printMode === "server" ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"}`}
+            >
+              <div className="text-sm font-medium">{t("settings.printModeServer")}</div>
+              <div className="text-[11px] text-gray-400">{t("settings.printModeServerHint")}</div>
+            </button>
+            <button
+              onClick={() => setPrintMode("ios")}
+              className={`min-w-[13rem] rounded-lg border px-3 py-2 text-left transition ${printMode === "ios" ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"}`}
+            >
+              <div className="text-sm font-medium">{t("settings.printModeIOS")}</div>
+              <div className="text-[11px] text-gray-400">{t("settings.printModeIOSHint")}</div>
+            </button>
+          </div>
+        </div>
+
+        {printMode === "ios" && (
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-4 py-3 text-sm text-gray-500">
+            {t("settings.printModeIOSInfo")}
+          </div>
+        )}
+
+        {printMode === "server" && isAdmin && printer && (
           <>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -383,34 +567,10 @@ export default function SettingsPage() {
                 <input type="number" value={printer.port} onChange={(e) => setPrinter({ ...printer, port: Number(e.target.value) })} className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.labelWidth")}</label>
-                <input type="number" value={printer.label_width} onChange={(e) => setPrinter({ ...printer, label_width: Number(e.target.value) })} className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.labelHeight")}</label>
-                <input type="number" value={printer.label_height} onChange={(e) => setPrinter({ ...printer, label_height: Number(e.target.value) })} className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.speed")}</label>
-                <input type="number" min={1} max={15} value={printer.speed} onChange={(e) => setPrinter({ ...printer, speed: Number(e.target.value) })} className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.density")}</label>
-                <input type="number" min={0} max={15} value={printer.density} onChange={(e) => setPrinter({ ...printer, density: Number(e.target.value) })} className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.gap")}</label>
-                <input type="number" step={0.1} value={printer.gap} onChange={(e) => setPrinter({ ...printer, gap: Number(e.target.value) })} className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-            </div>
             <div className="flex gap-2">
               <button
                 onClick={async () => {
-                  await api.updatePrinterConfig(printer);
+                  await api.updatePrinterConfig({ host: printer.host, port: printer.port });
                   const updated = await api.getPrinterStatus();
                   setPrinter(updated);
                   setPrinterStatus(updated.reachable ? t("settings.printerConnected") : t("settings.printerNotReachable"));
@@ -442,74 +602,227 @@ export default function SettingsPage() {
               )}
             </div>
 
-            {/* Test Print */}
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">{t("settings.testPrint")}</h3>
-                <button
-                  onClick={async () => {
-                    const res = await fetch(`${api.baseURL}/api/print/test/preview`, {
-                      credentials: "include",
-                    });
-                    if (res.ok) {
-                      const data = await res.json();
-                      setTestTspl(data.tspl);
-                    }
-                  }}
-                  className="text-xs text-blue-500 hover:underline"
-                >Standard-TSPL laden</button>
-              </div>
-              <textarea
-                value={testTspl}
-                onChange={(e) => setTestTspl(e.target.value)}
-                placeholder="TSPL-Befehle hier eingeben oder Standard laden..."
-                rows={10}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={async () => {
-                    setTestPrintStatus(null);
-                    try {
-                      const res = await fetch(`${api.baseURL}/api/print/test`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        credentials: "include",
-                        body: JSON.stringify({ tspl: testTspl || null }),
-                      });
-                      if (res.ok) {
-                        const data = await res.json();
-                        setTestPrintStatus("Gedruckt");
-                        if (!testTspl) setTestTspl(data.tspl);
-                      } else {
-                        const err = await res.json().catch(() => ({}));
-                        setTestPrintStatus(err.detail || t("settings.error"));
-                      }
-                    } catch {
-                      setTestPrintStatus(t("settings.connectionError"));
-                    }
-                    setTimeout(() => setTestPrintStatus(null), 3000);
-                  }}
-                  className="rounded-lg bg-gray-800 dark:bg-gray-200 dark:text-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:hover:bg-gray-300 transition"
-                >
-                  Drucken
-                </button>
-                {testPrintStatus && (
-                  <span className={`text-sm ${testPrintStatus === "Gedruckt" ? "text-green-600" : "text-red-500"}`}>{testPrintStatus}</span>
-                )}
-              </div>
-            </div>
           </>
         )}
-      </section>
 
+        <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium text-gray-500">{t("settings.labelTemplates")}</p>
+              <p className="text-[10px] text-gray-400">{t("settings.labelTemplatesHint")}</p>
+            </div>
+            {canManageTemplates && (
+              <button
+                onClick={() => {
+                  setSelectedTemplateId("new");
+                  setTemplateDraft(createEmptyTemplateDraft());
+                  setTemplateStatus(null);
+                }}
+                className="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+              >
+                {t("settings.newTemplate")}
+              </button>
+            )}
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
+            <div className="space-y-2">
+              {templates.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 px-4 py-6 text-sm text-gray-500">
+                  {t("settings.noTemplates")}
+                </div>
+              ) : (
+                templates.map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    onClick={() => {
+                      setSelectedTemplateId(tpl.id);
+                      setTemplateStatus(null);
+                    }}
+                    className={`w-full rounded-lg border px-3 py-3 text-left transition ${selectedTemplateId === tpl.id ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{tpl.name}</div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {tpl.is_default ? <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{t("settings.defaultTemplate")}</span> : null}
+                      </div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="space-y-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4">
+              {selectedTemplateId === null && templates.length === 0 ? (
+                <div className="text-sm text-gray-500">{t("settings.noTemplates")}</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.templateName")}</label>
+                      <input
+                        value={templateDraft.name}
+                        onChange={(e) => setTemplateDraft({ ...templateDraft, name: e.target.value })}
+                        disabled={!canManageTemplates}
+                        className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.templateDescription")}</label>
+                      <input
+                        value={templateDraft.description || ""}
+                        onChange={(e) => setTemplateDraft({ ...templateDraft, description: e.target.value })}
+                        disabled={!canManageTemplates}
+                        className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-medium text-gray-500">{t("settings.tsplTemplate")}</label>
+                      </div>
+                      <textarea
+                        value={templateDraft.tspl_template}
+                        onChange={(e) => setTemplateDraft({ ...templateDraft, tspl_template: e.target.value })}
+                        rows={18}
+                        disabled={!canManageTemplates}
+                        className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                      {isAdmin && printMode === "server" && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={async () => {
+                              setTestPrintStatus(null);
+                              try {
+                                const res = await fetch(`${api.baseURL}/api/print/test`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  credentials: "include",
+                                  body: JSON.stringify({ tspl: templateDraft.tspl_template || null }),
+                                });
+                                if (res.ok) {
+                                  setTestPrintStatus(t("settings.printSuccess"));
+                                } else {
+                                  const err = await res.json().catch(() => ({}));
+                                  setTestPrintStatus(err.detail || t("settings.error"));
+                                }
+                              } catch {
+                                setTestPrintStatus(t("settings.connectionError"));
+                              }
+                              setTimeout(() => setTestPrintStatus(null), 3000);
+                            }}
+                            className="rounded-lg bg-gray-800 dark:bg-gray-200 dark:text-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:hover:bg-gray-300 transition"
+                          >
+                            {t("settings.printNow")}
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const res = await fetch(`${api.baseURL}/api/print/test/preview`, {
+                                credentials: "include",
+                              });
+                              if (res.ok) {
+                                const data = await res.json();
+                                setTemplateDraft({ ...templateDraft, tspl_template: data.tspl });
+                              }
+                            }}
+                            className="rounded-lg border border-gray-300 dark:border-gray-700 px-4 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+                          >
+                            {t("settings.loadDefaultTSPL")}
+                          </button>
+                          {testPrintStatus && (
+                            <span className={`text-sm ${testPrintStatus === t("settings.printSuccess") ? "text-green-600" : "text-red-500"}`}>{testPrintStatus}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
+                        <div className="mb-2 text-xs font-medium text-gray-500">{t("settings.templateVariables")}</div>
+                        <div className="max-h-48 space-y-2 overflow-auto pr-1">
+                          {(templateMeta?.variables || []).map((variable) => {
+                            const translationKey = `settings.templateVariableDescriptions.${variable.key}`;
+                            const translated = t(translationKey);
+                            return (
+                              <div key={variable.key} className="text-xs">
+                                <div className="font-mono text-blue-500">{"{{"}{variable.key}{"}}"}</div>
+                                <div className="text-gray-500">{translated === translationKey ? variable.description : translated}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
+                        <div className="mb-2 text-xs font-medium text-gray-500">{t("settings.supportedCommands")}</div>
+                        <div className="flex flex-wrap gap-2">
+                          {(templateMeta?.supported_commands || []).map((command) => (
+                            <span key={command} className="rounded bg-gray-100 dark:bg-gray-800 px-2 py-1 text-xs font-mono text-gray-600 dark:text-gray-300">{command}</span>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-xs text-gray-500">{t("settings.supportedCommandsHint")}</p>
+                        <p className="mt-2 text-xs text-gray-500">
+                          {t("settings.supportedCommandsManualPrefix")}{" "}
+                          <a
+                            href="https://fs.tscprinters.com/system/files/31-0000001-00_tspl_tspl2_programming_2_0.pdf"
+                            title={t("settings.supportedCommandsManualTitle")}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-500 hover:text-blue-400"
+                          >
+                            https://fs.tscprinters.com/system/files/31-0000001-00_tspl_tspl2_programming_2_0.pdf
+                          </a>
+                        </p>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canManageTemplates && (
+                      <>
+                        <button onClick={saveTemplate} className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition">
+                          {selectedTemplateId === "new" ? t("settings.createTemplate") : t("common.save")}
+                        </button>
+                        {selectedTemplate && (
+                          <button onClick={makeDefaultTemplate} className="rounded-lg border border-gray-300 dark:border-gray-700 px-4 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+                            {t("settings.makeDefault")}
+                          </button>
+                        )}
+                        {selectedTemplate && (
+                          <button onClick={deleteTemplate} className="rounded-lg border border-red-300 dark:border-red-800 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+                            {t("common.delete")}
+                          </button>
+                        )}
+                      </>
+                    )}
+                    {templateStatus ? (
+                      <span className={`text-sm ${templateStatus === t("settings.templateSaved") || templateStatus === t("settings.templateDeleted") || templateStatus === t("settings.templateDefaultSaved") ? "text-green-600" : "text-red-500"}`}>
+                        {templateStatus}
+                      </span>
+                    ) : null}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+      )}
+
+      {/* Admin-only sections */}
+      {isAdmin && (<>
       {/* Health Check */}
       <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4">
         <h2 className="text-lg font-semibold">{t("settings.healthCheck")}</h2>
         <p className="text-xs text-gray-500">{t("settings.healthCheckHint")}</p>
         <button
           onClick={checkLocations}
-          className="rounded-lg bg-gray-100 dark:bg-gray-800 px-4 py-2 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+          className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition"
         >
           {t("settings.checkLocations")}
         </button>

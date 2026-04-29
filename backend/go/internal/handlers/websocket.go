@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/itemplus/backend/internal/config"
 	"github.com/itemplus/backend/internal/database"
+	"github.com/itemplus/backend/internal/printing"
 	"github.com/itemplus/backend/internal/services"
 	"github.com/itemplus/backend/internal/ws"
 )
@@ -119,6 +120,9 @@ func handleWebSocket(c *gin.Context) {
 		IsAdmin:    isAdmin,
 	}
 	ws.M.Add(wsConn)
+	ws.M.SendToSession(int(sessionID), "session.ready", map[string]interface{}{
+		"session_id": sessionID,
+	})
 
 	// Notify other devices
 	ws.M.SendToUserExcept(userID, int(sessionID), "device.connected", map[string]interface{}{
@@ -276,6 +280,69 @@ func handleWSMessage(data map[string]interface{}, userID, sessionID int, deviceT
 			"item_id":       jsonInt(data, "item_id"),
 			"attachment_id": jsonInt(data, "attachment_id"),
 		})
+
+	case "print.request":
+		entityType := jsonString(data, "entity_type", "item")
+		entityID := jsonIntAlt(data, "entity_id", "item_id")
+		realm := jsonString(data, "realm", "archive")
+		requestID := jsonString(data, "request_id", "")
+		copies := jsonInt(data, "copies")
+		if copies < 1 {
+			copies = 1
+		}
+		if !checkUserPermission(userID, "print") {
+			ws.M.SendToSession(sessionID, "print.failed", map[string]interface{}{"request_id": requestID, "detail": "Print permission required"})
+			return
+		}
+		if entityID <= 0 || (entityType != "item" && entityType != "location") {
+			ws.M.SendToSession(sessionID, "print.failed", map[string]interface{}{"request_id": requestID, "detail": "Invalid print target"})
+			return
+		}
+		if !ws.M.HasIOSDevices(userID) {
+			ws.M.SendToSession(sessionID, "print.failed", map[string]interface{}{"request_id": requestID, "detail": "No iOS bridge connected"})
+			return
+		}
+
+		tspl, _, err := printing.RenderEntityTSPL(realm, entityType, entityID, copies)
+		if err != nil {
+			ws.M.SendToSession(sessionID, "print.failed", map[string]interface{}{"request_id": requestID, "detail": err.Error()})
+			return
+		}
+		title := "Item QR"
+		if entityType == "location" {
+			title = "Location QR"
+		}
+
+		ws.M.SendToUserIOS(userID, "print.request", map[string]interface{}{
+			"request_id":   requestID,
+			"entity_id":    entityID,
+			"entity_type":  entityType,
+			"realm":        realm,
+			"copies":       copies,
+			"tspl":         tspl,
+			"title":        title,
+			"from_session": sessionID,
+		})
+
+	case "print.result":
+		requestID := jsonString(data, "request_id", "")
+		success, _ := data["success"].(bool)
+		detail := jsonString(data, "detail", "")
+		targetSession := jsonInt(data, "target_session")
+		payload := map[string]interface{}{"request_id": requestID, "detail": detail}
+		if targetSession > 0 && ws.M.SessionBelongsToUser(targetSession, userID) {
+			if success {
+				ws.M.SendToSession(targetSession, "print.done", payload)
+			} else {
+				ws.M.SendToSession(targetSession, "print.failed", payload)
+			}
+		} else {
+			if success {
+				ws.M.SendToUserBrowsers(userID, "print.done", payload)
+			} else {
+				ws.M.SendToUserBrowsers(userID, "print.failed", payload)
+			}
+		}
 
 	case "devices.list":
 		devices := ws.M.GetUserDevices(userID)

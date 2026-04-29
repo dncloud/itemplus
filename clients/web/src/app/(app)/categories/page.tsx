@@ -157,7 +157,7 @@ export default function CategoriesPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="w-full max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t("categories.title")}</h1>
         <button
@@ -225,7 +225,7 @@ export default function CategoriesPage() {
         <Modal title={isNew ? t("common.new") : t("common.edit")} onClose={() => setEditCat(null)} onSave={saveCat} t={t}>
           <Field label={t("vendors.name")} value={editCat.name || ""} onChange={(v) => setEditCat({ ...editCat, name: v })} />
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Farbe</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{t("common.color")}</label>
             <div className="flex items-center gap-2">
               <input
                 type="color"
@@ -239,7 +239,7 @@ export default function CategoriesPage() {
                   onClick={() => setEditCat({ ...editCat, color: undefined })}
                   className="text-xs text-gray-400 hover:text-red-500"
                 >
-                  Entfernen
+                  {t("common.remove")}
                 </button>
               )}
             </div>

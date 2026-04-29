@@ -35,13 +35,8 @@ type Config struct {
 	UploadDir     string
 	MaxUploadSize int64
 
-	PrinterHost        string
-	PrinterPort        int
-	PrinterSpeed       int
-	PrinterDensity     int
-	PrinterLabelWidth  int
-	PrinterLabelHeight int
-	PrinterGap         float64
+	PrinterHost string
+	PrinterPort int
 
 	SMTPHost               string
 	SMTPPort               int
@@ -89,13 +84,8 @@ func Load() {
 		UploadDir:     resolveAbsolutePath(envStr("UPLOAD_DIR", filepath.Join(dataDir, "uploads")), envBaseDir),
 		MaxUploadSize: envInt64("MAX_UPLOAD_SIZE", 200*1024*1024), // 200 MB default
 
-		PrinterHost:        envStr("PRINTER_HOST", ""),
-		PrinterPort:        envInt("PRINTER_PORT", 9100),
-		PrinterSpeed:       envInt("PRINTER_SPEED", 4),
-		PrinterDensity:     envInt("PRINTER_DENSITY", 8),
-		PrinterLabelWidth:  envInt("PRINTER_LABEL_WIDTH", 20),
-		PrinterLabelHeight: envInt("PRINTER_LABEL_HEIGHT", 20),
-		PrinterGap:         envFloat("PRINTER_GAP", 3.0),
+		PrinterHost: envStr("PRINTER_HOST", ""),
+		PrinterPort: envInt("PRINTER_PORT", 9100),
 
 		SMTPHost:               envStr("SMTP_HOST", ""),
 		SMTPPort:               envInt("SMTP_PORT", 465),

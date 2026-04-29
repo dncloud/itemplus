@@ -1,6 +1,6 @@
 [project]
 name = "itemplus"
-version = "3.0.1"
+version = "1.1"
 description = "ItemPlus — Open-Source Inventory & Collection Management API"
 requires-python = ">=3.13"
 dependencies = [

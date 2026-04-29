@@ -84,19 +84,19 @@ export default function VendorsPage() {
     if (!editItem?.name) return;
     // Validate
     if (editItem.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editItem.email)) {
-      setValidationError("Ungültige E-Mail-Adresse");
+      setValidationError(t("vendors.invalidEmail"));
       return;
     }
     if (editItem.website && !/^https?:\/\/.+/.test(editItem.website)) {
-      setValidationError("URL muss mit http:// oder https:// beginnen");
+      setValidationError(t("vendors.invalidWebsite"));
       return;
     }
     if (editItem.support_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editItem.support_email)) {
-      setValidationError("Ungültige Support E-Mail");
+      setValidationError(t("vendors.invalidSupportEmail"));
       return;
     }
     if (editItem.support_url && !/^https?:\/\/.+/.test(editItem.support_url)) {
-      setValidationError("Support URL muss mit http:// oder https:// beginnen");
+      setValidationError(t("vendors.invalidSupportUrl"));
       return;
     }
     setValidationError(null);
@@ -130,7 +130,7 @@ export default function VendorsPage() {
   const currentTab = TABS.find((t) => t.key === tab)!;
 
   return (
-    <div className="space-y-6">
+    <div className="w-full max-w-3xl space-y-6">
       <h1 className="text-2xl font-bold">{t("vendors.title")}</h1>
 
       {/* Tabs */}

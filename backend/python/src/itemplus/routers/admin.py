@@ -23,9 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from itemplus.core.database import Base, engine, get_db
 from itemplus.core.dependencies import get_current_admin
 from itemplus.core.version import load_shared_version
-from itemplus.models import archive, collection
-from itemplus.models import AppSetting
+from itemplus.models import AppSetting, LabelTemplate, archive, collection
 from itemplus.models.user import User
+from itemplus.services.label_templates import ensure_default_label_templates
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,9 @@ async def export_db(admin: User = Depends(get_current_admin), db: AsyncSession =
 
     app_settings = (await db.scalars(select(AppSetting))).all()
     data["app_settings"] = _rows_to_dicts(app_settings)
+
+    label_templates = (await db.scalars(select(LabelTemplate))).all()
+    data["label_templates"] = _rows_to_dicts(label_templates)
 
     # Per realm
     for realm_name, models in _realms.items():
@@ -128,6 +131,15 @@ async def import_db(
         counts["app_settings"] = len(settings_rows)
         await db.commit()
 
+    label_template_rows = data.get("label_templates", [])
+    if label_template_rows:
+        await db.execute(LabelTemplate.__table__.delete())
+        for row in label_template_rows:
+            cleaned = {k: v for k, v in row.items() if v is not None}
+            db.add(LabelTemplate(**cleaned))
+        counts["label_templates"] = len(label_template_rows)
+        await db.commit()
+
     # Import per realm — order matters for foreign keys
     for realm_name, models in _realms.items():
         realm_data = data.get(realm_name, {})
@@ -155,6 +167,8 @@ async def import_db(
             counts[key] = len(rows)
 
         await db.commit()
+
+    await ensure_default_label_templates(db)
 
     return {"status": "ok", "imported": counts}
 

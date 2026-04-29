@@ -10,6 +10,73 @@ export interface BrandingSettings {
   width: number;
 }
 
+export interface PrinterStatus {
+  reachable: boolean;
+  host: string;
+  port: number;
+}
+
+export interface LabelTemplate {
+  id: number;
+  system_key?: string | null;
+  name: string;
+  description?: string | null;
+  target: "item" | "location" | "both";
+  dpi: number;
+  width_mm: number;
+  height_mm: number;
+  gap_mm: number;
+  speed: number;
+  density: number;
+  direction: 0 | 1;
+  reference_x: number;
+  reference_y: number;
+  shift_x: number;
+  shift_y: number;
+  copies_default: number;
+  is_default: boolean;
+  is_system: boolean;
+  is_active: boolean;
+  tspl_template: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface LabelTemplateVariable {
+  key: string;
+  label: string;
+  target: "item" | "location" | "both";
+  description: string;
+}
+
+export interface LabelTemplateMeta {
+  targets: Array<"item" | "location" | "both">;
+  dpis: number[];
+  supported_commands: string[];
+  variables: LabelTemplateVariable[];
+}
+
+export interface LabelTemplatePayload {
+  name: string;
+  description?: string | null;
+  target: "item" | "location" | "both";
+  dpi: number;
+  width_mm: number;
+  height_mm: number;
+  gap_mm: number;
+  speed: number;
+  density: number;
+  direction: 0 | 1;
+  reference_x: number;
+  reference_y: number;
+  shift_x: number;
+  shift_y: number;
+  copies_default: number;
+  is_default?: boolean;
+  is_active?: boolean;
+  tspl_template: string;
+}
+
 class Api {
   baseURL = "";
   realm: "archive" | "collection" = "archive";
@@ -102,8 +169,21 @@ class Api {
   // -- Print --
   printItemQR = (itemId: number, copies = 1) => this.post<{ status: string; qr_content: string }>(`/print/${this.realm}/item/${itemId}`, { copies });
   printLocationQR = (locationId: number, copies = 1) => this.post<{ status: string; qr_content: string }>(`/print/${this.realm}/location/${locationId}`, { copies });
-  getPrinterStatus = () => this.get<{ reachable: boolean; host: string; port: number; speed: number; density: number; label_width: number; label_height: number; gap: number }>("/print/status");
+  getPrinterStatus = () => this.get<PrinterStatus>("/print/status");
   updatePrinterConfig = (data: Record<string, unknown>) => this.put<{ status: string }>("/print/config", data);
+  getLabelTemplateMeta = () => this.get<LabelTemplateMeta>("/print/templates/meta");
+  getLabelTemplates = (target?: "item" | "location" | "both", includeInactive = false) => {
+    const params = new URLSearchParams();
+    if (target) params.set("target", target);
+    if (includeInactive) params.set("include_inactive", "1");
+    const query = params.toString();
+    return this.get<LabelTemplate[]>(`/print/templates${query ? `?${query}` : ""}`);
+  };
+  getLabelTemplate = (id: number) => this.get<LabelTemplate>(`/print/templates/${id}`);
+  createLabelTemplate = (data: LabelTemplatePayload) => this.post<LabelTemplate>("/print/templates", data);
+  updateLabelTemplate = (id: number, data: Partial<LabelTemplatePayload>) => this.put<LabelTemplate>(`/print/templates/${id}`, data);
+  setDefaultLabelTemplate = (id: number) => this.post<LabelTemplate>(`/print/templates/${id}/default`);
+  deleteLabelTemplate = (id: number) => this.del(`/print/templates/${id}`);
 
   // -- Checkout --
   getCheckoutRequests = () => this.get<CheckoutRequest[]>("/checkout/requests");

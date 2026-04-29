@@ -9,7 +9,8 @@ const VALID_EVENTS = new Set([
   "pong", "device.connected", "device.disconnected", "devices.list",
   "browser.open_item", "browser.open_location", "photo.request", "photo.uploaded",
   "delete.confirm_request", "delete.done", "delete.rejected", "delete.no_device",
-  "session.kicked", "login.confirmed", "user.activated",
+  "session.ready", "session.kicked", "login.confirmed", "user.activated",
+  "print.done", "print.failed",
   "checkout.approved", "checkout.rejected",
   "admin.new_user_registered", "admin.checkout_requested",
   "stats.archive_updated", "stats.collection_updated",
@@ -57,6 +58,9 @@ class WSClient {
         const msg = JSON.parse(e.data);
         if (msg.type === "pong") return;
         if (msg.event && VALID_EVENTS.has(msg.event)) {
+          if (msg.event === "session.ready" && typeof msg.data?.session_id === "number") {
+            this._sessionId = msg.data.session_id;
+          }
           this.emit(msg.event, msg.data || {});
         }
       } catch {}
@@ -86,6 +90,7 @@ class WSClient {
     }
     this.ws?.close();
     this.ws = null;
+    this._sessionId = null;
   }
 
   send(type: string, data?: Record<string, unknown>) {

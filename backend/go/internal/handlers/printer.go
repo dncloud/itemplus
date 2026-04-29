@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/itemplus/backend/internal/config"
 	"github.com/itemplus/backend/internal/middleware"
+	"github.com/itemplus/backend/internal/printing"
 	"github.com/itemplus/backend/internal/services"
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -29,6 +30,7 @@ func RegisterPrinterRoutes(g *gin.RouterGroup) {
 	g.GET("/qr/generate.svg", generateQRSVG)
 	g.GET("/qr/:realm/:type/:id", generateEntityQR)
 	g.PUT("/config", middleware.Auth(), middleware.RequireAdmin(), updatePrinterConfig)
+	registerLabelTemplateRoutes(g)
 }
 
 func printItemLabel(c *gin.Context) {
@@ -44,8 +46,11 @@ func printItemLabel(c *gin.Context) {
 	}
 
 	idInt, _ := strconv.Atoi(id)
-	qr := services.CompactQR(realm, "item", idInt)
-	tspl := services.GenerateQRTSPL(qr, body.Copies)
+	tspl, qr, err := printing.RenderEntityTSPL(realm, "item", idInt, body.Copies)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+		return
+	}
 
 	if !services.SendTSPL(tspl) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "Printer not reachable"})
@@ -67,8 +72,11 @@ func printLocationLabel(c *gin.Context) {
 	}
 
 	idInt, _ := strconv.Atoi(id)
-	qr := services.CompactQR(realm, "location", idInt)
-	tspl := services.GenerateQRTSPL(qr, body.Copies)
+	tspl, qr, err := printing.RenderEntityTSPL(realm, "location", idInt, body.Copies)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+		return
+	}
 
 	if !services.SendTSPL(tspl) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "Printer not reachable"})
@@ -80,20 +88,18 @@ func printLocationLabel(c *gin.Context) {
 func printerStatus(c *gin.Context) {
 	reachable := services.TestPrinterConnection()
 	c.JSON(http.StatusOK, gin.H{
-		"reachable":    reachable,
-		"host":         config.C.PrinterHost,
-		"port":         config.C.PrinterPort,
-		"speed":        config.C.PrinterSpeed,
-		"density":      config.C.PrinterDensity,
-		"label_width":  config.C.PrinterLabelWidth,
-		"label_height": config.C.PrinterLabelHeight,
-		"gap":          config.C.PrinterGap,
+		"reachable": reachable,
+		"host":      config.C.PrinterHost,
+		"port":      config.C.PrinterPort,
 	})
 }
 
 func printerCalibrate(c *gin.Context) {
-	tspl := fmt.Sprintf("SIZE %d mm, %d mm\nGAP %.1f mm, 0 mm\nGAPDETECT\n",
-		config.C.PrinterLabelWidth, config.C.PrinterLabelHeight, config.C.PrinterGap)
+	tspl, err := printing.CalibrationTSPL()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": err.Error()})
+		return
+	}
 	if !services.SendTSPL(tspl) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "Printer not reachable"})
 		return
@@ -111,8 +117,7 @@ func printerTest(c *gin.Context) {
 	if body.TSPL != nil && *body.TSPL != "" {
 		tspl = *body.TSPL
 	} else {
-		qr := services.CompactQR("archive", "item", 0)
-		tspl = services.GenerateQRTSPL(qr, 1)
+		tspl = printing.RenderPreviewTSPL("archive", "item", 0, 1)
 	}
 
 	if !services.SendTSPL(tspl) {
@@ -123,8 +128,7 @@ func printerTest(c *gin.Context) {
 }
 
 func printerTestPreview(c *gin.Context) {
-	qr := services.CompactQR("archive", "item", 0)
-	tspl := services.GenerateQRTSPL(qr, 1)
+	tspl := printing.RenderPreviewTSPL("archive", "item", 0, 1)
 	c.JSON(http.StatusOK, gin.H{"tspl": tspl})
 }
 
@@ -198,13 +202,8 @@ func renderQRSVG(c *gin.Context, content, color string) {
 
 func updatePrinterConfig(c *gin.Context) {
 	var body struct {
-		Host        *string  `json:"host"`
-		Port        *int     `json:"port"`
-		Speed       *int     `json:"speed"`
-		Density     *int     `json:"density"`
-		LabelWidth  *int     `json:"label_width"`
-		LabelHeight *int     `json:"label_height"`
-		Gap         *float64 `json:"gap"`
+		Host *string `json:"host"`
+		Port *int    `json:"port"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
@@ -229,41 +228,6 @@ func updatePrinterConfig(c *gin.Context) {
 			return
 		}
 		config.C.PrinterPort = *body.Port
-	}
-	if body.Speed != nil {
-		if *body.Speed < 1 || *body.Speed > 15 {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid printer speed"})
-			return
-		}
-		config.C.PrinterSpeed = *body.Speed
-	}
-	if body.Density != nil {
-		if *body.Density < 0 || *body.Density > 15 {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid printer density"})
-			return
-		}
-		config.C.PrinterDensity = *body.Density
-	}
-	if body.LabelWidth != nil {
-		if *body.LabelWidth < 10 || *body.LabelWidth > 200 {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid label width"})
-			return
-		}
-		config.C.PrinterLabelWidth = *body.LabelWidth
-	}
-	if body.LabelHeight != nil {
-		if *body.LabelHeight < 10 || *body.LabelHeight > 200 {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid label height"})
-			return
-		}
-		config.C.PrinterLabelHeight = *body.LabelHeight
-	}
-	if body.Gap != nil {
-		if *body.Gap < 0 || *body.Gap > 20 {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid label gap"})
-			return
-		}
-		config.C.PrinterGap = *body.Gap
 	}
 
 	user := middleware.GetUser(c)

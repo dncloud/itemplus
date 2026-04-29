@@ -3,9 +3,11 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { translate, type Locale } from "./i18n";
+import { wsClient } from "./ws";
 
 type Realm = "archive" | "collection";
 type Theme = "light" | "dark" | "system";
+type PrintMode = "server" | "ios";
 
 type DateFormat = "DD.MM.YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD" | "DD/MM/YYYY";
 
@@ -25,6 +27,10 @@ interface AppContextValue {
   iosDeleteConfirm: boolean;
   setIosDeleteConfirm: (v: boolean) => void;
   setDateFormat: (f: DateFormat) => void;
+  printMode: PrintMode;
+  setPrintMode: (mode: PrintMode) => void;
+  printItemQR: (itemId: number, copies?: number) => Promise<void>;
+  printLocationQR: (locationId: number, copies?: number) => Promise<void>;
   brandingLogo: string | null;
   brandingSubtitle: string;
   brandingWidth: number;
@@ -49,9 +55,9 @@ const getStoredTheme = (): Theme => {
 };
 
 const getStoredLocale = (): Locale => {
-  if (typeof window === "undefined") return "de";
+  if (typeof window === "undefined") return "en";
   const saved = localStorage.getItem("itemplus_locale");
-  return saved === "en" ? "en" : "de";
+  return saved === "de" ? "de" : "en";
 };
 
 const getStoredDateFormat = (): DateFormat => {
@@ -73,6 +79,11 @@ const getStoredIosDeleteConfirm = (): boolean => {
   return saved === null ? true : saved === "true";
 };
 
+const getStoredPrintMode = (): PrintMode => {
+  if (typeof window === "undefined") return "server";
+  return localStorage.getItem("itemplus_print_mode") === "ios" ? "ios" : "server";
+};
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [realm, _setRealm] = useState<Realm>(getStoredRealm);
   const [serverURL] = useState(() => (typeof window !== "undefined" ? window.location.origin : ""));
@@ -81,6 +92,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [dateFormat, _setDateFormat] = useState<DateFormat>(getStoredDateFormat);
   const [iosDeleteConfirm, _setIosDeleteConfirm] = useState(getStoredIosDeleteConfirm);
+  const [printMode, _setPrintMode] = useState<PrintMode>(getStoredPrintMode);
   const [brandingLogo, setBrandingLogo] = useState<string | null>(null);
   const [brandingSubtitle, setBrandingSubtitle] = useState<string>("");
   const [brandingWidth, setBrandingWidth] = useState<number>(180);
@@ -180,6 +192,60 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("itemplus_ios_delete_confirm", String(v));
   };
 
+  const setPrintMode = (mode: PrintMode) => {
+    _setPrintMode(mode);
+    localStorage.setItem("itemplus_print_mode", mode);
+  };
+
+  const printViaIOSBridge = useCallback((entityType: "item" | "location", entityId: number, copies = 1) => {
+    return new Promise<void>((resolve, reject) => {
+      const requestId = `${entityType}-${entityId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const cleanups: Array<() => void> = [];
+      const timer = window.setTimeout(() => {
+        cleanups.forEach((fn) => fn());
+        reject(new Error("iOS bridge timeout"));
+      }, 15000);
+
+      const finish = (ok: boolean, detail?: string) => {
+        window.clearTimeout(timer);
+        cleanups.forEach((fn) => fn());
+        if (ok) resolve();
+        else reject(new Error(detail || "iOS bridge print failed"));
+      };
+
+      cleanups.push(wsClient.on("print.done", (data) => {
+        if (data.request_id === requestId) finish(true, typeof data.detail === "string" ? data.detail : undefined);
+      }));
+      cleanups.push(wsClient.on("print.failed", (data) => {
+        if (data.request_id === requestId) finish(false, typeof data.detail === "string" ? data.detail : undefined);
+      }));
+
+      wsClient.send("print.request", {
+        request_id: requestId,
+        realm,
+        entity_type: entityType,
+        entity_id: entityId,
+        copies,
+      });
+    });
+  }, [realm]);
+
+  const printItemQR = useCallback(async (itemId: number, copies = 1) => {
+    if (printMode === "ios") {
+      await printViaIOSBridge("item", itemId, copies);
+      return;
+    }
+    await api.printItemQR(itemId, copies);
+  }, [printMode, printViaIOSBridge]);
+
+  const printLocationQR = useCallback(async (locationId: number, copies = 1) => {
+    if (printMode === "ios") {
+      await printViaIOSBridge("location", locationId, copies);
+      return;
+    }
+    await api.printLocationQR(locationId, copies);
+  }, [printMode, printViaIOSBridge]);
+
   const fmtDate = useCallback((dateStr: string | null | undefined): string => {
     if (!dateStr) return "—";
     const d = new Date(dateStr);
@@ -210,7 +276,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AppContext.Provider value={{ realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, brandingLogo, brandingSubtitle, brandingWidth, refreshBranding, fmtDate, fmtDateTime, t }}>
+    <AppContext.Provider value={{ realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, printItemQR, printLocationQR, brandingLogo, brandingSubtitle, brandingWidth, refreshBranding, fmtDate, fmtDateTime, t }}>
       {children}
     </AppContext.Provider>
   );

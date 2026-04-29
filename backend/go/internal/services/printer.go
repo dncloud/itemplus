@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/itemplus/backend/internal/config"
@@ -20,26 +21,6 @@ func CompactQR(realm, entityType string, entityID int) string {
 		t = "l"
 	}
 	return fmt.Sprintf("itp://%s/%s/%08d", prefix, t, entityID)
-}
-
-// GenerateQRTSPL generates TSPL commands for a QR label.
-func GenerateQRTSPL(qrContent string, copies int) string {
-	w := config.C.PrinterLabelWidth
-	h := config.C.PrinterLabelHeight
-	gap := config.C.PrinterGap
-	speed := config.C.PrinterSpeed
-	density := config.C.PrinterDensity
-
-	return fmt.Sprintf(`SIZE %d mm, %d mm
-GAP %.1f mm, 0 mm
-SPEED %d
-DENSITY %d
-DIRECTION 1
-CODEPAGE 1252
-CLS
-QRCODE 55,55,H,13,A,0,M2,"%s"
-PRINT %d
-`, w, h, gap, speed, density, qrContent, copies)
 }
 
 // SendTSPL sends TSPL commands to the printer via TCP.
@@ -59,15 +40,26 @@ func SendTSPL(tspl string) bool {
 	}
 	defer conn.Close()
 
-	_, err = conn.Write([]byte(tspl))
+	payload := EnsureTSPLTerminated(tspl)
+
+	_, err = conn.Write([]byte(payload))
 	if err != nil {
 		log.Printf("Printer write error: %v", err)
 		return false
 	}
 
 	time.Sleep(500 * time.Millisecond)
-	log.Printf("TSPL sent to %s (%d bytes)", addr, len(tspl))
+	log.Printf("TSPL sent to %s (%d bytes)", addr, len(payload))
 	return true
+}
+
+// EnsureTSPLTerminated makes sure the payload ends with a printer-friendly line terminator.
+func EnsureTSPLTerminated(tspl string) string {
+	trimmed := strings.TrimRight(tspl, "\r\n")
+	if trimmed == "" {
+		return "\n\r"
+	}
+	return trimmed + "\n\r"
 }
 
 // TestConnection checks if the printer is reachable.
