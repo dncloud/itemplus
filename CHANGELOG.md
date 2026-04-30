@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `main` is now Go-only. The former Python backend has been preserved on `legacy/python-backend`.
+
 ## 2026-04-30
 
 ### TSPL label templates and printing

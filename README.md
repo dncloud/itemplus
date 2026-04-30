@@ -1,7 +1,7 @@
 # item+
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Backend](https://img.shields.io/badge/backend-Go%20%7C%20Python-green)
+![Backend](https://img.shields.io/badge/backend-Go-green)
 ![Web](https://img.shields.io/badge/web-Next.js-black)
 ![iOS](https://img.shields.io/badge/iOS-SwiftUI-orange)
 
@@ -52,22 +52,21 @@ item+ helps you keep track of what you own, where it lives, and who currently ha
 | Path | Purpose |
 | --- | --- |
 | `backend/go` | Main backend for everyday use, local installs, and packaged builds |
-| `backend/python` | Alternative FastAPI backend for development, comparison, and experimentation |
 | `clients/web` | Main web interface |
 | `clients/ios` | iPhone companion app for scanning, photos, approvals, and QR-based workflows |
 
-You only need one backend at a time.
+The Go backend is the primary and only actively maintained backend on `main`.
 
-- Pick `backend/go` if you want the simplest path to running item+.
-- Pick `backend/python` if you want to work on the FastAPI version.
-- Use `clients/web` with either backend.
+- Use `backend/go` for local installs, packaged builds, and production use.
+- Use `clients/web` with the Go backend.
 - Use `clients/ios` as an optional companion to the web app.
+- The former Python backend has been preserved on the `legacy/python-backend` branch.
 
 ## Quick Start
 
 ### Just run the binaries
 
-If you do not want to set up Go, Python, Node.js, or Xcode, use a release build.
+If you do not want to set up Go, Node.js, or Xcode, use a release build.
 
 ```bash
 ./itemplus-server
@@ -113,16 +112,6 @@ npm run dev
 
 Open the web app at `http://127.0.0.1:3000`.
 
-### Alternative: Python backend + web app
-
-```bash
-cd itemplus/backend/python
-uv sync
-uv run uvicorn itemplus.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Then start the web client the same way from `clients/web`.
-
 ### Web client only
 
 ```bash
@@ -145,7 +134,7 @@ The iPhone app works as a companion to the web app for scanning, photos, QR-base
 
 ## Configuration
 
-Both backends create a local `.env` automatically on first start from `config/default.env`.
+The Go backend creates a local `.env` automatically on first start from `config/default.env`.
 
 Settings you will usually want to review:
 
