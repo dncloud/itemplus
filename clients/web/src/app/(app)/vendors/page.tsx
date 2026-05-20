@@ -1,27 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, isSafeUrl, type Vendor } from "@/lib/api";
+import Link from "next/link";
+import { type Vendor } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import {
-  PlusIcon,
-  PencilIcon,
-  TrashIcon,
-  XMarkIcon,
-  MagnifyingGlassIcon,
-  BuildingOffice2Icon,
-  TruckIcon,
-  BuildingStorefrontIcon,
-} from "@heroicons/react/24/outline";
+import { ChevronRightIcon } from "@heroicons/react/24/outline";
 import { useDeleteFlow, ConfirmDelete } from "@/components/confirm-delete";
-
-type EntityType = "manufacturers" | "suppliers" | "vendors";
-
-const TABS: { key: EntityType; labelKey: string; icon: React.ElementType }[] = [
-  { key: "manufacturers", labelKey: "vendors.manufacturers", icon: BuildingOffice2Icon },
-  { key: "suppliers", labelKey: "vendors.suppliers", icon: TruckIcon },
-  { key: "vendors", labelKey: "vendors.vendors", icon: BuildingStorefrontIcon },
-];
+import {
+  type EntityType,
+  TABS,
+  VendorInlineForm,
+  VendorList,
+  VendorSearchBar,
+  VendorTabs,
+} from "./vendors-sections";
+import {
+  deleteVendorDraft,
+  fetchVendorsPageData,
+  filterVendors,
+  saveVendorDraft,
+  validateVendorDraft,
+} from "./vendors-page-utils";
 
 export default function VendorsPage() {
   const { realm, fmtDateTime, t } = useApp();
@@ -39,9 +38,7 @@ export default function VendorsPage() {
     loadingRef.current = true;
     setLoading(true);
     try {
-      const fetcher = tab === "manufacturers" ? api.getManufacturers : tab === "suppliers" ? api.getSuppliers : api.getVendors;
-      const data = await fetcher();
-      setAllItems(data);
+      setAllItems(await fetchVendorsPageData(tab));
     } catch {}
     setLoading(false);
     loadingRef.current = false;
@@ -52,8 +49,7 @@ export default function VendorsPage() {
 
     const loadInitial = async () => {
       try {
-        const fetcher = tab === "manufacturers" ? api.getManufacturers : tab === "suppliers" ? api.getSuppliers : api.getVendors;
-        const data = await fetcher();
+        const data = await fetchVendorsPageData(tab);
         if (!cancelled) {
           setAllItems(data);
           setLoading(false);
@@ -74,7 +70,7 @@ export default function VendorsPage() {
     }, [load]),
   });
   const items = useMemo(
-    () => (search ? allItems.filter((d) => d.name.toLowerCase().includes(search.toLowerCase())) : allItems),
+    () => filterVendors(allItems, search),
     [allItems, search],
   );
 
@@ -82,41 +78,14 @@ export default function VendorsPage() {
 
   const save = async () => {
     if (!editItem?.name) return;
-    // Validate
-    if (editItem.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editItem.email)) {
-      setValidationError(t("vendors.invalidEmail"));
-      return;
-    }
-    if (editItem.website && !/^https?:\/\/.+/.test(editItem.website)) {
-      setValidationError(t("vendors.invalidWebsite"));
-      return;
-    }
-    if (editItem.support_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editItem.support_email)) {
-      setValidationError(t("vendors.invalidSupportEmail"));
-      return;
-    }
-    if (editItem.support_url && !/^https?:\/\/.+/.test(editItem.support_url)) {
-      setValidationError(t("vendors.invalidSupportUrl"));
+    const error = validateVendorDraft(editItem, t);
+    if (error) {
+      setValidationError(error);
       return;
     }
     setValidationError(null);
     try {
-      const endpoint = `/${realm}/${tab}`;
-      if (isNew) {
-        await fetch(`${api.baseURL}/api${endpoint}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(editItem),
-        });
-      } else if (editItem.id) {
-        await fetch(`${api.baseURL}/api${endpoint}/${editItem.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(editItem),
-        });
-      }
+      await saveVendorDraft({ realm, tab, draft: editItem, isNew });
       setEditItem(null);
       load();
     } catch {}
@@ -124,50 +93,63 @@ export default function VendorsPage() {
 
   const remove = (id: number) => {
     const item = allItems.find((i) => i.id === id);
-    deleteFlow.requestDelete(id, item?.name || `#${id}`, tab);
+    deleteFlow.requestDelete(id, item?.name || `#${id}`, tab === "sales-platforms" ? "sales_platform" : tab.slice(0, -1));
   };
 
   const currentTab = TABS.find((t) => t.key === tab)!;
+  const tabLabel = t(currentTab.labelKey);
 
   return (
-    <div className="w-full max-w-3xl space-y-6">
-      <h1 className="text-2xl font-bold">{t("vendors.title")}</h1>
+    <div className="space-y-6">
+      <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:border-b sm:border-gray-200 sm:text-left lg:mb-8 dark:border-white/10">
+        <div className="space-y-1 py-3">
+          <nav className="text-sm font-medium dark:text-gray-100">
+            <ol className="flex items-center justify-center sm:justify-start">
+              <li>
+                <Link href="/dashboard" className="text-blue-600 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300">
+                  {t("nav.dashboard")}
+                </Link>
+              </li>
+              <li className="flex items-center px-1 opacity-25">
+                <ChevronRightIcon className="inline-block h-5 w-5" />
+              </li>
+              <li className="text-gray-500 dark:text-gray-400">{realm === "archive" ? t("realm.archive") : t("realm.collection")}</li>
+              <li className="flex items-center px-1 opacity-25">
+                <ChevronRightIcon className="inline-block h-5 w-5" />
+              </li>
+              <li className="text-gray-900 dark:text-white">{t("vendors.title")}</li>
+            </ol>
+          </nav>
+          <h2 className="text-2xl font-bold">{t("vendors.title")}</h2>
+        </div>
+      </div>
 
       {/* Tabs */}
-      <div className="flex gap-2">
-        {TABS.map(({ key, labelKey, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => { setTab(key); setSearch(""); }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition ${
-              tab === key
-                ? "bg-blue-500 text-white"
-                : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-            }`}
-          >
-            <Icon className="h-4 w-4" /> {t(labelKey)}
-          </button>
-        ))}
-      </div>
+      <VendorTabs tab={tab} onSelect={(nextTab) => { setTab(nextTab); setSearch(""); }} t={t} />
 
-      {/* Search + New */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t("common.search")}
-            className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      <VendorSearchBar search={search} onSearchChange={setSearch} onCreate={() => { setEditItem({ name: "" }); setIsNew(true); }} t={t} />
+
+      {editItem && isNew ? (
+        <div className="overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-900/5 dark:bg-gray-800/50 dark:outline-white/10">
+          <div className="border-b border-gray-200 px-4 py-4 sm:px-6 dark:border-white/10">
+            <h3 className="font-semibold text-gray-900 dark:text-white">{t("common.new")} {tabLabel}</h3>
+          </div>
+          <div className="px-4 py-4 sm:px-6">
+            <VendorInlineForm
+              editItem={editItem}
+              setEditItem={setEditItem}
+              isNew={isNew}
+              tab={tab}
+              currentTabIcon={currentTab.icon}
+              validationError={validationError}
+              setValidationError={setValidationError}
+              save={save}
+              onCancel={() => { setEditItem(null); setValidationError(null); }}
+              t={t}
+            />
+          </div>
         </div>
-        <button
-          onClick={() => { setEditItem({ name: "" }); setIsNew(true); }}
-          className="flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-2 text-sm font-medium text-white hover:bg-blue-600 transition"
-        >
-          <PlusIcon className="h-4 w-4" /> {t("common.new")}
-        </button>
-      </div>
+      ) : null}
 
       {/* List */}
       {loading ? (
@@ -177,189 +159,39 @@ export default function VendorsPage() {
       ) : items.length === 0 ? (
         <p className="text-center text-gray-500 py-10">{t("vendors.none")}</p>
       ) : (
-        <div className="space-y-2">
-          {items.map((item) => (
-            <div key={item.id} className="flex items-center gap-4 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden hover:bg-gray-50 dark:hover:bg-gray-800/50">
-              {item.logo ? (
-                <img src={item.logo} alt="" className="h-9 w-9 rounded-lg object-cover border border-gray-200 dark:border-gray-700" />
-              ) : (
-                <div className="h-9 w-9 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                  <currentTab.icon className="h-5 w-5 text-gray-400" />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{item.name}</p>
-                <div className="flex gap-3 text-xs text-gray-400">
-                  {item.website && (() => { const href = item.website!.startsWith("http") ? item.website! : `https://${item.website!}`; return isSafeUrl(href) ? <a href={href} target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 transition">{item.website!.replace(/^https?:\/\//, "")}</a> : <span>{item.website!.replace(/^https?:\/\//, "")}</span>; })()}
-                  {item.email && <a href={`mailto:${item.email}`} className="hover:text-blue-500 transition">{item.email}</a>}
-                  {item.phone && <a href={`tel:${item.phone}`} className="hover:text-blue-500 transition">{item.phone}</a>}
-                  {item.contact_person && <span>{item.contact_person}</span>}
-                </div>
-                {item.created_at && (
-                  <p className="text-[11px] text-gray-400">
-                    {t("common.created")}: {fmtDateTime(item.created_at)}
-                    {item.updated_at && item.updated_at !== item.created_at && (
-                      <> · {t("common.updated")}: {fmtDateTime(item.updated_at)}</>
-                    )}
-                  </p>
-                )}
-              </div>
-              <div className="flex gap-1 shrink-0">
-                <button onClick={() => { setEditItem({ ...item }); setIsNew(false); }} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
-                  <PencilIcon className="h-4 w-4 text-gray-400" />
-                </button>
-                <button onClick={() => remove(item.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded">
-                  <TrashIcon className="h-4 w-4 text-red-400" />
-                </button>
-              </div>
+        <VendorList
+          items={items}
+          currentTabIcon={currentTab.icon}
+          fmtDateTime={fmtDateTime}
+          onEdit={(item) => {
+            if (editItem?.id === item.id && !isNew) {
+              setEditItem(null);
+              setValidationError(null);
+              return;
+            }
+            setEditItem({ ...item });
+            setIsNew(false);
+            setValidationError(null);
+          }}
+          onDelete={remove}
+          renderEditor={(item) => editItem?.id === item.id && !isNew ? (
+            <div className="border-t border-gray-100 px-4 py-4 sm:px-6 dark:border-white/10">
+              <VendorInlineForm
+                editItem={editItem}
+                setEditItem={setEditItem}
+                isNew={isNew}
+                tab={tab}
+                currentTabIcon={currentTab.icon}
+                validationError={validationError}
+                setValidationError={setValidationError}
+                save={save}
+                onCancel={() => { setEditItem(null); setValidationError(null); }}
+                t={t}
+              />
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* Edit/Create Modal */}
-      {editItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-xl bg-white dark:bg-gray-800 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">{isNew ? t("common.new") : t("common.edit")}</h2>
-              <button onClick={() => setEditItem(null)}><XMarkIcon className="h-5 w-5 text-gray-400" /></button>
-            </div>
-
-            {/* Logo */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">{t("vendors.logo")}</label>
-              <div className="flex items-center gap-3">
-                {editItem.logo ? (
-                  <img src={editItem.logo} alt="" className="h-16 w-16 rounded-lg object-cover border border-gray-200 dark:border-gray-700" />
-                ) : (
-                  <div className="h-16 w-16 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center border border-gray-200 dark:border-gray-700">
-                    <currentTab.icon className="h-7 w-7 text-gray-300" />
-                  </div>
-                )}
-                <div className="flex flex-col gap-1">
-                  <label className="cursor-pointer rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        if (file.size > 500 * 1024) { alert("Logo zu groß (max 500 KB)"); return; }
-                        // Resize to max 256px and convert to base64
-                        const dataUrl = await new Promise<string>((resolve) => {
-                          const reader = new FileReader();
-                          reader.onload = () => resolve(reader.result as string);
-                          reader.readAsDataURL(file);
-                        });
-                        const resized = await new Promise<string>((resolve) => {
-                          const img = new Image();
-                          img.onload = () => {
-                            const max = 256;
-                            const ratio = Math.min(max / img.width, max / img.height, 1);
-                            const canvas = document.createElement("canvas");
-                            canvas.width = img.width * ratio;
-                            canvas.height = img.height * ratio;
-                            canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-                            resolve(canvas.toDataURL("image/png", 0.9));
-                          };
-                          img.src = dataUrl;
-                        });
-                        setEditItem({ ...editItem, logo: resized });
-                        e.target.value = "";
-                      }}
-                    />
-                    {t("vendors.selectLogo")}
-                  </label>
-                  {editItem.logo && (
-                    <button
-                      type="button"
-                      onClick={() => setEditItem({ ...editItem, logo: null as unknown as string })}
-                      className="text-xs text-blue-500 hover:text-blue-600"
-                    >
-                      {t("common.remove")}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <VendorField label={`${t("vendors.name")} *`} value={editItem.name || ""} onChange={(v) => setEditItem({ ...editItem, name: v })} />
-            <VendorField label={t("vendors.website")} value={editItem.website || ""} onChange={(v) => setEditItem({ ...editItem, website: v || undefined })} placeholder="https://..." type="url" />
-
-            <div className="grid grid-cols-2 gap-4">
-              <VendorField label={t("vendors.email")} value={editItem.email || ""} onChange={(v) => setEditItem({ ...editItem, email: v || undefined })} type="email" />
-              <VendorField label={t("vendors.phone")} value={editItem.phone || ""} onChange={(v) => setEditItem({ ...editItem, phone: v || undefined })} type="tel" />
-            </div>
-
-            {(tab === "suppliers" || tab === "vendors") && (
-              <VendorField label={t("vendors.contactPerson")} value={editItem.contact_person || ""} onChange={(v) => setEditItem({ ...editItem, contact_person: v || undefined })} />
-            )}
-
-            {tab === "suppliers" && (
-              <VendorField label={t("vendors.accountManager")} value={editItem.account_manager || ""} onChange={(v) => setEditItem({ ...editItem, account_manager: v || undefined })} />
-            )}
-            {tab === "vendors" && (
-              <VendorField label={t("vendors.customerNumber")} value={editItem.customer_number || ""} onChange={(v) => setEditItem({ ...editItem, customer_number: v || undefined })} />
-            )}
-
-            {/* Address — separated UI fields, stored as dict */}
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-gray-500">{t("vendors.address")}</label>
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  value={editItem.address?.street || ""}
-                  onChange={(e) => setEditItem({ ...editItem, address: { ...(editItem.address || {}), street: e.target.value } })}
-                  placeholder={t("vendors.street")}
-                  className="col-span-2 h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  value={editItem.address?.house_number || ""}
-                  onChange={(e) => setEditItem({ ...editItem, address: { ...(editItem.address || {}), house_number: e.target.value } })}
-                  placeholder={t("vendors.houseNo")}
-                  className="h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  value={editItem.address?.zip || ""}
-                  onChange={(e) => setEditItem({ ...editItem, address: { ...(editItem.address || {}), zip: e.target.value } })}
-                  placeholder={t("vendors.zip")}
-                  className="h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  value={editItem.address?.city || ""}
-                  onChange={(e) => setEditItem({ ...editItem, address: { ...(editItem.address || {}), city: e.target.value } })}
-                  placeholder={t("vendors.city")}
-                  className="col-span-2 h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Support fields — only for manufacturers */}
-            {tab === "manufacturers" && (
-              <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-3">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase">{t("vendors.support")}</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <VendorField label={t("vendors.supportEmail")} value={editItem.support_email || ""} onChange={(v) => setEditItem({ ...editItem, support_email: v || undefined })} />
-                  <VendorField label={t("vendors.supportPhone")} value={editItem.support_phone || ""} onChange={(v) => setEditItem({ ...editItem, support_phone: v || undefined })} />
-                </div>
-                <VendorField label={t("vendors.supportUrl")} value={editItem.support_url || ""} onChange={(v) => setEditItem({ ...editItem, support_url: v || undefined })} placeholder="https://..." />
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2">
-              {validationError && <p className="text-xs text-red-500 flex-1">{validationError}</p>}
-              <button onClick={() => { setEditItem(null); setValidationError(null); }} className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
-                {t("common.cancel")}
-              </button>
-              <button onClick={save} className="px-4 py-2 text-sm rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600">
-                {t("common.save")}
-              </button>
-            </div>
-          </div>
-        </div>
+          ) : null}
+          t={t}
+        />
       )}
 
       {/* Confirm Delete */}
@@ -369,10 +201,7 @@ export default function VendorsPage() {
           t={t}
           onConfirm={async () => {
             try {
-              await fetch(`${api.baseURL}/api/${realm}/${tab}/${deleteFlow.confirm!.id}`, {
-                method: "DELETE",
-                credentials: "include",
-              });
+              await deleteVendorDraft(realm, tab, deleteFlow.confirm!.id);
               load();
             } catch {}
             deleteFlow.cancelConfirm();
@@ -380,21 +209,6 @@ export default function VendorsPage() {
           onCancel={() => deleteFlow.cancelConfirm()}
         />
       )}
-    </div>
-  );
-}
-
-function VendorField({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
-  return (
-    <div>
-      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
     </div>
   );
 }

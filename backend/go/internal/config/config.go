@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -30,9 +31,11 @@ type Config struct {
 
 	AppleBundleID string // Required for aud validation on Apple Sign-In tokens
 
-	CORSOrigins []string
+	CORSOrigins    []string
+	TrustedProxies []string
 
 	UploadDir     string
+	LogDir        string
 	MaxUploadSize int64
 
 	PrinterHost string
@@ -52,12 +55,123 @@ type Config struct {
 	Port int
 }
 
+const DefaultPort = 17117
+
 var C Config
-var defaultAppVersion = "1.0"
+var defaultAppVersion = "1.2"
 var defaultAppBuild = "dev"
+var cliConfigPath string
+
+const sqlitePrefix = "sqlite+aiosqlite:///"
+
+var managedConfigEnvKeys = []string{
+	"APP_NAME",
+	"APP_VERSION",
+	"APP_DOMAIN",
+	"DEBUG",
+	"DEBUG_HTTP",
+	"DATABASE_URL",
+	"JWT_SECRET",
+	"JWT_ALGORITHM",
+	"JWT_EXPIRY_DAYS",
+	"CORS_ORIGINS",
+	"TRUSTED_PROXIES",
+	"UPLOAD_DIR",
+	"LOG_DIR",
+	"MAX_UPLOAD_SIZE",
+	"PRINTER_HOST",
+	"PRINTER_PORT",
+	"SMTP_HOST",
+	"SMTP_PORT",
+	"SMTP_USER",
+	"SMTP_PASSWORD",
+	"SMTP_FROM_EMAIL",
+	"SMTP_FROM_NAME",
+	"SMTP_USE_TLS",
+	"MAGIC_LINK_EXPIRY_MINUTES",
+	"MAGIC_LINK_BASE_URL",
+	"HOST",
+	"PORT",
+	"ITEMPLUS_SETUP_REQUIRED",
+}
+
+func SetConfigPath(path string) {
+	cliConfigPath = trimSpace(path)
+}
+
+func configBaseDir() string {
+	if trimSpace(C.EnvPath) != "" {
+		return filepath.Dir(C.EnvPath)
+	}
+	return executableDir()
+}
+
+func SetUploadDir(path string) error {
+	path = trimSpace(path)
+	if path == "" {
+		return nil
+	}
+	C.UploadDir = resolveAbsolutePath(path, configBaseDir())
+	_ = os.MkdirAll(C.UploadDir, 0755)
+	return nil
+}
+
+func SetDatabaseURL(rawURL string) error {
+	rawURL = trimSpace(rawURL)
+	if rawURL == "" {
+		return nil
+	}
+	C.DatabaseURL = ResolvedDatabaseURL(rawURL)
+	return nil
+}
+
+func ResolvedDatabaseURL(rawURL string) string {
+	rawURL = trimSpace(rawURL)
+	if rawURL == "" {
+		return C.DatabaseURL
+	}
+	return normalizeDatabaseURL(rawURL, configBaseDir())
+}
+
+func SetLogDir(path string) error {
+	path = trimSpace(path)
+	if path == "" {
+		return nil
+	}
+	C.LogDir = resolveAbsolutePath(path, configBaseDir())
+	_ = os.MkdirAll(C.LogDir, 0755)
+	return nil
+}
+
+func RequestCameThroughTrustedProxy(remoteAddr string) bool {
+	if len(C.TrustedProxies) == 0 {
+		return false
+	}
+	host := trimSpace(remoteAddr)
+	if h, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		host = h
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, candidate := range C.TrustedProxies {
+		candidate = trimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if ip2 := net.ParseIP(candidate); ip2 != nil && ip.Equal(ip2) {
+			return true
+		}
+		if _, cidr, err := net.ParseCIDR(candidate); err == nil && cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
 
 func Load() {
-	envBaseDir := loadEnv()
+	envPath, envBaseDir := loadEnv()
 	dataDir := defaultDataDir(envBaseDir)
 	versionDisplay := sharedVersionDisplay(envBaseDir)
 
@@ -65,11 +179,11 @@ func Load() {
 		AppName:       envStr("APP_NAME", "item+"),
 		AppVersion:    envStr("APP_VERSION", versionDisplay),
 		AppDomain:     envStr("APP_DOMAIN", ""),
-		EnvPath:       filepath.Join(envBaseDir, ".env"),
+		EnvPath:       envPath,
 		DataDir:       dataDir,
 		Debug:         envBool("DEBUG"),
 		DebugHTTP:     envBool("DEBUG_HTTP"),
-		SetupRequired: strings.TrimSpace(os.Getenv("ITEMPLUS_SETUP_REQUIRED")) != "",
+		SetupRequired: envStr("ITEMPLUS_SETUP_REQUIRED", "") != "",
 
 		DatabaseURL: normalizeDatabaseURL(envStr("DATABASE_URL", "sqlite+aiosqlite:///"+filepath.Join(dataDir, "itemplus.db")), envBaseDir),
 
@@ -77,11 +191,13 @@ func Load() {
 		JWTAlgorithm:  envStr("JWT_ALGORITHM", "HS256"),
 		JWTExpiryDays: envInt("JWT_EXPIRY_DAYS", 30),
 
-		AppleBundleID: envStr("APPLE_BUNDLE_ID", ""),
+		AppleBundleID: "de.devicenull.itemplus",
 
-		CORSOrigins: envList("CORS_ORIGINS", []string{"*"}),
+		CORSOrigins:    envList("CORS_ORIGINS", []string{"*"}),
+		TrustedProxies: envList("TRUSTED_PROXIES", nil),
 
 		UploadDir:     resolveAbsolutePath(envStr("UPLOAD_DIR", filepath.Join(dataDir, "uploads")), envBaseDir),
+		LogDir:        resolveAbsolutePath(envStr("LOG_DIR", filepath.Join(dataDir, "..", "logs")), envBaseDir),
 		MaxUploadSize: envInt64("MAX_UPLOAD_SIZE", 200*1024*1024), // 200 MB default
 
 		PrinterHost: envStr("PRINTER_HOST", ""),
@@ -98,7 +214,7 @@ func Load() {
 		MagicLinkBaseURL:       envStr("MAGIC_LINK_BASE_URL", ""),
 
 		Host: envStr("HOST", "0.0.0.0"),
-		Port: envInt("PORT", 8000),
+		Port: envInt("PORT", DefaultPort),
 	}
 
 	// Derive defaults from APP_DOMAIN (strip protocol if provided)
@@ -122,30 +238,29 @@ func Load() {
 		}
 	}
 
-	if C.MagicLinkBaseURL == "" {
+	if C.MagicLinkBaseURL == "" && !C.SetupRequired && C.SMTPHost != "" && C.SMTPFromEmail != "" {
 		log.Println("Warning: MAGIC_LINK_BASE_URL not set and no APP_DOMAIN configured")
 	}
 
-	if !filepath.IsAbs(C.UploadDir) {
-		log.Fatal("UPLOAD_DIR must be an absolute path outside the application directory")
-	}
-
 	if C.JWTSecret == "" {
-		C.JWTSecret = getOrCreateSecret(filepath.Join(dataDir, ".jwt_secret"))
+		C.JWTSecret = ensureJWTSecretInConfig(C.EnvPath)
 	}
 
 	ensureRuntimePaths()
 }
 
-func loadEnv() string {
+func loadEnv() (string, string) {
 	execDir := executableDir()
 	cwd, _ := os.Getwd()
 
+	// Reload managed flags from the config file instead of keeping stale process
+	// environment values across setup completion or self-restarts.
+	_ = os.Unsetenv("ITEMPLUS_SETUP_REQUIRED")
+
 	candidates := []string{
-		filepath.Join(cwd, "data", ".env"),
-		filepath.Join(cwd, ".env"),
-		filepath.Join(execDir, "data", ".env"),
-		filepath.Join(execDir, ".env"),
+		cliConfigPath,
+		filepath.Join(cwd, "itemplus.conf"),
+		filepath.Join(execDir, "itemplus.conf"),
 	}
 
 	for _, candidate := range candidates {
@@ -153,25 +268,35 @@ func loadEnv() string {
 			continue
 		}
 		if _, err := os.Stat(candidate); err == nil {
+			clearManagedConfigEnv()
 			_ = godotenv.Load(candidate)
-			return filepath.Dir(candidate)
+			return candidate, filepath.Dir(candidate)
 		}
 	}
 
-	dataDir := defaultDataDir(execDir)
-	envPath := filepath.Join(dataDir, ".env")
-	templatePath := findDefaultEnvTemplate(execDir, cwd)
+	envPath := cliConfigPath
+	if envPath == "" {
+		envPath = filepath.Join(execDir, "itemplus.conf")
+	}
+	templatePath := findDefaultConfigTemplate(execDir, cwd)
 
 	if err := ensureEnvFileFromTemplate(envPath, templatePath); err != nil {
 		log.Fatalf("Failed to create %s: %v", envPath, err)
 	}
 
+	clearManagedConfigEnv()
 	_ = godotenv.Load(envPath)
-	return filepath.Dir(envPath)
+	return envPath, filepath.Dir(envPath)
 }
 
-func findDefaultEnvTemplate(execDir, cwd string) string {
-	for _, candidate := range sharedConfigCandidates("config", "default.env", cwd, execDir) {
+func clearManagedConfigEnv() {
+	for _, key := range managedConfigEnvKeys {
+		_ = os.Unsetenv(key)
+	}
+}
+
+func findDefaultConfigTemplate(execDir, cwd string) string {
+	for _, candidate := range sharedConfigCandidates("config", "itemplus.conf", cwd, execDir) {
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
@@ -192,10 +317,10 @@ func ensureEnvFileFromTemplate(envPath, templatePath string) error {
 		}
 	}
 	if len(data) == 0 {
-		if strings.TrimSpace(embeddedDefaultEnv) == "" {
+		if strings.TrimSpace(embeddedDefaultConfig) == "" {
 			return os.ErrNotExist
 		}
-		data = []byte(embeddedDefaultEnv)
+		data = []byte(embeddedDefaultConfig)
 	}
 	if err := os.MkdirAll(filepath.Dir(envPath), 0755); err != nil {
 		return err
@@ -204,7 +329,6 @@ func ensureEnvFileFromTemplate(envPath, templatePath string) error {
 		return err
 	}
 	log.Printf("Created %s from the shared default configuration", envPath)
-	log.Printf("Using the default configuration for now. Edit %s if you want to change domain, SMTP, printer, or storage settings.", envPath)
 	return nil
 }
 
@@ -215,13 +339,24 @@ func envStr(key, fallback string) string {
 	return fallback
 }
 
+func trimSpace(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func envStrTrimmed(key, fallback string) string {
+	if v := trimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}
+
 func envBool(key string) bool {
-	v := strings.ToLower(os.Getenv(key))
+	v := strings.ToLower(envStrTrimmed(key, ""))
 	return v == "true" || v == "1"
 }
 
 func envInt(key string, fallback int) int {
-	if v := os.Getenv(key); v != "" {
+	if v := envStrTrimmed(key, ""); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
 		}
@@ -230,7 +365,7 @@ func envInt(key string, fallback int) int {
 }
 
 func envInt64(key string, fallback int64) int64 {
-	if v := os.Getenv(key); v != "" {
+	if v := envStrTrimmed(key, ""); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return n
 		}
@@ -239,7 +374,7 @@ func envInt64(key string, fallback int64) int64 {
 }
 
 func envFloat(key string, fallback float64) float64 {
-	if v := os.Getenv(key); v != "" {
+	if v := envStrTrimmed(key, ""); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			return f
 		}
@@ -248,14 +383,14 @@ func envFloat(key string, fallback float64) float64 {
 }
 
 func envList(key string, fallback []string) []string {
-	v := os.Getenv(key)
+	v := envStrTrimmed(key, "")
 	if v == "" {
 		return fallback
 	}
 	v = strings.Trim(v, "[]")
 	var items []string
 	for _, s := range strings.Split(v, ",") {
-		s = strings.Trim(strings.TrimSpace(s), `"'`)
+		s = strings.Trim(trimSpace(s), `"'`)
 		if s != "" {
 			items = append(items, s)
 		}
@@ -266,15 +401,74 @@ func envList(key string, fallback []string) []string {
 func getOrCreateSecret(path string) string {
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
 	if data, err := os.ReadFile(path); err == nil {
-		return strings.TrimSpace(string(data))
+		return trimSpace(string(data))
 	}
+	secret := generateSecret()
+	_ = os.WriteFile(path, []byte(secret), 0600)
+	return secret
+}
+
+func generateSecret() string {
 	b := make([]byte, 48)
 	if _, err := rand.Read(b); err != nil {
 		log.Fatal("Failed to generate JWT secret")
 	}
-	secret := base64.URLEncoding.EncodeToString(b)
-	_ = os.WriteFile(path, []byte(secret), 0600)
+	return base64.URLEncoding.EncodeToString(b)
+}
+
+func ensureJWTSecretInConfig(configPath string) string {
+	secret := generateSecret()
+	if err := persistJWTSecret(configPath, secret); err != nil {
+		log.Printf("Warning: failed to persist JWT_SECRET into %s: %v", configPath, err)
+	}
 	return secret
+}
+
+func persistJWTSecret(configPath, secret string) error {
+	return persistConfigValue(configPath, "JWT_SECRET", secret)
+}
+
+func persistConfigValue(configPath, key, value string) error {
+	if trimSpace(configPath) == "" || trimSpace(key) == "" || trimSpace(value) == "" {
+		return nil
+	}
+	info, statErr := os.Stat(configPath)
+	if statErr != nil {
+		return statErr
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	updated := false
+	for i, line := range lines {
+		trimmed := trimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		existingKey, existingValue, ok := strings.Cut(trimmed, "=")
+		if ok && trimSpace(existingKey) == key {
+			if trimSpace(existingValue) != "" {
+				return nil
+			}
+			lines[i] = key + "=" + value
+			updated = true
+			break
+		}
+	}
+
+	var content string
+	if updated {
+		content = strings.Join(lines, "\n")
+	} else {
+		content = strings.TrimRight(string(data), "\n")
+		if content != "" {
+			content += "\n"
+		}
+		content += key + "=" + value + "\n"
+	}
+	return os.WriteFile(configPath, []byte(content), info.Mode().Perm())
 }
 
 func executableDir() string {
@@ -286,7 +480,7 @@ func executableDir() string {
 }
 
 func defaultDataDir(baseDir string) string {
-	if v := strings.TrimSpace(os.Getenv("ITEMPLUS_DATA_DIR")); v != "" {
+	if v := envStrTrimmed("ITEMPLUS_DATA_DIR", ""); v != "" {
 		if filepath.IsAbs(v) {
 			return filepath.Clean(v)
 		}
@@ -309,7 +503,6 @@ func resolveAbsolutePath(pathValue, baseDir string) string {
 }
 
 func normalizeDatabaseURL(rawURL, baseDir string) string {
-	const sqlitePrefix = "sqlite+aiosqlite:///"
 	if !strings.HasPrefix(rawURL, sqlitePrefix) {
 		return rawURL
 	}
@@ -325,7 +518,7 @@ func normalizeDatabaseURL(rawURL, baseDir string) string {
 
 func ensureRuntimePaths() {
 	_ = os.MkdirAll(C.UploadDir, 0755)
-	const sqlitePrefix = "sqlite+aiosqlite:///"
+	_ = os.MkdirAll(C.LogDir, 0755)
 	if strings.HasPrefix(C.DatabaseURL, sqlitePrefix) {
 		dbPath := strings.TrimPrefix(C.DatabaseURL, sqlitePrefix)
 		if dbPath != "" {
@@ -344,7 +537,7 @@ func sharedVersionDisplay(baseDir string) string {
 			continue
 		}
 		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
+			line = trimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
 			}
@@ -352,8 +545,8 @@ func sharedVersionDisplay(baseDir string) string {
 			if !ok {
 				continue
 			}
-			key = strings.TrimSpace(key)
-			value = strings.TrimSpace(value)
+			key = trimSpace(key)
+			value = trimSpace(value)
 			switch key {
 			case "APP_VERSION":
 				if value != "" {
@@ -428,14 +621,14 @@ func gitShortCommit(baseDir string) string {
 		if err != nil {
 			continue
 		}
-		ref := strings.TrimSpace(string(head))
+		ref := trimSpace(string(head))
 		if strings.HasPrefix(ref, "ref: ") {
 			refPath := filepath.Join(repoRoot, ".git", strings.TrimPrefix(ref, "ref: "))
 			refData, err := os.ReadFile(refPath)
 			if err != nil {
 				continue
 			}
-			hash := strings.TrimSpace(string(refData))
+			hash := trimSpace(string(refData))
 			if len(hash) >= 7 {
 				return hash[:7]
 			}

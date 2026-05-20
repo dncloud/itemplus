@@ -44,6 +44,17 @@ export default function AuthPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, qrToken]);
 
+  const waitForBrowserSession = async () => {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        const res = await fetch("/api/user", { credentials: "include", cache: "no-store" });
+        if (res.ok) return true;
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return false;
+  };
+
   const requestQR = async () => {
     try {
       const res = await fetch("/api/login/qr", {
@@ -67,7 +78,13 @@ export default function AuthPage() {
             if (pollRef.current) clearInterval(pollRef.current);
             if (countdownRef.current) clearInterval(countdownRef.current);
             setQrStatus("confirmed");
-            setTimeout(() => { window.location.href = "/dashboard"; }, 800);
+            const sessionReady = await waitForBrowserSession();
+            if (sessionReady) {
+              window.location.href = "/dashboard";
+            } else {
+              setQrStatus("waiting");
+              setQrToken("");
+            }
           } else if (result.status === "expired") {
             if (pollRef.current) clearInterval(pollRef.current);
             if (countdownRef.current) clearInterval(countdownRef.current);
@@ -110,6 +127,9 @@ export default function AuthPage() {
     if (countdownRef.current) clearInterval(countdownRef.current);
   }, []);
 
+  const authInputClass = "block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 sm:text-sm/6 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500";
+  const authPrimaryButtonClass = "flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm/6 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:focus-visible:outline-indigo-500";
+
   return (
     <div className="flex min-h-full items-start justify-center px-4 pt-[15vh]">
       <div className="w-full max-w-sm space-y-8">
@@ -125,13 +145,15 @@ export default function AuthPage() {
 
         {/* Login Methods */}
         {connected && (
-          <div className="space-y-4">
+          <div className="space-y-4 pt-2">
             {/* Tabs */}
-            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1">
+            <div className="flex rounded-lg bg-white p-1 outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-white/5 dark:outline-white/10">
               <button
                 onClick={() => setAuthMode("qr")}
-                className={`flex-1 flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition ${
-                  authMode === "qr" ? "bg-white dark:bg-gray-700 shadow-sm" : "text-gray-500"
+                className={`flex-1 flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm/6 font-semibold transition ${
+                  authMode === "qr"
+                    ? "bg-gray-50 text-gray-900 shadow-xs dark:bg-white/10 dark:text-white dark:shadow-none"
+                    : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
                 }`}
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -141,8 +163,10 @@ export default function AuthPage() {
               </button>
               <button
                 onClick={() => setAuthMode("email")}
-                className={`flex-1 flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition ${
-                  authMode === "email" ? "bg-white dark:bg-gray-700 shadow-sm" : "text-gray-500"
+                className={`flex-1 flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm/6 font-semibold transition ${
+                  authMode === "email"
+                    ? "bg-gray-50 text-gray-900 shadow-xs dark:bg-white/10 dark:text-white dark:shadow-none"
+                    : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
                 }`}
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -166,7 +190,7 @@ export default function AuthPage() {
                   </div>
                 ) : qrToken ? (
                   <>
-                    <div className="bg-white p-4 rounded-xl inline-block shadow-sm">
+                    <div className="inline-block rounded-xl bg-white p-4 outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-white dark:outline-white/10">
                       <img
                         src={`/api/print/qr/generate.svg?data=${encodeURIComponent(qrValue)}`}
                         alt="QR Code"
@@ -174,20 +198,25 @@ export default function AuthPage() {
                       />
                     </div>
                     <p className="text-xs text-gray-500">{t("auth.scanQrHint")}</p>
-                    <div className="text-sm text-gray-400">
+                    <div className="text-sm/6 text-gray-400">
                       <span className={`font-mono ${qrExpiry < 30 ? "text-red-500" : ""}`}>
                         {Math.floor(qrExpiry / 60)}:{String(qrExpiry % 60).padStart(2, "0")}
                       </span>
                       {qrExpiry <= 0 && (
-                        <button onClick={requestQR} className="ml-2 text-blue-500 hover:text-blue-600 font-medium">
+                        <button onClick={requestQR} className="ml-2 font-semibold text-indigo-500 hover:text-indigo-400">
                           {t("auth.regenerateQr")}
                         </button>
                       )}
                     </div>
                   </>
                 ) : (
-                  <div className="py-8">
-                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent mx-auto" />
+                  <div className="space-y-3 py-2">
+                    <div className="mx-auto inline-flex rounded-xl bg-white p-4 outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-white dark:outline-white/10">
+                      <div className="flex h-48 w-48 items-center justify-center rounded-lg bg-gray-50 text-gray-400">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500">{t("auth.scanQrHint")}</p>
                   </div>
                 )}
               </div>
@@ -211,19 +240,24 @@ export default function AuthPage() {
                   </div>
                 ) : (
                   <>
+                    <div>
+                      <label className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("auth.emailPlaceholder")}</label>
+                      <div className="mt-2">
                     <input
                       type="email"
                       value={email}
                       onChange={(e) => { setEmail(e.target.value); setEmailStatus("idle"); }}
                       onKeyDown={(e) => e.key === "Enter" && sendMagicLink()}
                       placeholder={t("auth.emailPlaceholder")}
-                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className={authInputClass}
                       autoFocus
                     />
+                      </div>
+                    </div>
                     <button
                       onClick={sendMagicLink}
                       disabled={!email || emailStatus === "sending"}
-                      className="w-full rounded-lg bg-blue-500 px-4 py-3 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50 transition"
+                      className={authPrimaryButtonClass}
                     >
                       {emailStatus === "sending" ? t("auth.emailSending") : t("auth.sendMagicLink")}
                     </button>

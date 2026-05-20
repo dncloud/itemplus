@@ -1,13 +1,20 @@
 package handlers
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -20,13 +27,15 @@ import (
 	"github.com/itemplus/backend/internal/middleware"
 	"github.com/itemplus/backend/internal/storage"
 	"github.com/itemplus/backend/internal/ws"
+	"github.com/jmoiron/sqlx"
 )
 
 func RegisterItemRoutes(g *gin.RouterGroup, realm string) {
 	uploadRL := middleware.RateLimit(20, time.Minute)
-	searchRL := middleware.RateLimit(30, time.Minute)
+	listRL := middleware.RateLimit(120, time.Minute)
 
-	g.GET("", middleware.Auth(), middleware.RequirePermission("items.read"), searchRL, listItems(realm))
+	g.GET("", middleware.Auth(), middleware.RequirePermission("items.read"), listRL, listItems(realm))
+	g.GET("/lookup", middleware.Auth(), middleware.RequirePermission("items.read"), listItemLookup(realm))
 	g.GET("/:id", middleware.Auth(), middleware.RequirePermission("items.read"), getItem(realm))
 	g.POST("", middleware.Auth(), middleware.RequirePermission("items.write"), createItem(realm))
 	g.PUT("/:id", middleware.Auth(), middleware.RequirePermission("items.write"), updateItem(realm))
@@ -35,12 +44,16 @@ func RegisterItemRoutes(g *gin.RouterGroup, realm string) {
 	// Attachments
 	g.POST("/:id/attachments", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), uploadRL, uploadAttachment(realm))
 	g.POST("/:id/attachments/link", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), addLinkAttachment(realm))
+	g.POST("/:id/attachments/external-sftp", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), addExternalSFTPAttachment(realm))
 
 	// Property file upload
 	g.POST("/:id/properties/:propId/upload", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), uploadRL, uploadPropertyFile(realm))
 }
 
 func RegisterAttachmentRoutes(g *gin.RouterGroup, realm string) {
+	g.GET("/external-sources", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), listAttachmentExternalSources)
+	g.GET("/external-sources/:id/browse", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), browseAttachmentExternalSource)
+	g.GET("/:attId/content", middleware.Auth(), middleware.RequirePermission("items.read"), getAttachmentContent(realm))
 	g.PUT("/:attId", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), updateAttachment(realm))
 	g.DELETE("/:attId", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), deleteAttachment(realm))
 }
@@ -56,7 +69,8 @@ func listItems(realm string) gin.HandlerFunc {
 		search := c.Query("search")
 		categoryID := c.Query("category_id")
 		locationID := c.Query("location_id")
-		sortField := c.DefaultQuery("sort", "updated")
+		status := c.Query("status")
+		sortField := c.DefaultQuery("sort", "id")
 		sortOrder := c.DefaultQuery("order", "desc")
 		pageStr := c.DefaultQuery("page", "1")
 		perPageStr := c.DefaultQuery("per_page", "50")
@@ -72,15 +86,29 @@ func listItems(realm string) gin.HandlerFunc {
 		offset := (page - 1) * perPage
 
 		sortMap := map[string]string{
-			"name": "i.name", "price": "i.purchase_price", "quantity": "i.quantity",
+			"id": "i.id", "name": "i.name", "price": "i.purchase_price", "quantity": "i.quantity",
 			"created": "i.created_at", "updated": "i.updated_at",
 		}
-		sortCol := "i.updated_at"
+		sortCol := "i.id"
 		if col, ok := sortMap[sortField]; ok {
 			sortCol = col
 		}
 		if sortOrder != "asc" {
 			sortOrder = "desc"
+		}
+
+		orderClause := fmt.Sprintf("%s %s", sortCol, sortOrder)
+		switch sortField {
+		case "price", "quantity":
+			orderClause = fmt.Sprintf("%s %s, i.name ASC, i.id DESC", sortCol, sortOrder)
+		case "name":
+			orderClause = fmt.Sprintf("i.name %s, i.id DESC", sortOrder)
+		case "created", "updated":
+			orderClause = fmt.Sprintf("%s %s, i.id DESC", sortCol, sortOrder)
+		case "id":
+			orderClause = fmt.Sprintf("i.id %s", sortOrder)
+		default:
+			orderClause = fmt.Sprintf("i.id %s", sortOrder)
 		}
 
 		// Build query
@@ -89,13 +117,15 @@ func listItems(realm string) gin.HandlerFunc {
 			l.name AS location_name,
 			m.name AS manufacturer_name,
 			s.name AS supplier_name,
-			v.name AS vendor_name
+			v.name AS vendor_name,
+			sp.name AS sales_platform_name
 			FROM %s i
 			LEFT JOIN %s_categories c ON i.category_id = c.id
 			LEFT JOIN %s_locations l ON i.location_id = l.id
 			LEFT JOIN %s_manufacturers m ON i.manufacturer_id = m.id
 			LEFT JOIN %s_suppliers s ON i.supplier_id = s.id
-			LEFT JOIN %s_vendors v ON i.vendor_id = v.id`,
+			LEFT JOIN %s_vendors v ON i.vendor_id = v.id
+			LEFT JOIN generic_sales_platforms sp ON i.sales_platform_id = sp.id`,
 			itemsTable, realm, realm, realm, realm, realm)
 
 		var conditions []string
@@ -103,28 +133,14 @@ func listItems(realm string) gin.HandlerFunc {
 
 		if search != "" {
 			searchPattern := "%" + search + "%"
-			// Also search in property values
-			propSearchQuery := fmt.Sprintf(
-				`SELECT DISTINCT item_id FROM %s WHERE CAST(value AS TEXT) LIKE ?`,
-				propsTable)
-			propRows, err := database.DB.Queryx(propSearchQuery, searchPattern)
-			var propItemIDs []string
-			if err == nil {
-				defer propRows.Close()
-				for propRows.Next() {
-					var pid int
-					if propRows.Scan(&pid) == nil {
-						propItemIDs = append(propItemIDs, strconv.Itoa(pid))
-					}
-				}
-			}
-			if len(propItemIDs) > 0 {
-				conditions = append(conditions, fmt.Sprintf("(i.name LIKE ? OR i.description LIKE ? OR i.id IN (%s))", strings.Join(propItemIDs, ",")))
-				args = append(args, searchPattern, searchPattern)
-			} else {
-				conditions = append(conditions, "(i.name LIKE ? OR i.description LIKE ?)")
-				args = append(args, searchPattern, searchPattern)
-			}
+			conditions = append(conditions, fmt.Sprintf(
+				`(i.name LIKE ? OR i.description LIKE ? OR EXISTS (
+					SELECT 1 FROM %s ip
+					WHERE ip.item_id = i.id AND ip.value LIKE ?
+				))`,
+				propsTable,
+			))
+			args = append(args, searchPattern, searchPattern, searchPattern)
 		}
 		if categoryID != "" {
 			conditions = append(conditions, "i.category_id = ?")
@@ -144,11 +160,20 @@ func listItems(realm string) gin.HandlerFunc {
 				args = append(args, locationID)
 			}
 		}
+		if status != "" {
+			switch status {
+			case "active", "reserved", "for_sale", "sold":
+				conditions = append(conditions, "i.item_status = ?")
+				args = append(args, status)
+			case "checked_out":
+				conditions = append(conditions, fmt.Sprintf("EXISTS (SELECT 1 FROM %s co WHERE co.item_id = i.id AND co.status = 'active')", checkoutTable))
+			}
+		}
 
 		if len(conditions) > 0 {
 			query += " WHERE " + strings.Join(conditions, " AND ")
 		}
-		query += fmt.Sprintf(" ORDER BY %s %s LIMIT ? OFFSET ?", sortCol, sortOrder)
+		query += fmt.Sprintf(" ORDER BY %s LIMIT ? OFFSET ?", orderClause)
 		args = append(args, perPage, offset)
 
 		rows, err := database.DB.Queryx(query, args...)
@@ -183,124 +208,10 @@ func listItems(realm string) gin.HandlerFunc {
 			return
 		}
 
-		// Batch-load properties for all items
-		propsByItem := map[interface{}][]map[string]interface{}{}
-		if len(itemIDs) > 0 {
-			placeholders := strings.Repeat("?,", len(itemIDs))
-			placeholders = placeholders[:len(placeholders)-1]
-
-			propQuery := fmt.Sprintf(
-				`SELECT ip.item_id, ip.property_id, ip.value, pd.name AS property_name, pd.property_type, pd.display_width, pd.unit AS property_unit
-				FROM %s ip
-				JOIN %s pd ON ip.property_id = pd.id
-				WHERE ip.item_id IN (%s)`,
-				propsTable, propDefsTable, placeholders)
-
-			propRows, err := database.DB.Queryx(propQuery, itemIDs...)
-			if err == nil {
-				defer propRows.Close()
-				for propRows.Next() {
-					pr := map[string]interface{}{}
-					if propRows.MapScan(pr) == nil {
-						cleanRow(pr)
-						itemID := pr["item_id"]
-						propsByItem[itemID] = append(propsByItem[itemID], pr)
-					}
-				}
-			}
-		}
-
-		// Batch-load attachments
-		attachByItem := map[interface{}][]map[string]interface{}{}
-		if len(itemIDs) > 0 {
-			placeholders := strings.Repeat("?,", len(itemIDs))
-			placeholders = placeholders[:len(placeholders)-1]
-
-			attachQuery := fmt.Sprintf(
-				`SELECT * FROM %s WHERE item_id IN (%s) ORDER BY "order"`,
-				attachTable, placeholders)
-
-			attachRows, err := database.DB.Queryx(attachQuery, itemIDs...)
-			if err == nil {
-				defer attachRows.Close()
-				for attachRows.Next() {
-					ar := map[string]interface{}{}
-					if attachRows.MapScan(ar) == nil {
-						cleanRow(ar)
-						itemID := ar["item_id"]
-						attachByItem[itemID] = append(attachByItem[itemID], ar)
-					}
-				}
-			}
-		}
-
-		// Batch-load active checkouts
-		checkoutByItem := map[interface{}]map[string]interface{}{}
-		if len(itemIDs) > 0 {
-			placeholders := strings.Repeat("?,", len(itemIDs))
-			placeholders = placeholders[:len(placeholders)-1]
-
-			coQuery := fmt.Sprintf(
-				`SELECT co.id, co.item_id, co.user_id, COALESCE(u.display_name, u.email) AS user_name, co.due_date, co.created_at
-				FROM %s co
-				LEFT JOIN users u ON co.user_id = u.id
-				WHERE co.item_id IN (%s) AND co.status = 'active'`,
-				checkoutTable, placeholders)
-
-			coRows, err := database.DB.Queryx(coQuery, itemIDs...)
-			if err == nil {
-				defer coRows.Close()
-				for coRows.Next() {
-					cr := map[string]interface{}{}
-					if coRows.MapScan(cr) == nil {
-						cleanRow(cr)
-						itemID := cr["item_id"]
-						checkoutByItem[itemID] = map[string]interface{}{
-							"user_id":     cr["user_id"],
-							"user_name":   cr["user_name"],
-							"due_date":    cr["due_date"],
-							"checkout_id": cr["id"],
-							"since":       cr["created_at"],
-						}
-					}
-				}
-			}
-		}
-
-		// Enrich items
-		for _, item := range items {
-			id := item["id"]
-			if props, ok := propsByItem[id]; ok {
-				byID := map[string]interface{}{}
-				byName := map[string]interface{}{}
-				for _, p := range props {
-					propID := fmt.Sprintf("%v", p["property_id"])
-					propName, _ := p["property_name"].(string)
-					val := parseJSONValue(p["value"])
-					byID[propID] = val
-					if propName != "" {
-						byName[propName] = formatWithUnit(val, p["property_unit"])
-					}
-				}
-				item["properties"] = byID
-				item["properties_display"] = byName
-			} else {
-				item["properties"] = map[string]interface{}{}
-				item["properties_display"] = map[string]interface{}{}
-			}
-			if att, ok := attachByItem[id]; ok {
-				item["attachments"] = att
-			} else {
-				item["attachments"] = []interface{}{}
-			}
-			if co, ok := checkoutByItem[id]; ok {
-				item["checked_out_to"] = co
-			} else {
-				item["checked_out_to"] = nil
-			}
-			// Enrich vendor info
-			enrichVendorInfo(realm, item)
-		}
+		propsByItem := loadListItemProperties(propsTable, propDefsTable, itemIDs)
+		attachByItem := loadListItemAttachments(realm, attachTable, itemIDs)
+		checkoutByItem := loadListItemCheckouts(checkoutTable, itemIDs)
+		applyListItemEnrichment(realm, items, propsByItem, attachByItem, checkoutByItem)
 
 		// Total count
 		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s i", itemsTable)
@@ -344,6 +255,47 @@ func getItem(realm string) gin.HandlerFunc {
 	}
 }
 
+func listItemLookup(realm string) gin.HandlerFunc {
+	itemsTable := realm + "_items"
+	componentsTable := realm + "_item_components"
+
+	return func(c *gin.Context) {
+		excludeID := strings.TrimSpace(c.Query("exclude_id"))
+		query := fmt.Sprintf(`SELECT i.id, i.name, i.item_status, i.is_bundle,
+			pc.parent_item_id,
+			pi.name AS parent_item_name
+			FROM %s i
+			LEFT JOIN %s pc ON pc.child_item_id = i.id
+			LEFT JOIN %s pi ON pi.id = pc.parent_item_id`,
+			itemsTable, componentsTable, itemsTable,
+		)
+		args := []interface{}{}
+		if excludeID != "" {
+			query += " WHERE i.id <> ?"
+			args = append(args, excludeID)
+		}
+		query += " ORDER BY i.name ASC, i.id ASC"
+
+		rows, err := database.DB.Queryx(query, args...)
+		if err != nil {
+			log.Printf("DB query error in listItemLookup %s: %v", realm, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+		defer rows.Close()
+
+		items := make([]map[string]interface{}, 0)
+		for rows.Next() {
+			row := map[string]interface{}{}
+			if err := rows.MapScan(row); err == nil {
+				cleanRow(row)
+				items = append(items, row)
+			}
+		}
+		c.JSON(http.StatusOK, items)
+	}
+}
+
 func createItem(realm string) gin.HandlerFunc {
 	itemsTable := realm + "_items"
 
@@ -353,6 +305,8 @@ func createItem(realm string) gin.HandlerFunc {
 			Description      *string                `json:"description"`
 			CategoryID       *int                   `json:"category_id"`
 			LocationID       *int                   `json:"location_id"`
+			ItemStatus       *string                `json:"item_status"`
+			IsBundle         *bool                  `json:"is_bundle"`
 			Quantity         *int                   `json:"quantity"`
 			IsConsumable     *bool                  `json:"is_consumable"`
 			MinimumQuantity  *int                   `json:"minimum_quantity"`
@@ -362,6 +316,11 @@ func createItem(realm string) gin.HandlerFunc {
 			PurchaseDate     *string                `json:"purchase_date"`
 			PurchasePrice    *float64               `json:"purchase_price"`
 			PurchaseCurrency *string                `json:"purchase_currency"`
+			SalesPlatformID  *int                   `json:"sales_platform_id"`
+			AskingPrice      *float64               `json:"asking_price"`
+			SoldPrice        *float64               `json:"sold_price"`
+			SoldAt           *string                `json:"sold_at"`
+			ComponentItemIDs []int                  `json:"component_item_ids"`
 			Properties       map[string]interface{} `json:"properties"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
@@ -385,17 +344,31 @@ func createItem(realm string) gin.HandlerFunc {
 		if body.PurchaseCurrency != nil && *body.PurchaseCurrency != "" {
 			purchaseCurrency = *body.PurchaseCurrency
 		}
+		itemStatus := "active"
+		if body.ItemStatus != nil && *body.ItemStatus != "" {
+			itemStatus = *body.ItemStatus
+		}
+		isBundle := body.IsBundle != nil && *body.IsBundle
 
-		now := time.Now().UTC().Format(time.RFC3339)
-		result, err := database.DB.Exec(
-			fmt.Sprintf(`INSERT INTO %s (name, description, category_id, location_id, quantity, is_consumable,
+		now := database.TimestampNow()
+		tx, err := database.DB.Beginx()
+		if err != nil {
+			log.Printf("DB begin error in createItem %s: %v", realm, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+		defer tx.Rollback()
+
+		result, err := tx.Exec(
+			fmt.Sprintf(`INSERT INTO %s (name, description, category_id, location_id, item_status, is_bundle, quantity, is_consumable,
 				minimum_quantity, manufacturer_id, supplier_id, vendor_id, purchase_date, purchase_price,
-				purchase_currency, created_at, updated_at)
-				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, itemsTable),
+				purchase_currency, sales_platform_id, asking_price, sold_price, sold_at, created_at, updated_at)
+				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, itemsTable),
 			body.Name, body.Description, body.CategoryID, body.LocationID,
-			quantity, isConsumable, body.MinimumQuantity,
+			itemStatus, isBundle, quantity, isConsumable, body.MinimumQuantity,
 			body.ManufacturerID, body.SupplierID, body.VendorID,
 			body.PurchaseDate, body.PurchasePrice, purchaseCurrency,
+			body.SalesPlatformID, body.AskingPrice, body.SoldPrice, body.SoldAt,
 			now, now,
 		)
 		if err != nil {
@@ -404,11 +377,31 @@ func createItem(realm string) gin.HandlerFunc {
 			return
 		}
 
-		newID, _ := result.LastInsertId()
+		newID, err := result.LastInsertId()
+		if err != nil {
+			log.Printf("DB last insert id error in createItem %s: %v", realm, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
 
 		// Insert properties (dict format: {property_id_or_name: value})
 		if len(body.Properties) > 0 {
-			saveProperties(realm, int(newID), body.Properties)
+			savePropertiesTx(tx, realm, int(newID), body.Properties)
+		}
+		if err := syncItemComponentsTx(tx, realm, int(newID), isBundle, body.ComponentItemIDs); err != nil {
+			var validationErr bundleValidationError
+			if errors.As(err, &validationErr) {
+				c.JSON(http.StatusBadRequest, gin.H{"detail": validationErr.Error()})
+				return
+			}
+			log.Printf("DB component sync error in createItem %s: %v", realm, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			log.Printf("DB commit error in createItem %s: %v", realm, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
 		}
 
 		ws.M.Broadcast("stats."+realm+"_updated", nil)
@@ -437,37 +430,96 @@ func updateItem(realm string) gin.HandlerFunc {
 		// Only allow known item columns
 		allowed := map[string]bool{
 			"name": true, "description": true, "category_id": true, "location_id": true,
+			"item_status": true, "is_bundle": true,
 			"quantity": true, "is_consumable": true, "minimum_quantity": true,
 			"manufacturer_id": true, "supplier_id": true, "vendor_id": true,
 			"purchase_date": true, "purchase_price": true, "purchase_currency": true,
+			"sales_platform_id": true, "asking_price": true, "sold_price": true, "sold_at": true,
 		}
 
 		// Extract properties for separate handling
 		props, hasProps := body["properties"]
+		componentItemIDsValue, hasComponentItemIDs := body["component_item_ids"]
 		clean := map[string]interface{}{}
 		for k, v := range body {
 			if allowed[k] {
 				clean[k] = v
 			}
 		}
-		clean["updated_at"] = time.Now().UTC().Format(time.RFC3339)
+		clean["updated_at"] = database.TimestampNow()
+		delete(clean, "component_item_ids")
 
-		sets, vals := buildUpdate(clean)
-		vals = append(vals, id)
-		query := fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", itemsTable, sets)
-		_, err := database.DB.Exec(query, vals...)
+		tx, err := database.DB.Beginx()
 		if err != nil {
-			log.Printf("DB update error in updateItem %s: %v", realm, err)
+			log.Printf("DB begin error in updateItem %s: %v", realm, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 			return
+		}
+		defer tx.Rollback()
+
+		sets, vals, err := buildUpdate(clean)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid field name"})
+			return
+		}
+		if sets != "" {
+			vals = append(vals, id)
+			query := fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", itemsTable, sets)
+			if _, err := tx.Exec(query, vals...); err != nil {
+				log.Printf("DB update error in updateItem %s: %v", realm, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+				return
+			}
 		}
 
 		// Update properties if provided (dict format: {property_id_or_name: value})
 		if hasProps {
 			if propsMap, ok := props.(map[string]interface{}); ok {
 				itemIDInt, _ := strconv.Atoi(id)
-				saveProperties(realm, itemIDInt, propsMap)
+				savePropertiesTx(tx, realm, itemIDInt, propsMap)
 			}
+		}
+		itemIDInt, _ := strconv.Atoi(id)
+		if hasComponentItemIDs || body["is_bundle"] != nil {
+			componentItemIDs, err := parseComponentItemIDs(componentItemIDsValue)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+				return
+			}
+			nextIsBundle, err := resolveNextIsBundle(tx, itemsTable, itemIDInt, body["is_bundle"], hasComponentItemIDs, componentItemIDs)
+			if err != nil {
+				var validationErr bundleValidationError
+				if errors.As(err, &validationErr) {
+					c.JSON(http.StatusBadRequest, gin.H{"detail": validationErr.Error()})
+					return
+				}
+				log.Printf("DB resolve bundle state error in updateItem %s: %v", realm, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+				return
+			}
+			if !hasComponentItemIDs {
+				componentItemIDs, err = loadItemComponentIDsTx(tx, realm, itemIDInt)
+				if err != nil {
+					log.Printf("DB load components error in updateItem %s: %v", realm, err)
+					c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+					return
+				}
+			}
+			if err := syncItemComponentsTx(tx, realm, itemIDInt, nextIsBundle, componentItemIDs); err != nil {
+				var validationErr bundleValidationError
+				if errors.As(err, &validationErr) {
+					c.JSON(http.StatusBadRequest, gin.H{"detail": validationErr.Error()})
+					return
+				}
+				log.Printf("DB component sync error in updateItem %s: %v", realm, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+				return
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			log.Printf("DB commit error in updateItem %s: %v", realm, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
 		}
 
 		ws.M.Broadcast("stats."+realm+"_updated", nil)
@@ -484,10 +536,24 @@ func updateItem(realm string) gin.HandlerFunc {
 
 func deleteItem(realm string) gin.HandlerFunc {
 	itemsTable := realm + "_items"
+	componentsTable := realm + "_item_components"
 
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		result, err := database.DB.Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", itemsTable), id)
+		tx, err := database.DB.Beginx()
+		if err != nil {
+			log.Printf("DB begin error in deleteItem %s: %v", realm, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+		defer tx.Rollback()
+
+		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE parent_item_id = ?", componentsTable), id); err != nil {
+			log.Printf("DB release child items error in deleteItem %s: %v", realm, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+		result, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", itemsTable), id)
 		if err != nil {
 			log.Printf("DB delete error in deleteItem %s: %v", realm, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
@@ -496,6 +562,11 @@ func deleteItem(realm string) gin.HandlerFunc {
 		affected, _ := result.RowsAffected()
 		if affected == 0 {
 			c.JSON(http.StatusNotFound, gin.H{"detail": "Item not found"})
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			log.Printf("DB commit error in deleteItem %s: %v", realm, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 			return
 		}
 		ws.M.Broadcast("stats."+realm+"_updated", nil)
@@ -511,9 +582,7 @@ func uploadAttachment(realm string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		itemID := c.Param("id")
 
-		// Verify item exists
-		var exists int
-		if err := database.DB.Get(&exists, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE id = ?", itemsTable), itemID); err != nil || exists == 0 {
+		if !itemExists(itemsTable, itemID) {
 			c.JSON(http.StatusNotFound, gin.H{"detail": "Item not found"})
 			return
 		}
@@ -523,45 +592,16 @@ func uploadAttachment(realm string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "No file provided"})
 			return
 		}
-
-		// Enforce max file size
-		if file.Size > config.C.MaxUploadSize {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"detail": "File too large"})
-			return
-		}
-
-		// Allowlist check
-		if !isAllowedExtension(file.Filename) {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "File type not allowed"})
-			return
-		}
-
-		// Magic byte validation
-		ext := strings.ToLower(path.Ext(file.Filename))
-		src, err := file.Open()
+		upload, err := storeUploadedFile(c, file, filepath.Join(config.C.UploadDir, realm, itemID), path.Join(realm, itemID))
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Failed to read file"})
-			return
-		}
-		magicBuf := make([]byte, 512)
-		n, _ := io.ReadAtLeast(src, magicBuf, 1)
-		src.Close()
-		if n > 0 {
-			if err := validateMagicBytes(magicBuf[:n], ext); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"detail": "File content does not match its extension"})
-				return
+			switch err.Error() {
+			case "File too large":
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"detail": err.Error()})
+			case "No file provided", "File type not allowed", "File content does not match its extension":
+				c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+			default:
+				c.JSON(http.StatusInternalServerError, gin.H{"detail": err.Error()})
 			}
-		}
-
-		// Generate neutral storage name
-		originalName := safeFilename(file.Filename)
-		storageName := uuid.New().String() + ext
-		uploadDir := fmt.Sprintf("%s/%s/%s", config.C.UploadDir, realm, itemID)
-		os.MkdirAll(uploadDir, 0755)
-		dst := uploadDir + "/" + storageName
-
-		if err := c.SaveUploadedFile(file, dst); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Upload failed"})
 			return
 		}
 
@@ -569,26 +609,33 @@ func uploadAttachment(realm string) gin.HandlerFunc {
 		order := c.DefaultPostForm("order", "0")
 		description := c.PostForm("description")
 		gallery := c.DefaultPostForm("gallery", "false") == "true"
-		filePath := fmt.Sprintf("%s/%s/%s", realm, itemID, storageName)
-		now := time.Now().UTC().Format(time.RFC3339)
+		now := database.TimestampNow()
 
-		result, _ := database.DB.Exec(
-			fmt.Sprintf("INSERT INTO %s (item_id, filename, file_path, attachment_type, description, gallery, size, \"order\", created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", table),
-			itemID, originalName, filePath, attType, description, gallery, file.Size, order, now, now,
+		result, err := database.DB.Exec(
+			fmt.Sprintf("INSERT INTO %s (item_id, filename, file_path, storage_backend, attachment_type, description, gallery, size, `order`, created_at, updated_at) VALUES (?, ?, ?, 'local', ?, ?, ?, ?, ?, ?, ?)", table),
+			itemID, upload.OriginalName, upload.RelativePath, attType, description, gallery, upload.Size, order, now, now,
 		)
-		newID, _ := result.LastInsertId()
+		if err != nil {
+			log.Printf("DB insert error in uploadAttachment: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+		newID, err := result.LastInsertId()
+		if err != nil {
+			log.Printf("DB last insert id error in uploadAttachment: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
 
 		user := middleware.GetUser(c)
-		audit(user.ID, "attachment.upload", fmt.Sprintf("realm=%s item=%s file=%s", realm, itemID, originalName))
+		audit(user.ID, "attachment.upload", fmt.Sprintf("realm=%s item=%s file=%s", realm, itemID, upload.OriginalName))
 
-		row := map[string]interface{}{}
-		sqlRow := database.DB.QueryRowx(fmt.Sprintf("SELECT * FROM %s WHERE id = ?", table), newID)
-		if err := sqlRow.MapScan(row); err != nil {
+		row, err := loadAttachmentRow(realm, table, newID)
+		if err != nil {
 			log.Printf("DB read error in uploadAttachment: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 			return
 		}
-		cleanRow(row)
 		c.JSON(http.StatusCreated, row)
 	}
 }
@@ -599,8 +646,7 @@ func addLinkAttachment(realm string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		itemID := c.Param("id")
 
-		var exists int
-		if err := database.DB.Get(&exists, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE id = ?", itemsTable), itemID); err != nil || exists == 0 {
+		if !itemExists(itemsTable, itemID) {
 			c.JSON(http.StatusNotFound, gin.H{"detail": "Item not found"})
 			return
 		}
@@ -613,6 +659,10 @@ func addLinkAttachment(realm string) gin.HandlerFunc {
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
+			return
+		}
+		if err := validateExternalAttachmentURL(body.URL); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
 			return
 		}
 
@@ -632,9 +682,9 @@ func addLinkAttachment(realm string) gin.HandlerFunc {
 		attType := detectLinkType(filename, "")
 		var fileSize *int64
 
-		now := time.Now().UTC().Format(time.RFC3339)
+		now := database.TimestampNow()
 		result, err := database.DB.Exec(
-			fmt.Sprintf("INSERT INTO %s (item_id, filename, file_path, attachment_type, url, description, gallery, size, \"order\", created_at, updated_at) VALUES (?, ?, '', ?, ?, ?, 0, ?, ?, ?, ?)", table),
+			fmt.Sprintf("INSERT INTO %s (item_id, filename, file_path, storage_backend, attachment_type, url, description, gallery, size, `order`, created_at, updated_at) VALUES (?, ?, '', 'external_url', ?, ?, ?, 0, ?, ?, ?, ?)", table),
 			itemID, filename, attType, body.URL, body.Description, fileSize, body.Order, now, now,
 		)
 		if err != nil {
@@ -642,16 +692,99 @@ func addLinkAttachment(realm string) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 			return
 		}
-		newID, _ := result.LastInsertId()
+		newID, err := result.LastInsertId()
+		if err != nil {
+			log.Printf("DB last insert id error in addLinkAttachment: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
 
-		row := map[string]interface{}{}
-		sqlRow := database.DB.QueryRowx(fmt.Sprintf("SELECT * FROM %s WHERE id = ?", table), newID)
-		if err := sqlRow.MapScan(row); err != nil {
+		row, err := loadAttachmentRow(realm, table, newID)
+		if err != nil {
 			log.Printf("DB read error in addLinkAttachment: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 			return
 		}
-		cleanRow(row)
+		c.JSON(http.StatusCreated, row)
+	}
+}
+
+func addExternalSFTPAttachment(realm string) gin.HandlerFunc {
+	table := realm + "_attachments"
+	itemsTable := realm + "_items"
+	return func(c *gin.Context) {
+		itemID := c.Param("id")
+
+		if !itemExists(itemsTable, itemID) {
+			c.JSON(http.StatusNotFound, gin.H{"detail": "Item not found"})
+			return
+		}
+
+		var body struct {
+			ExternalSourceID int    `json:"external_source_id"`
+			ExternalPath     string `json:"external_path"`
+			Filename         string `json:"filename"`
+			Description      string `json:"description"`
+			Order            int    `json:"order"`
+			Gallery          bool   `json:"gallery"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
+			return
+		}
+		if body.ExternalSourceID < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "external_source_id is required"})
+			return
+		}
+
+		src, err := loadExternalSource(body.ExternalSourceID)
+		if err != nil || !src.IsActive {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "External source is not available"})
+			return
+		}
+
+		externalPath, err := storage.ResolveSFTPPath(src.BasePath, body.ExternalPath)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid external_path"})
+			return
+		}
+
+		filename := strings.TrimSpace(body.Filename)
+		if filename == "" {
+			filename = path.Base(externalPath)
+		}
+		if filename == "." || filename == "/" || filename == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Filename could not be derived from external_path"})
+			return
+		}
+
+		attType := detectLinkType(filename, "")
+		now := database.TimestampNow()
+		result, err := database.DB.Exec(
+			fmt.Sprintf(`INSERT INTO %s (
+				item_id, filename, file_path, storage_backend, external_source_id, external_path, attachment_type,
+				url, description, gallery, size, `+"`order`"+`, created_at, updated_at
+			) VALUES (?, ?, '', 'external_sftp', ?, ?, ?, '', ?, ?, NULL, ?, ?, ?)`, table),
+			itemID, filename, body.ExternalSourceID, externalPath, attType, body.Description, body.Gallery, body.Order, now, now,
+		)
+		if err != nil {
+			log.Printf("DB insert error in addExternalSFTPAttachment: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+
+		newID, err := result.LastInsertId()
+		if err != nil {
+			log.Printf("DB last insert id error in addExternalSFTPAttachment: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+		row, err := loadAttachmentRow(realm, table, newID)
+		if err != nil {
+			log.Printf("DB read error in addExternalSFTPAttachment: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
 		c.JSON(http.StatusCreated, row)
 	}
 }
@@ -673,25 +806,34 @@ func updateAttachment(realm string) gin.HandlerFunc {
 			if !allowed[k] {
 				continue
 			}
+			if k == "url" {
+				urlValue, ok := v.(string)
+				if !ok {
+					c.JSON(http.StatusBadRequest, gin.H{"detail": "Attachment URL must be a string"})
+					return
+				}
+				if err := validateExternalAttachmentURL(urlValue); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+					return
+				}
+			}
 			if sets != "" {
 				sets += ", "
 			}
-			sets += fmt.Sprintf("\"%s\" = ?", k)
+			sets += fmt.Sprintf("`%s` = ?", k)
 			vals = append(vals, v)
 		}
 		if sets == "" {
-			row := map[string]interface{}{}
-			sqlRow := database.DB.QueryRowx(fmt.Sprintf("SELECT * FROM %s WHERE id = ?", table), attID)
-			if err := sqlRow.MapScan(row); err != nil {
+			row, err := loadAttachmentRow(realm, table, attID)
+			if err != nil {
 				c.JSON(http.StatusNotFound, gin.H{"detail": "Not found"})
 				return
 			}
-			cleanRow(row)
 			c.JSON(http.StatusOK, row)
 			return
 		}
 		sets += ", updated_at = ?"
-		vals = append(vals, time.Now().UTC().Format(time.RFC3339), attID)
+		vals = append(vals, database.TimestampNow(), attID)
 
 		result, err := database.DB.Exec(fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", table, sets), vals...)
 		if err != nil {
@@ -705,14 +847,31 @@ func updateAttachment(realm string) gin.HandlerFunc {
 			return
 		}
 
-		row := map[string]interface{}{}
-		if err := database.DB.QueryRowx(fmt.Sprintf("SELECT * FROM %s WHERE id = ?", table), attID).MapScan(row); err != nil {
+		row, err := loadAttachmentRow(realm, table, attID)
+		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"detail": "Not found"})
 			return
 		}
-		cleanRow(row)
 		c.JSON(http.StatusOK, row)
 	}
+}
+
+func validateExternalAttachmentURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fmt.Errorf("Attachment URL is required")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("Invalid attachment URL")
+	}
+	if parsed.Host == "" || !parsed.IsAbs() {
+		return fmt.Errorf("Attachment URL must be absolute")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("Attachment URL must use http or https")
+	}
+	return nil
 }
 
 func deleteAttachment(realm string) gin.HandlerFunc {
@@ -720,9 +879,11 @@ func deleteAttachment(realm string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		attID := c.Param("attId")
 
-		// Get file path before deleting
+		// Get local file path before deleting
 		var filePath string
+		var storageBackend string
 		database.DB.Get(&filePath, fmt.Sprintf("SELECT COALESCE(file_path, '') FROM %s WHERE id = ?", table), attID)
+		database.DB.Get(&storageBackend, fmt.Sprintf("SELECT COALESCE(storage_backend, 'local') FROM %s WHERE id = ?", table), attID)
 
 		result, err := database.DB.Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", table), attID)
 		if err != nil {
@@ -736,7 +897,7 @@ func deleteAttachment(realm string) gin.HandlerFunc {
 			return
 		}
 
-		if filePath != "" {
+		if storageBackend == "local" && filePath != "" {
 			if _, fullPath, err := storage.ResolveUploadPath(config.C.UploadDir, filePath); err == nil {
 				_ = os.Remove(fullPath)
 			}
@@ -749,6 +910,94 @@ func deleteAttachment(realm string) gin.HandlerFunc {
 	}
 }
 
+func getAttachmentContent(realm string) gin.HandlerFunc {
+	table := realm + "_attachments"
+	return func(c *gin.Context) {
+		attID := c.Param("attId")
+
+		var att struct {
+			ID               int     `db:"id"`
+			Filename         string  `db:"filename"`
+			FilePath         *string `db:"file_path"`
+			StorageBackend   *string `db:"storage_backend"`
+			URL              *string `db:"url"`
+			ExternalSourceID *int    `db:"external_source_id"`
+			ExternalPath     *string `db:"external_path"`
+		}
+		if err := database.DB.Get(&att, fmt.Sprintf("SELECT id, filename, file_path, storage_backend, url, external_source_id, external_path FROM %s WHERE id = ?", table), attID); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"detail": "Attachment not found"})
+			return
+		}
+
+		backend := "local"
+		if att.StorageBackend != nil && strings.TrimSpace(*att.StorageBackend) != "" {
+			backend = strings.TrimSpace(*att.StorageBackend)
+		}
+
+		switch backend {
+		case "local":
+			if att.FilePath == nil || strings.TrimSpace(*att.FilePath) == "" {
+				c.JSON(http.StatusNotFound, gin.H{"detail": "Attachment file not found"})
+				return
+			}
+			_, fullPath, err := storage.ResolveUploadPath(config.C.UploadDir, *att.FilePath)
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"detail": "Attachment file not found"})
+				return
+			}
+			serveAttachmentFile(c, att.Filename, fullPath)
+			return
+		case "external_url":
+			if att.URL == nil || strings.TrimSpace(*att.URL) == "" {
+				c.JSON(http.StatusNotFound, gin.H{"detail": "Attachment URL not found"})
+				return
+			}
+			c.Redirect(http.StatusTemporaryRedirect, strings.TrimSpace(*att.URL))
+			return
+		case "external_sftp":
+			if att.ExternalSourceID == nil || att.ExternalPath == nil || strings.TrimSpace(*att.ExternalPath) == "" {
+				c.JSON(http.StatusNotFound, gin.H{"detail": "External attachment is incomplete"})
+				return
+			}
+			src, err := loadExternalSource(*att.ExternalSourceID)
+			if err != nil || !src.IsActive {
+				c.JSON(http.StatusBadGateway, gin.H{"detail": "External source is unavailable"})
+				return
+			}
+			stream, err := storage.OpenSFTPFileStream(context.Background(), storage.SFTPSourceConfig{
+				Host:         src.Host,
+				Port:         src.Port,
+				Username:     src.Username,
+				AuthType:     src.AuthType,
+				Password:     stringValue(src.Password),
+				PrivateKey:   stringValue(src.PrivateKey),
+				KnownHostKey: src.KnownHostKey,
+				BasePath:     src.BasePath,
+			}, *att.ExternalPath)
+			if err != nil {
+				log.Printf("SFTP stream error for attachment %s: %v", attID, err)
+				c.JSON(http.StatusBadGateway, gin.H{"detail": describeSFTPAttachmentError(err)})
+				return
+			}
+			defer stream.Close()
+
+			setAttachmentHeaders(c, att.Filename)
+			if stream.Size >= 0 {
+				c.Header("Content-Length", strconv.FormatInt(stream.Size, 10))
+			}
+			contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(att.Filename)))
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+			c.DataFromReader(http.StatusOK, stream.Size, contentType, stream, nil)
+			return
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Unsupported attachment backend"})
+			return
+		}
+	}
+}
+
 func uploadPropertyFile(realm string) gin.HandlerFunc {
 	propsTable := realm + "_item_properties"
 	itemsTable := realm + "_items"
@@ -756,8 +1005,7 @@ func uploadPropertyFile(realm string) gin.HandlerFunc {
 		itemID := c.Param("id")
 		propID := c.Param("propId")
 
-		var exists int
-		if err := database.DB.Get(&exists, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE id = ?", itemsTable), itemID); err != nil || exists == 0 {
+		if !itemExists(itemsTable, itemID) {
 			c.JSON(http.StatusNotFound, gin.H{"detail": "Item not found"})
 			return
 		}
@@ -767,59 +1015,24 @@ func uploadPropertyFile(realm string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "No file provided"})
 			return
 		}
-
-		// Enforce max file size
-		if file.Size > config.C.MaxUploadSize {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"detail": "File too large"})
-			return
-		}
-
-		// Allowlist check
-		if !isAllowedExtension(file.Filename) {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "File type not allowed"})
-			return
-		}
-
-		// Magic byte validation
-		ext := strings.ToLower(path.Ext(file.Filename))
-		src, err := file.Open()
+		upload, err := storeUploadedFile(c, file, filepath.Join(config.C.UploadDir, realm, itemID, "props"), path.Join(realm, itemID, "props"))
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Failed to read file"})
-			return
-		}
-		magicBuf := make([]byte, 512)
-		n, _ := io.ReadAtLeast(src, magicBuf, 1)
-		src.Close()
-		if n > 0 {
-			if err := validateMagicBytes(magicBuf[:n], ext); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"detail": "File content does not match its extension"})
-				return
+			switch err.Error() {
+			case "File too large":
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"detail": err.Error()})
+			case "No file provided", "File type not allowed", "File content does not match its extension":
+				c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+			default:
+				c.JSON(http.StatusInternalServerError, gin.H{"detail": err.Error()})
 			}
-		}
-
-		// Generate neutral storage name
-		originalName := safeFilename(file.Filename)
-		storageName := uuid.New().String() + ext
-		uploadDir := fmt.Sprintf("%s/%s/%s/props", config.C.UploadDir, realm, itemID)
-		os.MkdirAll(uploadDir, 0755)
-		dst := uploadDir + "/" + storageName
-
-		if err := c.SaveUploadedFile(file, dst); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Upload failed"})
 			return
-		}
-
-		relPath := fmt.Sprintf("%s/%s/props/%s", realm, itemID, storageName)
-		contentType := file.Header.Get("Content-Type")
-		if contentType == "" {
-			contentType = "application/octet-stream"
 		}
 		valueMap := map[string]interface{}{
 			"type":         "file",
-			"filename":     originalName,
-			"path":         relPath,
-			"size":         file.Size,
-			"content_type": contentType,
+			"filename":     upload.OriginalName,
+			"path":         upload.RelativePath,
+			"size":         upload.Size,
+			"content_type": upload.ContentType,
 		}
 		valueBytes, _ := json.Marshal(valueMap)
 		value := string(valueBytes)
@@ -828,10 +1041,10 @@ func uploadPropertyFile(realm string) gin.HandlerFunc {
 		var existingID int
 		err = database.DB.Get(&existingID, fmt.Sprintf("SELECT id FROM %s WHERE item_id = ? AND property_id = ?", propsTable), itemID, propID)
 		if err == nil {
-			database.DB.Exec(fmt.Sprintf("UPDATE %s SET value = ?, updated_at = ? WHERE id = ?", propsTable), value, time.Now().UTC().Format(time.RFC3339), existingID)
+			database.DB.Exec(fmt.Sprintf("UPDATE %s SET value = ?, updated_at = ? WHERE id = ?", propsTable), value, database.TimestampNow(), existingID)
 		} else {
 			database.DB.Exec(fmt.Sprintf("INSERT INTO %s (item_id, property_id, value, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", propsTable),
-				itemID, propID, value, time.Now().UTC().Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339))
+				itemID, propID, value, database.TimestampNow(), database.TimestampNow())
 		}
 
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "value": valueMap})
@@ -857,6 +1070,10 @@ func resolvePropertyID(realm string, key string) (int, bool) {
 
 // saveProperties upserts item properties from a dict {property_id_or_name: value}.
 func saveProperties(realm string, itemID int, properties map[string]interface{}) {
+	savePropertiesTx(database.DB, realm, itemID, properties)
+}
+
+func savePropertiesTx(exec sqlx.Ext, realm string, itemID int, properties map[string]interface{}) {
 	propsTable := realm + "_item_properties"
 
 	for key, val := range properties {
@@ -879,51 +1096,340 @@ func saveProperties(realm string, itemID int, properties map[string]interface{})
 		valJSON, _ := json.Marshal(val)
 
 		var existingID int
-		existErr := database.DB.Get(&existingID,
+		existErr := sqlx.Get(exec, &existingID,
 			fmt.Sprintf("SELECT id FROM %s WHERE item_id = ? AND property_id = ?", propsTable), itemID, propID)
 		if existErr == nil {
-			database.DB.Exec(
+			exec.Exec(
 				fmt.Sprintf("UPDATE %s SET value = ? WHERE id = ?", propsTable),
 				string(valJSON), existingID)
 		} else {
-			database.DB.Exec(
+			exec.Exec(
 				fmt.Sprintf("INSERT INTO %s (item_id, property_id, value) VALUES (?, ?, ?)", propsTable),
 				itemID, propID, string(valJSON))
 		}
 	}
 }
 
-// loadEnrichedItem loads an item with all enrichment (properties, attachments, checkout, vendor info)
-// matching the same response format as getItem.
-func loadEnrichedItem(realm string, itemID string) map[string]interface{} {
-	itemsTable := realm + "_items"
-	propsTable := realm + "_item_properties"
-	propDefsTable := realm + "_properties"
-	attachTable := realm + "_attachments"
-	checkoutTable := realm + "_checkouts"
+type bundleValidationError string
 
-	query := fmt.Sprintf(`SELECT i.*,
-		c.name AS category_name,
-		l.name AS location_name,
-		m.name AS manufacturer_name,
-		s.name AS supplier_name,
-		v.name AS vendor_name
-		FROM %s i
-		LEFT JOIN %s_categories c ON i.category_id = c.id
-		LEFT JOIN %s_locations l ON i.location_id = l.id
-		LEFT JOIN %s_manufacturers m ON i.manufacturer_id = m.id
-		LEFT JOIN %s_suppliers s ON i.supplier_id = s.id
-		LEFT JOIN %s_vendors v ON i.vendor_id = v.id
-		WHERE i.id = ?`, itemsTable, realm, realm, realm, realm, realm)
+func (e bundleValidationError) Error() string {
+	return string(e)
+}
 
-	row := map[string]interface{}{}
-	sqlRow := database.DB.QueryRowx(query, itemID)
-	if err := sqlRow.MapScan(row); err != nil {
-		return nil
+func parseComponentItemIDs(value interface{}) ([]int, error) {
+	if value == nil {
+		return nil, nil
 	}
-	cleanRow(row)
+	values, ok := value.([]interface{})
+	if !ok {
+		return nil, bundleValidationError("component_item_ids must be an array")
+	}
+	parsed := make([]int, 0, len(values))
+	for _, entry := range values {
+		switch v := entry.(type) {
+		case float64:
+			parsed = append(parsed, int(v))
+		case int:
+			parsed = append(parsed, v)
+		default:
+			return nil, bundleValidationError("component_item_ids contains an invalid item id")
+		}
+	}
+	return parsed, nil
+}
 
-	// Properties
+func resolveNextIsBundle(tx *sqlx.Tx, itemsTable string, itemID int, rawIsBundle interface{}, hasComponentItemIDs bool, componentItemIDs []int) (bool, error) {
+	if rawIsBundle != nil {
+		switch value := rawIsBundle.(type) {
+		case bool:
+			if hasComponentItemIDs && len(componentItemIDs) > 0 {
+				return true, nil
+			}
+			return value, nil
+		case float64:
+			if value == 0 || value == 1 {
+				if hasComponentItemIDs && len(componentItemIDs) > 0 {
+					return true, nil
+				}
+				return value == 1, nil
+			}
+		case int:
+			if value == 0 || value == 1 {
+				if hasComponentItemIDs && len(componentItemIDs) > 0 {
+					return true, nil
+				}
+				return value == 1, nil
+			}
+		case string:
+			normalized := strings.TrimSpace(strings.ToLower(value))
+			switch normalized {
+			case "true", "1":
+				if hasComponentItemIDs && len(componentItemIDs) > 0 {
+					return true, nil
+				}
+				return true, nil
+			case "false", "0", "":
+				if hasComponentItemIDs && len(componentItemIDs) > 0 {
+					return true, nil
+				}
+				return false, nil
+			}
+		}
+		return false, bundleValidationError("is_bundle must be a boolean")
+	}
+	if hasComponentItemIDs {
+		return len(componentItemIDs) > 0, nil
+	}
+	var current bool
+	if err := tx.Get(&current, fmt.Sprintf("SELECT COALESCE(is_bundle, 0) FROM %s WHERE id = ?", itemsTable), itemID); err != nil {
+		return false, err
+	}
+	return current, nil
+}
+
+func loadItemComponentIDsTx(tx *sqlx.Tx, realm string, itemID int) ([]int, error) {
+	componentsTable := realm + "_item_components"
+	rows, err := tx.Queryx(fmt.Sprintf("SELECT child_item_id FROM %s WHERE parent_item_id = ? ORDER BY position ASC, id ASC", componentsTable), itemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	componentIDs := []int{}
+	for rows.Next() {
+		var childID int
+		if err := rows.Scan(&childID); err != nil {
+			return nil, err
+		}
+		componentIDs = append(componentIDs, childID)
+	}
+	return componentIDs, rows.Err()
+}
+
+func syncItemComponentsTx(tx *sqlx.Tx, realm string, parentItemID int, isBundle bool, componentItemIDs []int) error {
+	itemsTable := realm + "_items"
+	componentsTable := realm + "_item_components"
+
+	componentIDs := make([]int, 0, len(componentItemIDs))
+	seen := map[int]bool{}
+	for _, childID := range componentItemIDs {
+		if childID < 1 {
+			return bundleValidationError("Bestandteile enthalten eine ungültige Item-ID")
+		}
+		if childID == parentItemID {
+			return bundleValidationError("Ein Item kann nicht Teil von sich selbst sein")
+		}
+		if seen[childID] {
+			continue
+		}
+		seen[childID] = true
+		componentIDs = append(componentIDs, childID)
+	}
+
+	if isBundle {
+		var parentOwnerCount int
+		if err := tx.Get(&parentOwnerCount, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE child_item_id = ?", componentsTable), parentItemID); err != nil {
+			return err
+		}
+		if parentOwnerCount > 0 {
+			return bundleValidationError("Ein Bundle kann nicht gleichzeitig Teil eines anderen Items sein")
+		}
+	}
+
+	for _, childID := range componentIDs {
+		var child struct {
+			ID       int  `db:"id"`
+			IsBundle bool `db:"is_bundle"`
+		}
+		if err := tx.Get(&child, fmt.Sprintf("SELECT id, COALESCE(is_bundle, 0) AS is_bundle FROM %s WHERE id = ?", itemsTable), childID); err != nil {
+			return bundleValidationError("Ein ausgewähltes Bestandteil-Item wurde nicht gefunden")
+		}
+		if child.IsBundle {
+			return bundleValidationError("Bundles können nicht als Bestandteil eines anderen Items verwendet werden")
+		}
+
+		var assignedParentID int
+		err := tx.Get(&assignedParentID, fmt.Sprintf("SELECT parent_item_id FROM %s WHERE child_item_id = ? LIMIT 1", componentsTable), childID)
+		if err == nil && assignedParentID != parentItemID {
+			return bundleValidationError("Mindestens ein Bestandteil gehört bereits zu einem anderen Item")
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) && !strings.Contains(strings.ToLower(err.Error()), "no rows") {
+			return err
+		}
+	}
+
+	if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE parent_item_id = ?", componentsTable), parentItemID); err != nil {
+		return err
+	}
+	now := database.TimestampNow()
+	for position, childID := range componentIDs {
+		if _, err := tx.Exec(
+			fmt.Sprintf("INSERT INTO %s (parent_item_id, child_item_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", componentsTable),
+			parentItemID, childID, position, now, now,
+		); err != nil {
+			return err
+		}
+	}
+
+	targetBundleState := isBundle || len(componentIDs) > 0
+	if _, err := tx.Exec(fmt.Sprintf("UPDATE %s SET is_bundle = ?, updated_at = ? WHERE id = ?", itemsTable), targetBundleState, now, parentItemID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func inClausePlaceholders(ids []interface{}) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	return strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+}
+
+func loadListItemProperties(propsTable, propDefsTable string, itemIDs []interface{}) map[interface{}][]map[string]interface{} {
+	propsByItem := map[interface{}][]map[string]interface{}{}
+	if len(itemIDs) == 0 {
+		return propsByItem
+	}
+
+	propQuery := fmt.Sprintf(
+		`SELECT ip.item_id, ip.property_id, ip.value, pd.name AS property_name, pd.property_type, pd.display_width, pd.unit AS property_unit
+		FROM %s ip
+		JOIN %s pd ON ip.property_id = pd.id
+		WHERE ip.item_id IN (%s)`,
+		propsTable, propDefsTable, inClausePlaceholders(itemIDs))
+
+	propRows, err := database.DB.Queryx(propQuery, itemIDs...)
+	if err != nil {
+		return propsByItem
+	}
+	defer propRows.Close()
+
+	for propRows.Next() {
+		pr := map[string]interface{}{}
+		if propRows.MapScan(pr) == nil {
+			cleanRow(pr)
+			itemID := pr["item_id"]
+			propsByItem[itemID] = append(propsByItem[itemID], pr)
+		}
+	}
+	return propsByItem
+}
+
+func loadListItemAttachments(realm, attachTable string, itemIDs []interface{}) map[interface{}][]map[string]interface{} {
+	attachByItem := map[interface{}][]map[string]interface{}{}
+	if len(itemIDs) == 0 {
+		return attachByItem
+	}
+
+	attachQuery := fmt.Sprintf(
+		`SELECT * FROM %s WHERE item_id IN (%s) ORDER BY `+"`order`"+``,
+		attachTable, inClausePlaceholders(itemIDs))
+
+	attachRows, err := database.DB.Queryx(attachQuery, itemIDs...)
+	if err != nil {
+		return attachByItem
+	}
+	defer attachRows.Close()
+
+	for attachRows.Next() {
+		ar := map[string]interface{}{}
+		if attachRows.MapScan(ar) == nil {
+			cleanRow(ar)
+			finalizeAttachmentRow(realm, ar)
+			itemID := ar["item_id"]
+			attachByItem[itemID] = append(attachByItem[itemID], ar)
+		}
+	}
+	return attachByItem
+}
+
+func loadListItemCheckouts(checkoutTable string, itemIDs []interface{}) map[interface{}]map[string]interface{} {
+	checkoutByItem := map[interface{}]map[string]interface{}{}
+	if len(itemIDs) == 0 {
+		return checkoutByItem
+	}
+
+	coQuery := fmt.Sprintf(
+		`SELECT co.id, co.item_id, co.user_id, COALESCE(u.display_name, u.email) AS user_name, co.due_date, co.created_at
+		FROM %s co
+		LEFT JOIN users u ON co.user_id = u.id
+		WHERE co.item_id IN (%s) AND co.status = 'active'`,
+		checkoutTable, inClausePlaceholders(itemIDs))
+
+	coRows, err := database.DB.Queryx(coQuery, itemIDs...)
+	if err != nil {
+		return checkoutByItem
+	}
+	defer coRows.Close()
+
+	for coRows.Next() {
+		cr := map[string]interface{}{}
+		if coRows.MapScan(cr) == nil {
+			cleanRow(cr)
+			itemID := cr["item_id"]
+			entry := map[string]interface{}{
+				"user_id":     cr["user_id"],
+				"user_name":   cr["user_name"],
+				"due_date":    cr["due_date"],
+				"checkout_id": cr["id"],
+				"since":       cr["created_at"],
+			}
+			if existing, ok := checkoutByItem[itemID]; ok {
+				users, _ := existing["users"].([]map[string]interface{})
+				existing["users"] = append(users, entry)
+				existing["checkout_count"] = len(existing["users"].([]map[string]interface{}))
+				continue
+			}
+			checkoutByItem[itemID] = map[string]interface{}{
+				"user_id":        cr["user_id"],
+				"user_name":      cr["user_name"],
+				"due_date":       cr["due_date"],
+				"checkout_id":    cr["id"],
+				"since":          cr["created_at"],
+				"users":          []map[string]interface{}{entry},
+				"checkout_count": 1,
+			}
+		}
+	}
+	return checkoutByItem
+}
+
+func applyListItemEnrichment(realm string, items []map[string]interface{}, propsByItem map[interface{}][]map[string]interface{}, attachByItem map[interface{}][]map[string]interface{}, checkoutByItem map[interface{}]map[string]interface{}) {
+	for _, item := range items {
+		id := item["id"]
+		if props, ok := propsByItem[id]; ok {
+			byID := map[string]interface{}{}
+			byName := map[string]interface{}{}
+			for _, p := range props {
+				propID := fmt.Sprintf("%v", p["property_id"])
+				propName, _ := p["property_name"].(string)
+				val := parseJSONValue(p["value"])
+				byID[propID] = val
+				if propName != "" {
+					byName[propName] = formatWithUnit(val, p["property_unit"])
+				}
+			}
+			item["properties"] = byID
+			item["properties_display"] = byName
+		} else {
+			item["properties"] = map[string]interface{}{}
+			item["properties_display"] = map[string]interface{}{}
+		}
+		if att, ok := attachByItem[id]; ok {
+			item["attachments"] = att
+		} else {
+			item["attachments"] = []interface{}{}
+		}
+		if co, ok := checkoutByItem[id]; ok {
+			item["checked_out_to"] = co
+		} else {
+			item["checked_out_to"] = nil
+		}
+		enrichVendorInfo(realm, item)
+	}
+}
+
+func loadItemProperties(propsTable, propDefsTable, itemID string) (map[string]interface{}, map[string]interface{}) {
 	propQuery := fmt.Sprintf(
 		`SELECT ip.id, ip.property_id, ip.value, pd.name AS property_name, pd.property_type, pd.display_width, pd.unit AS property_unit
 		FROM %s ip
@@ -942,6 +1448,7 @@ func loadEnrichedItem(realm string, itemID string) map[string]interface{} {
 			}
 		}
 	}
+
 	byID := map[string]interface{}{}
 	byName := map[string]interface{}{}
 	for _, p := range props {
@@ -953,19 +1460,20 @@ func loadEnrichedItem(realm string, itemID string) map[string]interface{} {
 			byName[pName] = formatWithUnit(val, p["property_unit"])
 		}
 	}
-	row["properties"] = byID
-	row["properties_display"] = byName
+	return byID, byName
+}
 
-	// Attachments
+func loadItemAttachments(realm, attachTable, itemID string) []map[string]interface{} {
 	var attachments []map[string]interface{}
 	attachRows, err := database.DB.Queryx(
-		fmt.Sprintf(`SELECT * FROM %s WHERE item_id = ? ORDER BY "order"`, attachTable), itemID)
+		fmt.Sprintf(`SELECT * FROM %s WHERE item_id = ? ORDER BY `+"`order`"+``, attachTable), itemID)
 	if err == nil {
 		defer attachRows.Close()
 		for attachRows.Next() {
 			ar := map[string]interface{}{}
 			if attachRows.MapScan(ar) == nil {
 				cleanRow(ar)
+				finalizeAttachmentRow(realm, ar)
 				attachments = append(attachments, ar)
 			}
 		}
@@ -973,33 +1481,187 @@ func loadEnrichedItem(realm string, itemID string) map[string]interface{} {
 	if attachments == nil {
 		attachments = []map[string]interface{}{}
 	}
-	row["attachments"] = attachments
+	return attachments
+}
 
-	// Checked out to
-	var coUserID int
-	var coUserName, coDueDate, coSince *string
-	var coID int
-	coQuery := fmt.Sprintf(
+func loadItemCheckoutInfo(realm, checkoutTable, itemID string) interface{} {
+	query := fmt.Sprintf(
 		`SELECT co.id, co.user_id, COALESCE(u.display_name, u.email) AS user_name, co.due_date, co.created_at
 		FROM %s co
 		LEFT JOIN users u ON co.user_id = u.id
-		WHERE co.item_id = ? AND co.status = 'active' LIMIT 1`, checkoutTable)
-	if database.DB.QueryRow(coQuery, itemID).Scan(&coID, &coUserID, &coUserName, &coDueDate, &coSince) == nil {
-		row["checked_out_to"] = gin.H{
-			"user_id":     coUserID,
-			"user_name":   coUserName,
-			"due_date":    coDueDate,
-			"checkout_id": coID,
-			"since":       coSince,
-		}
-	} else {
-		row["checked_out_to"] = nil
+		WHERE co.item_id = ? AND co.status = 'active'
+		ORDER BY co.created_at ASC, co.id ASC`, checkoutTable)
+	rows, err := database.DB.Queryx(query, itemID)
+	if err != nil {
+		return nil
 	}
+	defer rows.Close()
+
+	users := make([]map[string]interface{}, 0)
+	var first map[string]interface{}
+	for rows.Next() {
+		entry := map[string]interface{}{}
+		if rows.MapScan(entry) == nil {
+			cleanRow(entry)
+			userEntry := map[string]interface{}{
+				"user_id":     entry["user_id"],
+				"user_name":   entry["user_name"],
+				"due_date":    entry["due_date"],
+				"checkout_id": entry["id"],
+				"since":       entry["created_at"],
+			}
+			if first == nil {
+				first = userEntry
+			}
+			users = append(users, userEntry)
+		}
+	}
+	if len(users) == 0 {
+		return nil
+	}
+
+	componentIDs, componentNames := loadActiveCheckoutComponents(realm, checkoutTable, itemID)
+	return gin.H{
+		"user_id":         first["user_id"],
+		"user_name":       first["user_name"],
+		"due_date":        first["due_date"],
+		"checkout_id":     first["checkout_id"],
+		"since":           first["since"],
+		"users":           users,
+		"checkout_count":  len(users),
+		"component_ids":   componentIDs,
+		"component_names": componentNames,
+	}
+}
+
+func loadActiveCheckoutComponents(realm, checkoutTable, itemID string) ([]int, []string) {
+	itemsTable := realm + "_items"
+	query := fmt.Sprintf(`SELECT co.item_id, i.name
+		FROM %s co
+		JOIN %s i ON i.id = co.item_id
+		WHERE co.bundle_parent_item_id = ? AND co.status = 'active'
+		ORDER BY i.name ASC`, checkoutTable, itemsTable)
+	rows, err := database.DB.Queryx(query, itemID)
+	if err != nil {
+		return []int{}, []string{}
+	}
+	defer rows.Close()
+
+	componentIDs := []int{}
+	componentNames := []string{}
+	for rows.Next() {
+		var componentID int
+		var componentName string
+		if err := rows.Scan(&componentID, &componentName); err == nil {
+			componentIDs = append(componentIDs, componentID)
+			componentNames = append(componentNames, componentName)
+		}
+	}
+	return componentIDs, componentNames
+}
+
+func loadItemComponents(realm, itemID string) []map[string]interface{} {
+	itemsTable := realm + "_items"
+	componentsTable := realm + "_item_components"
+	query := fmt.Sprintf(`SELECT i.id, i.name, i.item_status, i.is_bundle, ic.position
+		FROM %s ic
+		JOIN %s i ON i.id = ic.child_item_id
+		WHERE ic.parent_item_id = ?
+		ORDER BY ic.position ASC, i.name ASC`, componentsTable, itemsTable)
+	rows, err := database.DB.Queryx(query, itemID)
+	if err != nil {
+		return []map[string]interface{}{}
+	}
+	defer rows.Close()
+
+	components := []map[string]interface{}{}
+	for rows.Next() {
+		row := map[string]interface{}{}
+		if rows.MapScan(row) == nil {
+			cleanRow(row)
+			components = append(components, row)
+		}
+	}
+	return components
+}
+
+func loadParentBundle(realm, itemID string) map[string]interface{} {
+	itemsTable := realm + "_items"
+	componentsTable := realm + "_item_components"
+	query := fmt.Sprintf(`SELECT p.id, p.name, p.item_status, p.is_bundle
+		FROM %s ic
+		JOIN %s p ON p.id = ic.parent_item_id
+		WHERE ic.child_item_id = ?
+		LIMIT 1`, componentsTable, itemsTable)
+	row := map[string]interface{}{}
+	if err := database.DB.QueryRowx(query, itemID).MapScan(row); err != nil {
+		return nil
+	}
+	cleanRow(row)
+	return row
+}
+
+// loadEnrichedItem loads an item with all enrichment (properties, attachments, checkout, vendor info)
+// matching the same response format as getItem.
+func loadEnrichedItem(realm string, itemID string) map[string]interface{} {
+	itemsTable := realm + "_items"
+	propsTable := realm + "_item_properties"
+	propDefsTable := realm + "_properties"
+	attachTable := realm + "_attachments"
+	checkoutTable := realm + "_checkouts"
+
+	query := fmt.Sprintf(`SELECT i.*,
+		c.name AS category_name,
+		l.name AS location_name,
+		m.name AS manufacturer_name,
+		s.name AS supplier_name,
+		v.name AS vendor_name,
+		sp.name AS sales_platform_name
+		FROM %s i
+		LEFT JOIN %s_categories c ON i.category_id = c.id
+		LEFT JOIN %s_locations l ON i.location_id = l.id
+		LEFT JOIN %s_manufacturers m ON i.manufacturer_id = m.id
+		LEFT JOIN %s_suppliers s ON i.supplier_id = s.id
+		LEFT JOIN %s_vendors v ON i.vendor_id = v.id
+		LEFT JOIN generic_sales_platforms sp ON i.sales_platform_id = sp.id
+		WHERE i.id = ?`, itemsTable, realm, realm, realm, realm, realm)
+
+	row := map[string]interface{}{}
+	sqlRow := database.DB.QueryRowx(query, itemID)
+	if err := sqlRow.MapScan(row); err != nil {
+		return nil
+	}
+	cleanRow(row)
+
+	byID, byName := loadItemProperties(propsTable, propDefsTable, itemID)
+	row["properties"] = byID
+	row["properties_display"] = byName
+
+	row["attachments"] = loadItemAttachments(realm, attachTable, itemID)
+	row["checked_out_to"] = loadItemCheckoutInfo(realm, checkoutTable, itemID)
+	row["components"] = loadItemComponents(realm, itemID)
+	row["component_item_ids"] = componentIDsFromRows(row["components"].([]map[string]interface{}))
+	row["parent_bundle"] = loadParentBundle(realm, itemID)
 
 	// Enrich vendor info
 	enrichVendorInfo(realm, row)
 
 	return row
+}
+
+func componentIDsFromRows(rows []map[string]interface{}) []int {
+	ids := make([]int, 0, len(rows))
+	for _, row := range rows {
+		switch id := row["id"].(type) {
+		case int:
+			ids = append(ids, id)
+		case int64:
+			ids = append(ids, int(id))
+		case float64:
+			ids = append(ids, int(id))
+		}
+	}
+	return ids
 }
 
 // formatWithUnit returns {value: ..., unit: "..."} if unit is set, otherwise {value: ...}.
@@ -1034,6 +1696,145 @@ func safeFilename(name string) string {
 		name = "upload"
 	}
 	return name
+}
+
+type storedUpload struct {
+	OriginalName string
+	StorageName  string
+	RelativePath string
+	FullPath     string
+	Extension    string
+	Size         int64
+	ContentType  string
+}
+
+func storeUploadedFile(c *gin.Context, file *multipart.FileHeader, destinationDir, relativeDir string) (*storedUpload, error) {
+	if file == nil {
+		return nil, fmt.Errorf("No file provided")
+	}
+	if file.Size > config.C.MaxUploadSize {
+		return nil, fmt.Errorf("File too large")
+	}
+	if !isAllowedExtension(file.Filename) {
+		return nil, fmt.Errorf("File type not allowed")
+	}
+
+	ext := strings.ToLower(path.Ext(file.Filename))
+	src, err := file.Open()
+	if err != nil {
+		return nil, fmt.Errorf("Failed to read file")
+	}
+	magicBuf := make([]byte, 512)
+	n, _ := io.ReadAtLeast(src, magicBuf, 1)
+	src.Close()
+	if n > 0 {
+		if err := validateMagicBytes(magicBuf[:n], ext); err != nil {
+			return nil, fmt.Errorf("File content does not match its extension")
+		}
+	}
+
+	originalName := safeFilename(file.Filename)
+	storageName := uuid.New().String() + ext
+	fullPath := filepath.Join(destinationDir, storageName)
+	if err := os.MkdirAll(destinationDir, 0755); err != nil {
+		return nil, fmt.Errorf("Upload failed")
+	}
+	if err := c.SaveUploadedFile(file, fullPath); err != nil {
+		return nil, fmt.Errorf("Upload failed")
+	}
+
+	contentType := file.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	return &storedUpload{
+		OriginalName: originalName,
+		StorageName:  storageName,
+		RelativePath: path.Join(relativeDir, storageName),
+		FullPath:     fullPath,
+		Extension:    ext,
+		Size:         file.Size,
+		ContentType:  contentType,
+	}, nil
+}
+
+func itemExists(itemsTable, itemID string) bool {
+	var exists int
+	return database.DB.Get(&exists, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE id = ?", itemsTable), itemID) == nil && exists > 0
+}
+
+func loadAttachmentRow(realm, table string, attachmentID interface{}) (map[string]interface{}, error) {
+	row := map[string]interface{}{}
+	if err := database.DB.QueryRowx(fmt.Sprintf("SELECT * FROM %s WHERE id = ?", table), attachmentID).MapScan(row); err != nil {
+		return nil, err
+	}
+	cleanRow(row)
+	finalizeAttachmentRow(realm, row)
+	return row, nil
+}
+
+func finalizeAttachmentRow(realm string, row map[string]interface{}) {
+	id := fmt.Sprintf("%v", row["id"])
+	backend := strings.TrimSpace(fmt.Sprintf("%v", row["storage_backend"]))
+	if backend == "" || backend == "<nil>" {
+		if urlValue, ok := row["url"].(string); ok && strings.TrimSpace(urlValue) != "" {
+			backend = "external_url"
+		} else {
+			backend = "local"
+		}
+		row["storage_backend"] = backend
+	}
+	row["download_url"] = fmt.Sprintf("/api/%s/attachments/%s/content", realm, id)
+}
+
+func serveAttachmentFile(c *gin.Context, filename, fullPath string) {
+	setAttachmentHeaders(c, filename)
+	c.File(fullPath)
+}
+
+func setAttachmentHeaders(c *gin.Context, filename string) {
+	ext := strings.ToLower(filepath.Ext(filename))
+	inlineTypes := map[string]bool{
+		".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".svg": true, ".bmp": true, ".heic": true,
+		".mp4": true, ".mov": true, ".avi": true, ".mkv": true, ".webm": true,
+		".mp3": true, ".wav": true, ".flac": true, ".ogg": true, ".m4a": true, ".aac": true,
+		".pdf": true,
+	}
+
+	if inlineTypes[ext] {
+		c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", filename))
+	} else {
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	}
+	c.Header("X-Content-Type-Options", "nosniff")
+}
+
+func stringValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func describeSFTPAttachmentError(err error) string {
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "no such file"), strings.Contains(msg, "file does not exist"), strings.Contains(msg, "not exist"):
+		return "SFTP file not found"
+	case strings.Contains(msg, "unable to authenticate"), strings.Contains(msg, "permission denied"), strings.Contains(msg, "missing sftp password"), strings.Contains(msg, "missing sftp private key"):
+		return "SFTP authentication failed"
+	case strings.Contains(msg, "known_host_key"), strings.Contains(msg, "host key"), strings.Contains(msg, "mismatch"):
+		return "SFTP host key mismatch"
+	case strings.Contains(msg, "dial sftp source"):
+		return "SFTP server not reachable"
+	case strings.Contains(msg, "handshake sftp source"):
+		return "SFTP handshake failed"
+	case strings.Contains(msg, "invalid sftp attachment path"), strings.Contains(msg, "escapes base path"), strings.Contains(msg, "empty sftp attachment path"):
+		return "Invalid SFTP path"
+	default:
+		return "Could not read external attachment"
+	}
 }
 
 // getLocationTree recursively finds a location and all its descendants.
@@ -1142,7 +1943,7 @@ var allowedExtensions = map[string]bool{
 	// Code/Text
 	".txt": true, ".log": true, ".md": true, ".json": true, ".xml": true,
 	".yaml": true, ".yml": true, ".toml": true, ".ini": true, ".cfg": true,
-	".conf": true, ".env": true, ".py": true, ".js": true, ".ts": true,
+	".conf": true, ".py": true, ".js": true, ".ts": true,
 	".go": true, ".rs": true, ".c": true, ".cpp": true, ".h": true,
 	".java": true, ".swift": true, ".sql": true, ".html": true, ".css": true,
 	".sh": true, ".bat": true,
@@ -1158,7 +1959,7 @@ func isAllowedExtension(filename string) bool {
 var textExtensions = map[string]bool{
 	".txt": true, ".log": true, ".md": true, ".json": true, ".xml": true,
 	".yaml": true, ".yml": true, ".toml": true, ".ini": true, ".cfg": true,
-	".conf": true, ".env": true, ".py": true, ".js": true, ".ts": true,
+	".conf": true, ".py": true, ".js": true, ".ts": true,
 	".go": true, ".rs": true, ".c": true, ".cpp": true, ".h": true,
 	".java": true, ".swift": true, ".sql": true, ".html": true, ".css": true,
 	".sh": true, ".bat": true, ".csv": true, ".tsv": true, ".rtf": true,

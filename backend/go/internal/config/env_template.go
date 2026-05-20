@@ -2,5 +2,5 @@ package config
 
 import _ "embed"
 
-//go:embed templates/default.env
-var embeddedDefaultEnv string
+//go:embed templates/itemplus.conf
+var embeddedDefaultConfig string

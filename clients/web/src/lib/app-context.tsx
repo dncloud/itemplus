@@ -4,12 +4,29 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { api } from "./api";
 import { translate, type Locale } from "./i18n";
 import { wsClient } from "./ws";
-
-type Realm = "archive" | "collection";
-type Theme = "light" | "dark" | "system";
-type PrintMode = "server" | "ios";
-
-type DateFormat = "DD.MM.YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD" | "DD/MM/YYYY";
+import {
+  getServerURL,
+  getStoredDateFormat,
+  getStoredFlag,
+  getStoredIosDeleteConfirm,
+  getStoredItemsPerPage,
+  getStoredLocale,
+  getStoredPercent,
+  getStoredPrintMode,
+  getStoredRealm,
+  getStoredShowItemImages,
+  getStoredShowItemPlaceholders,
+  getStoredTheme,
+  setStoredBoolean,
+  setStoredNumber,
+  setStoredString,
+  setStoredValue,
+  type DateFormat,
+  type PrintMode,
+  type Realm,
+  type Theme,
+} from "./app-context-storage";
+import { formatAppDate, formatAppDateTime } from "./app-context-format";
 
 interface AppContextValue {
   realm: Realm;
@@ -29,10 +46,39 @@ interface AppContextValue {
   setDateFormat: (f: DateFormat) => void;
   printMode: PrintMode;
   setPrintMode: (mode: PrintMode) => void;
+  showItemImages: boolean;
+  setShowItemImages: (v: boolean) => void;
+  showItemPlaceholders: boolean;
+  setShowItemPlaceholders: (v: boolean) => void;
+  showItemCategory: boolean;
+  setShowItemCategory: (v: boolean) => void;
+  showItemLocation: boolean;
+  setShowItemLocation: (v: boolean) => void;
+  showItemDescription: boolean;
+  setShowItemDescription: (v: boolean) => void;
+  showItemStock: boolean;
+  setShowItemStock: (v: boolean) => void;
+  showItemConsumable: boolean;
+  setShowItemConsumable: (v: boolean) => void;
+  showItemPrice: boolean;
+  setShowItemPrice: (v: boolean) => void;
+  showItemTotal: boolean;
+  setShowItemTotal: (v: boolean) => void;
+  showItemProperties: boolean;
+  setShowItemProperties: (v: boolean) => void;
+  showItemActivity: boolean;
+  setShowItemActivity: (v: boolean) => void;
+  itemStockWarningPercent: number;
+  setItemStockWarningPercent: (v: number) => void;
+  itemStockCriticalPercent: number;
+  setItemStockCriticalPercent: (v: number) => void;
+  itemsPerPage: number;
+  setItemsPerPage: (v: number) => void;
   printItemQR: (itemId: number, copies?: number) => Promise<void>;
   printLocationQR: (locationId: number, copies?: number) => Promise<void>;
   brandingLogo: string | null;
   brandingSubtitle: string;
+  brandingFooterText: string;
   brandingWidth: number;
   refreshBranding: () => Promise<void>;
   fmtDate: (dateStr: string | null | undefined) => string;
@@ -42,59 +88,32 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue>(null!);
 
-const getStoredRealm = (): Realm => {
-  if (typeof window === "undefined") return "archive";
-  const saved = localStorage.getItem("itemplus_realm");
-  return saved === "collection" ? "collection" : "archive";
-};
-
-const getStoredTheme = (): Theme => {
-  if (typeof window === "undefined") return "system";
-  const saved = localStorage.getItem("itemplus_theme");
-  return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
-};
-
-const getStoredLocale = (): Locale => {
-  if (typeof window === "undefined") return "en";
-  const saved = localStorage.getItem("itemplus_locale");
-  return saved === "de" ? "de" : "en";
-};
-
-const getStoredDateFormat = (): DateFormat => {
-  if (typeof window === "undefined") return "DD.MM.YYYY";
-  const saved = localStorage.getItem("itemplus_date_format");
-  switch (saved) {
-    case "MM/DD/YYYY":
-    case "YYYY-MM-DD":
-    case "DD/MM/YYYY":
-      return saved;
-    default:
-      return "DD.MM.YYYY";
-  }
-};
-
-const getStoredIosDeleteConfirm = (): boolean => {
-  if (typeof window === "undefined") return true;
-  const saved = localStorage.getItem("itemplus_ios_delete_confirm");
-  return saved === null ? true : saved === "true";
-};
-
-const getStoredPrintMode = (): PrintMode => {
-  if (typeof window === "undefined") return "server";
-  return localStorage.getItem("itemplus_print_mode") === "ios" ? "ios" : "server";
-};
-
 export function AppProvider({ children }: { children: ReactNode }) {
   const [realm, _setRealm] = useState<Realm>(getStoredRealm);
-  const [serverURL] = useState(() => (typeof window !== "undefined" ? window.location.origin : ""));
+  const [serverURL] = useState(getServerURL);
   const [theme, _setTheme] = useState<Theme>(getStoredTheme);
   const [isDark, setIsDark] = useState(false);
   const [ready, setReady] = useState(false);
   const [dateFormat, _setDateFormat] = useState<DateFormat>(getStoredDateFormat);
   const [iosDeleteConfirm, _setIosDeleteConfirm] = useState(getStoredIosDeleteConfirm);
   const [printMode, _setPrintMode] = useState<PrintMode>(getStoredPrintMode);
+  const [showItemImages, _setShowItemImages] = useState(getStoredShowItemImages);
+  const [showItemPlaceholders, _setShowItemPlaceholders] = useState(getStoredShowItemPlaceholders);
+  const [showItemCategory, _setShowItemCategory] = useState(() => getStoredFlag("itemplus_show_item_category", true));
+  const [showItemLocation, _setShowItemLocation] = useState(() => getStoredFlag("itemplus_show_item_location", true));
+  const [showItemDescription, _setShowItemDescription] = useState(() => getStoredFlag("itemplus_show_item_description", true));
+  const [showItemStock, _setShowItemStock] = useState(() => getStoredFlag("itemplus_show_item_stock", true));
+  const [showItemConsumable, _setShowItemConsumable] = useState(() => getStoredFlag("itemplus_show_item_consumable", true));
+  const [showItemPrice, _setShowItemPrice] = useState(() => getStoredFlag("itemplus_show_item_price", true));
+  const [showItemTotal, _setShowItemTotal] = useState(() => getStoredFlag("itemplus_show_item_total", true));
+  const [showItemProperties, _setShowItemProperties] = useState(() => getStoredFlag("itemplus_show_item_properties", true));
+  const [showItemActivity, _setShowItemActivity] = useState(() => getStoredFlag("itemplus_show_item_activity", true));
+  const [itemStockWarningPercent, _setItemStockWarningPercent] = useState(() => getStoredPercent("itemplus_item_stock_warning_percent", 100));
+  const [itemStockCriticalPercent, _setItemStockCriticalPercent] = useState(() => getStoredPercent("itemplus_item_stock_critical_percent", 15));
+  const [itemsPerPage, _setItemsPerPage] = useState(getStoredItemsPerPage);
   const [brandingLogo, setBrandingLogo] = useState<string | null>(null);
   const [brandingSubtitle, setBrandingSubtitle] = useState<string>("");
+  const [brandingFooterText, setBrandingFooterText] = useState<string>("");
   const [brandingWidth, setBrandingWidth] = useState<number>(180);
   const [locale, _setLocale] = useState<Locale>(getStoredLocale);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -102,48 +121,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const can = useCallback((perm: string) => isAdmin || permissions.includes(perm), [isAdmin, permissions]);
 
-  const refreshBranding = useCallback(async () => {
-    try {
-      const branding = await api.getBranding();
-      setBrandingLogo(branding.logo || null);
-      setBrandingSubtitle(branding.subtitle || "");
-      setBrandingWidth(branding.width || 180);
-    } catch {
-      setBrandingLogo(null);
-      setBrandingSubtitle("");
-      setBrandingWidth(180);
-    }
+  const applyBrandingState = useCallback((branding?: { logo?: string | null; subtitle?: string; footerText?: string; width?: number }) => {
+    setBrandingLogo(branding?.logo || null);
+    setBrandingSubtitle(branding?.subtitle || "");
+    setBrandingFooterText(branding?.footerText || "");
+    setBrandingWidth(branding?.width || 180);
   }, []);
 
-  // Initialize from localStorage + fetch user role
+  const refreshBranding = useCallback(async () => {
+    try {
+      applyBrandingState(await api.getBranding());
+    } catch {
+      applyBrandingState();
+    }
+  }, [applyBrandingState]);
+
   useEffect(() => {
     api.realm = realm;
     api.baseURL = ""; // Same origin — relative /api/ calls
+  }, [realm]);
 
-    // Fetch user permissions (cookie-based auth — try the call, handle 401 gracefully)
+  // Initialize user role once for the mounted app shell
+  useEffect(() => {
+    api.baseURL = "";
     api.getMe().then((u) => {
       setIsAdmin(u.is_admin);
       setPermissions(u.permissions || []);
     }).catch(() => {}).finally(() => setReady(true));
-  }, [realm]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     api.getBranding().then((branding) => {
       if (cancelled) return;
-      setBrandingLogo(branding.logo || null);
-      setBrandingSubtitle(branding.subtitle || "");
-      setBrandingWidth(branding.width || 180);
+      applyBrandingState(branding);
     }).catch(() => {
       if (cancelled) return;
-      setBrandingLogo(null);
-      setBrandingSubtitle("");
-      setBrandingWidth(180);
+      applyBrandingState();
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyBrandingState]);
 
   // Apply theme to <html> element
   useEffect(() => {
@@ -169,32 +188,85 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setRealm = (r: Realm) => {
     _setRealm(r);
     api.realm = r;
-    localStorage.setItem("itemplus_realm", r);
+    setStoredValue("itemplus_realm", r);
   };
 
   const setTheme = (t: Theme) => {
-    _setTheme(t);
-    localStorage.setItem("itemplus_theme", t);
+    setStoredString(_setTheme, "itemplus_theme", t);
   };
 
   const setLocale = (l: Locale) => {
-    _setLocale(l);
-    localStorage.setItem("itemplus_locale", l);
+    setStoredString(_setLocale, "itemplus_locale", l);
   };
 
   const setDateFormat = (f: DateFormat) => {
-    _setDateFormat(f);
-    localStorage.setItem("itemplus_date_format", f);
+    setStoredString(_setDateFormat, "itemplus_date_format", f);
   };
 
   const setIosDeleteConfirm = (v: boolean) => {
-    _setIosDeleteConfirm(v);
-    localStorage.setItem("itemplus_ios_delete_confirm", String(v));
+    setStoredBoolean(_setIosDeleteConfirm, "itemplus_ios_delete_confirm", v);
   };
 
   const setPrintMode = (mode: PrintMode) => {
-    _setPrintMode(mode);
-    localStorage.setItem("itemplus_print_mode", mode);
+    setStoredString(_setPrintMode, "itemplus_print_mode", mode);
+  };
+
+  const setShowItemImages = (v: boolean) => {
+    setStoredBoolean(_setShowItemImages, "itemplus_show_item_images", v);
+  };
+
+  const setShowItemPlaceholders = (v: boolean) => {
+    setStoredBoolean(_setShowItemPlaceholders, "itemplus_show_item_placeholders", v);
+  };
+
+  const setShowItemCategory = (v: boolean) => {
+    setStoredBoolean(_setShowItemCategory, "itemplus_show_item_category", v);
+  };
+
+  const setShowItemLocation = (v: boolean) => {
+    setStoredBoolean(_setShowItemLocation, "itemplus_show_item_location", v);
+  };
+
+  const setShowItemDescription = (v: boolean) => {
+    setStoredBoolean(_setShowItemDescription, "itemplus_show_item_description", v);
+  };
+
+  const setShowItemStock = (v: boolean) => {
+    setStoredBoolean(_setShowItemStock, "itemplus_show_item_stock", v);
+  };
+
+  const setShowItemConsumable = (v: boolean) => {
+    setStoredBoolean(_setShowItemConsumable, "itemplus_show_item_consumable", v);
+  };
+
+  const setShowItemPrice = (v: boolean) => {
+    setStoredBoolean(_setShowItemPrice, "itemplus_show_item_price", v);
+  };
+
+  const setShowItemTotal = (v: boolean) => {
+    setStoredBoolean(_setShowItemTotal, "itemplus_show_item_total", v);
+  };
+
+  const setShowItemProperties = (v: boolean) => {
+    setStoredBoolean(_setShowItemProperties, "itemplus_show_item_properties", v);
+  };
+
+  const setShowItemActivity = (v: boolean) => {
+    setStoredBoolean(_setShowItemActivity, "itemplus_show_item_activity", v);
+  };
+
+  const setItemStockWarningPercent = (v: number) => {
+    const next = Math.min(500, Math.max(0, Math.round(v)));
+    setStoredNumber(_setItemStockWarningPercent, "itemplus_item_stock_warning_percent", next);
+  };
+
+  const setItemStockCriticalPercent = (v: number) => {
+    const next = Math.min(500, Math.max(0, Math.round(v)));
+    setStoredNumber(_setItemStockCriticalPercent, "itemplus_item_stock_critical_percent", next);
+  };
+
+  const setItemsPerPage = (v: number) => {
+    setStoredNumber(_setItemsPerPage, "itemplus_items_per_page", v);
   };
 
   const printViaIOSBridge = useCallback((entityType: "item" | "location", entityId: number, copies = 1) => {
@@ -247,28 +319,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [printMode, printViaIOSBridge]);
 
   const fmtDate = useCallback((dateStr: string | null | undefined): string => {
-    if (!dateStr) return "—";
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    const dd = String(d.getDate()).padStart(2, "0");
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const yyyy = String(d.getFullYear());
-    switch (dateFormat) {
-      case "DD.MM.YYYY": return `${dd}.${mm}.${yyyy}`;
-      case "MM/DD/YYYY": return `${mm}/${dd}/${yyyy}`;
-      case "DD/MM/YYYY": return `${dd}/${mm}/${yyyy}`;
-      case "YYYY-MM-DD": return `${yyyy}-${mm}-${dd}`;
-      default: return `${dd}.${mm}.${yyyy}`;
-    }
+    return formatAppDate(dateFormat, dateStr);
   }, [dateFormat]);
 
   const fmtDateTime = useCallback((dateStr: string | null | undefined): string => {
-    if (!dateStr) return "—";
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    return `${fmtDate(dateStr)}, ${time}`;
-  }, [fmtDate]);
+    return formatAppDateTime(dateFormat, dateStr);
+  }, [dateFormat]);
 
   const t = useCallback(
     (key: string, vars?: Record<string, string | number>) => translate(locale, key, vars),
@@ -276,7 +332,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AppContext.Provider value={{ realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, printItemQR, printLocationQR, brandingLogo, brandingSubtitle, brandingWidth, refreshBranding, fmtDate, fmtDateTime, t }}>
+    <AppContext.Provider value={{ realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, printItemQR, printLocationQR, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, fmtDate, fmtDateTime, t }}>
       {children}
     </AppContext.Provider>
   );

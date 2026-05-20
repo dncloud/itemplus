@@ -10,7 +10,7 @@ export function LogoIcon({ size = 32, className }: { size?: number; className?: 
         src={brandingLogo}
         alt="Site logo"
         style={{ width: Math.min(brandingWidth, size * 3), height: "auto", maxHeight: size * 1.5 }}
-        className={`object-contain ${className || ""}`}
+        className={`block object-contain ${className || ""}`}
       />
     );
   }
@@ -33,8 +33,8 @@ export function LogoFull({ size = 32, className }: { size?: number; className?: 
         <img
           src={brandingLogo}
           alt="Site logo"
-          style={{ width: brandingWidth, height: "auto", maxWidth: "100%" }}
-          className="object-contain"
+          style={{ width: "100%", maxWidth: brandingWidth, height: "auto" }}
+          className="block object-contain"
         />
         {brandingSubtitle.trim() ? (
           <div className="mt-2 text-[11px] leading-snug text-gray-500 dark:text-gray-400 whitespace-pre-line break-words">

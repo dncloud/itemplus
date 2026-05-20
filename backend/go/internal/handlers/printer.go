@@ -33,56 +33,38 @@ func RegisterPrinterRoutes(g *gin.RouterGroup) {
 	registerLabelTemplateRoutes(g)
 }
 
-func printItemLabel(c *gin.Context) {
-	realm := c.Param("realm")
-	id := c.Param("id")
-
+func parsePrintCopies(c *gin.Context) int {
 	var body struct {
 		Copies int `json:"copies"`
 	}
-	c.ShouldBindJSON(&body)
+	_ = c.ShouldBindJSON(&body)
 	if body.Copies < 1 {
-		body.Copies = 1
+		return 1
 	}
+	return body.Copies
+}
 
+func sendRenderedLabel(c *gin.Context, realm, entityType, id string) {
+	copies := parsePrintCopies(c)
 	idInt, _ := strconv.Atoi(id)
-	tspl, qr, err := printing.RenderEntityTSPL(realm, "item", idInt, body.Copies)
+	tspl, qr, err := printing.RenderEntityTSPL(realm, entityType, idInt, copies)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
 		return
 	}
-
 	if !services.SendTSPL(tspl) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "Printer not reachable"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "printed", "qr_content": qr, "copies": body.Copies})
+	c.JSON(http.StatusOK, gin.H{"status": "printed", "qr_content": qr, "copies": copies})
+}
+
+func printItemLabel(c *gin.Context) {
+	sendRenderedLabel(c, c.Param("realm"), "item", c.Param("id"))
 }
 
 func printLocationLabel(c *gin.Context) {
-	realm := c.Param("realm")
-	id := c.Param("id")
-
-	var body struct {
-		Copies int `json:"copies"`
-	}
-	c.ShouldBindJSON(&body)
-	if body.Copies < 1 {
-		body.Copies = 1
-	}
-
-	idInt, _ := strconv.Atoi(id)
-	tspl, qr, err := printing.RenderEntityTSPL(realm, "location", idInt, body.Copies)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
-		return
-	}
-
-	if !services.SendTSPL(tspl) {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "Printer not reachable"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"status": "printed", "qr_content": qr, "copies": body.Copies})
+	sendRenderedLabel(c, c.Param("realm"), "location", c.Param("id"))
 }
 
 func printerStatus(c *gin.Context) {

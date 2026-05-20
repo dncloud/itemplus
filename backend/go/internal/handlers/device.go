@@ -17,13 +17,10 @@ func RegisterDeviceRoutes(g *gin.RouterGroup) {
 	g.DELETE("/sessions/:id", middleware.Auth(), deleteSession)
 }
 
-func listSessions(c *gin.Context) {
-	user := middleware.GetUser(c)
-
-	rows, err := database.DB.Queryx(
-		"SELECT * FROM device_sessions WHERE user_id = ? ORDER BY last_seen DESC", user.ID)
+func listDeviceSessions(c *gin.Context, query string, args ...interface{}) {
+	rows, err := database.DB.Queryx(query, args...)
 	if err != nil {
-		log.Printf("DB query error in listSessions: %v", err)
+		log.Printf("DB query error in listDeviceSessions: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
@@ -43,30 +40,14 @@ func listSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func listSessions(c *gin.Context) {
+	user := middleware.GetUser(c)
+	listDeviceSessions(c, "SELECT * FROM device_sessions WHERE user_id = ? ORDER BY last_seen DESC", user.ID)
+}
+
 func listOnlineSessions(c *gin.Context) {
 	user := middleware.GetUser(c)
-
-	rows, err := database.DB.Queryx(
-		"SELECT * FROM device_sessions WHERE user_id = ? AND is_online = 1 ORDER BY last_seen DESC", user.ID)
-	if err != nil {
-		log.Printf("DB query error in listOnlineSessions: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
-		return
-	}
-	defer rows.Close()
-
-	var result []map[string]interface{}
-	for rows.Next() {
-		row := map[string]interface{}{}
-		if rows.MapScan(row) == nil {
-			cleanRow(row)
-			result = append(result, row)
-		}
-	}
-	if result == nil {
-		result = []map[string]interface{}{}
-	}
-	c.JSON(http.StatusOK, result)
+	listDeviceSessions(c, "SELECT * FROM device_sessions WHERE user_id = ? AND is_online = 1 ORDER BY last_seen DESC", user.ID)
 }
 
 func deleteSession(c *gin.Context) {

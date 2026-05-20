@@ -24,7 +24,7 @@ func TestResolveUploadPathAcceptsChildPath(t *testing.T) {
 func TestResolveUploadPathRejectsTraversal(t *testing.T) {
 	baseDir := filepath.Join(string(filepath.Separator), "srv", "itemplus", "uploads")
 
-	if _, _, err := ResolveUploadPath(baseDir, "/../../.jwt_secret"); err == nil {
+	if _, _, err := ResolveUploadPath(baseDir, "/../../itemplus.conf"); err == nil {
 		t.Fatal("expected traversal path to be rejected")
 	}
 }

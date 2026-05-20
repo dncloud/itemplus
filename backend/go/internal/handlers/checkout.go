@@ -1,10 +1,17 @@
 package handlers
 
 import (
+	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -35,7 +42,7 @@ func RegisterCheckoutRoutes(api *gin.RouterGroup) {
 // The row must already contain: status, created_at, due_date, returned_at (from DB).
 func enrichCheckout(row map[string]interface{}, realm string) {
 	row["realm"] = realm
-	now := time.Now().UTC()
+	now := time.Now().In(time.Local)
 
 	// Parse created_at for duration calculation
 	var start time.Time
@@ -73,24 +80,37 @@ func enrichCheckout(row map[string]interface{}, realm string) {
 				}
 			}
 			if statusVal == "active" {
-				isOverdue := now.After(due)
+				isOverdue := isCheckoutOverdue(now, due)
 				row["is_overdue"] = isOverdue
-				overdueDays := now.Sub(due).Seconds() / 86400
-				if overdueDays < 0 {
-					overdueDays = 0
-				}
-				row["overdue_days"] = math.Round(overdueDays*10) / 10
+				row["overdue_days"] = calculateOverdueDays(now, due)
 			} else if hasReturned {
-				wasOverdue := returned.After(due)
+				wasOverdue := isCheckoutOverdue(returned, due)
 				row["was_overdue"] = wasOverdue
-				overdueDays := returned.Sub(due).Seconds() / 86400
-				if overdueDays < 0 {
-					overdueDays = 0
-				}
-				row["overdue_days"] = math.Round(overdueDays*10) / 10
+				row["overdue_days"] = calculateOverdueDays(returned, due)
 			}
 		}
 	}
+}
+
+func normalizeCheckoutDate(value time.Time, loc *time.Location) time.Time {
+	local := value.In(loc)
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+}
+
+func isCheckoutOverdue(reference, due time.Time) bool {
+	loc := time.Local
+	return normalizeCheckoutDate(reference, loc).After(normalizeCheckoutDate(due, loc))
+}
+
+func calculateOverdueDays(reference, due time.Time) float64 {
+	loc := time.Local
+	referenceDate := normalizeCheckoutDate(reference, loc)
+	dueDate := normalizeCheckoutDate(due, loc)
+	overdueDays := referenceDate.Sub(dueDate).Seconds() / 86400
+	if overdueDays < 0 {
+		overdueDays = 0
+	}
+	return math.Round(overdueDays*10) / 10
 }
 
 // parseTime attempts to parse a time value from various formats returned by DB/MapScan.
@@ -122,32 +142,394 @@ func parseTimeStr(s string) time.Time {
 	return time.Time{}
 }
 
+func ensureCheckoutRealm(c *gin.Context, realm string) bool {
+	if realm == "archive" || realm == "collection" {
+		return true
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid realm"})
+	return false
+}
+
+func loadCheckoutRow(query string, realm string, args ...interface{}) (map[string]interface{}, error) {
+	row := map[string]interface{}{}
+	if err := database.DB.QueryRowx(query, args...).MapScan(row); err != nil {
+		return nil, err
+	}
+	cleanRow(row)
+	enrichCheckout(row, realm)
+	return row, nil
+}
+
+func loadCheckoutRows(query string, realm string, args ...interface{}) ([]map[string]interface{}, error) {
+	rows, err := database.DB.Queryx(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		row := map[string]interface{}{}
+		if rows.MapScan(row) == nil {
+			cleanRow(row)
+			enrichCheckout(row, realm)
+			result = append(result, row)
+		}
+	}
+	if result == nil {
+		result = []map[string]interface{}{}
+	}
+	return result, nil
+}
+
+func loadCheckoutRequestRow(query string, args ...interface{}) (map[string]interface{}, error) {
+	row := map[string]interface{}{}
+	if err := database.DB.QueryRowx(query, args...).MapScan(row); err != nil {
+		return nil, err
+	}
+	cleanRow(row)
+	enrichCheckoutRequestComponents(row)
+	enrichCheckoutRequest(row)
+	return row, nil
+}
+
+func loadBundleComponentIDs(realm string, parentItemID int) ([]int, error) {
+	table := realm + "_item_components"
+	rows, err := database.DB.Queryx(
+		fmt.Sprintf("SELECT child_item_id FROM %s WHERE parent_item_id = ? ORDER BY position ASC, id ASC", table),
+		parentItemID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	componentIDs := []int{}
+	for rows.Next() {
+		var childID int
+		if err := rows.Scan(&childID); err != nil {
+			return nil, err
+		}
+		componentIDs = append(componentIDs, childID)
+	}
+	return componentIDs, rows.Err()
+}
+
+func resolveCheckoutComponentIDs(realm string, parentItemID int, selectedComponentIDs []int) ([]int, error) {
+	availableComponentIDs, err := loadBundleComponentIDs(realm, parentItemID)
+	if err != nil {
+		return nil, err
+	}
+	if len(availableComponentIDs) == 0 {
+		if len(selectedComponentIDs) > 0 {
+			return nil, errors.New("Dieses Item ist kein Bundle")
+		}
+		return nil, nil
+	}
+	if len(selectedComponentIDs) == 0 {
+		return availableComponentIDs, nil
+	}
+
+	allowed := map[int]bool{}
+	for _, componentID := range availableComponentIDs {
+		allowed[componentID] = true
+	}
+	seen := map[int]bool{}
+	resolved := make([]int, 0, len(selectedComponentIDs))
+	for _, componentID := range selectedComponentIDs {
+		if !allowed[componentID] {
+			return nil, errors.New("Mindestens ein ausgewählter Bestandteil gehört nicht zu diesem Bundle")
+		}
+		if seen[componentID] {
+			continue
+		}
+		seen[componentID] = true
+		resolved = append(resolved, componentID)
+	}
+	return resolved, nil
+}
+
+func parseComponentIDsJSON(raw interface{}) []int {
+	if raw == nil {
+		return []int{}
+	}
+	switch value := raw.(type) {
+	case string:
+		if strings.TrimSpace(value) == "" {
+			return []int{}
+		}
+		var ids []int
+		if json.Unmarshal([]byte(value), &ids) == nil {
+			return ids
+		}
+	case []byte:
+		var ids []int
+		if json.Unmarshal(value, &ids) == nil {
+			return ids
+		}
+	case []int:
+		return value
+	case []int64:
+		ids := make([]int, 0, len(value))
+		for _, id := range value {
+			ids = append(ids, int(id))
+		}
+		return ids
+	case []interface{}:
+		ids := make([]int, 0, len(value))
+		for _, entry := range value {
+			switch n := entry.(type) {
+			case int:
+				ids = append(ids, n)
+			case int64:
+				ids = append(ids, int(n))
+			case float64:
+				ids = append(ids, int(n))
+			case string:
+				if parsed, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
+					ids = append(ids, parsed)
+				}
+			}
+		}
+		return ids
+	}
+	return []int{}
+}
+
+func loadItemNamesByID(realm string, ids []int) map[int]string {
+	names := map[int]string{}
+	if len(ids) == 0 || (realm != "archive" && realm != "collection") {
+		return names
+	}
+
+	args := make([]interface{}, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+
+	rows, err := database.DB.Queryx(
+		fmt.Sprintf("SELECT id, name FROM %s_items WHERE id IN (%s)", realm, inClausePlaceholders(args)),
+		args...,
+	)
+	if err != nil {
+		return names
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err == nil && strings.TrimSpace(name) != "" {
+			names[id] = name
+		}
+	}
+	return names
+}
+
+// Keep bundle labels in the original component order while loading the names in
+// one small query. That keeps checkout lists readable without extra DB chatter.
+func orderedItemNames(ids []int, namesByID map[int]string, includeFallback bool) []string {
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		name, ok := namesByID[id]
+		if ok {
+			names = append(names, name)
+			continue
+		}
+		if includeFallback {
+			names = append(names, fmt.Sprintf("Item #%d", id))
+		}
+	}
+	return names
+}
+
+func enrichCheckoutRequestComponents(row map[string]interface{}) {
+	realmStr, _ := row["realm"].(string)
+	if realmStr == "" {
+		if b, ok := row["realm"].([]byte); ok {
+			realmStr = string(b)
+		}
+	}
+	if realmStr != "archive" && realmStr != "collection" {
+		return
+	}
+
+	itemID := asInt(row["item_id"])
+	componentIDs := parseComponentIDsJSON(row["component_item_ids"])
+	row["component_item_ids"] = componentIDs
+
+	row["component_names"] = orderedItemNames(componentIDs, loadItemNamesByID(realmStr, componentIDs), false)
+
+	allComponentIDs, err := loadBundleComponentIDs(realmStr, itemID)
+	if err != nil || len(allComponentIDs) == 0 {
+		row["bundle_component_item_ids"] = []int{}
+		row["bundle_component_names"] = []string{}
+		return
+	}
+
+	row["bundle_component_item_ids"] = allComponentIDs
+	row["bundle_component_names"] = orderedItemNames(allComponentIDs, loadItemNamesByID(realmStr, allComponentIDs), false)
+}
+
+func enrichActiveCheckoutComponents(row map[string]interface{}) {
+	realmStr, _ := row["realm"].(string)
+	if realmStr == "" {
+		if b, ok := row["realm"].([]byte); ok {
+			realmStr = string(b)
+		}
+	}
+	if realmStr != "archive" && realmStr != "collection" {
+		return
+	}
+
+	itemID := asInt(row["item_id"])
+	if itemID == 0 {
+		return
+	}
+
+	allComponentIDs, err := loadBundleComponentIDs(realmStr, itemID)
+	if err != nil || len(allComponentIDs) == 0 {
+		row["is_bundle"] = false
+		row["component_item_ids"] = []int{}
+		row["component_names"] = []string{}
+		row["bundle_component_item_ids"] = []int{}
+		row["bundle_component_names"] = []string{}
+		return
+	}
+
+	row["is_bundle"] = true
+	checkoutsTable := realmStr + "_checkouts"
+
+	allNames := orderedItemNames(allComponentIDs, loadItemNamesByID(realmStr, allComponentIDs), true)
+	row["bundle_component_item_ids"] = allComponentIDs
+	row["bundle_component_names"] = allNames
+
+	userID := asInt64(row["user_id"])
+	createdAt := normalizeNullableDBValue(row["created_at"])
+	dueDate := normalizeNullableDBValue(row["due_date"])
+	notes := normalizeNullableDBValue(row["notes"])
+
+	childRows, err := database.DB.Queryx(
+		fmt.Sprintf(`SELECT item_id
+			FROM %s
+			WHERE status = 'active'
+			  AND bundle_parent_item_id = ?
+			  AND user_id = ?
+			  AND created_at = ?
+			  AND (
+			    (due_date IS NULL AND ? IS NULL)
+			    OR due_date = ?
+			  )
+			  AND (
+			    (notes IS NULL AND ? IS NULL)
+			    OR notes = ?
+			  )
+			ORDER BY id ASC`, checkoutsTable),
+		itemID,
+		userID,
+		createdAt,
+		dueDate,
+		dueDate,
+		notes,
+		notes,
+	)
+	if err != nil {
+		row["component_item_ids"] = []int{}
+		row["component_names"] = []string{}
+		return
+	}
+	defer childRows.Close()
+
+	activeComponentIDs := []int{}
+	activeComponentNames := []string{}
+	nameByID := map[int]string{}
+	for index, componentID := range allComponentIDs {
+		if index < len(allNames) {
+			nameByID[componentID] = allNames[index]
+		}
+	}
+
+	for childRows.Next() {
+		var childID int
+		if err := childRows.Scan(&childID); err == nil {
+			activeComponentIDs = append(activeComponentIDs, childID)
+			if name, ok := nameByID[childID]; ok {
+				activeComponentNames = append(activeComponentNames, name)
+			}
+		}
+	}
+
+	row["component_item_ids"] = activeComponentIDs
+	row["component_names"] = activeComponentNames
+}
+
+func ensureCheckoutTargetsAvailable(checkoutsTable, itemsTable string, parentItemID int, componentItemIDs []int) error {
+	var quantity int
+	if err := database.DB.Get(&quantity, fmt.Sprintf("SELECT COALESCE(quantity, 1) FROM %s WHERE id = ?", itemsTable), parentItemID); err != nil {
+		return err
+	}
+	if quantity < 1 {
+		quantity = 1
+	}
+
+	var activeParentCount int
+	if err := database.DB.Get(&activeParentCount, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE item_id = ? AND status = 'active'", checkoutsTable), parentItemID); err != nil {
+		return err
+	}
+	if activeParentCount >= quantity {
+		if quantity == 1 {
+			return errors.New("Item ist bereits ausgeliehen")
+		}
+		return fmt.Errorf("Alle %d Exemplare sind bereits ausgeliehen", quantity)
+	}
+
+	for _, targetID := range componentItemIDs {
+		var count int
+		if err := database.DB.Get(&count, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE item_id = ? AND status = 'active'", checkoutsTable), targetID); err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("Mindestens ein ausgewählter Bestandteil ist bereits ausgeliehen")
+		}
+	}
+	return nil
+}
+
 func checkoutItem(c *gin.Context) {
 	realm := c.Param("realm")
 	itemID := c.Param("item_id")
 	table := realm + "_checkouts"
 	itemsTable := realm + "_items"
 
-	if realm != "archive" && realm != "collection" {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid realm"})
+	if !ensureCheckoutRealm(c, realm) {
 		return
 	}
 
 	var body struct {
-		UserID  *int    `json:"user_id"`
-		DueDate *string `json:"due_date"`
-		Notes   *string `json:"notes"`
+		UserID           *int    `json:"user_id"`
+		DueDate          *string `json:"due_date"`
+		Notes            *string `json:"notes"`
+		ComponentItemIDs []int   `json:"component_item_ids"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
 		return
 	}
 
-	// Check if already checked out
-	var count int
-	database.DB.Get(&count, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE item_id = ? AND status = 'active'", table), itemID)
-	if count > 0 {
-		c.JSON(http.StatusConflict, gin.H{"detail": "Item is already checked out"})
+	itemIDInt, err := strconv.Atoi(itemID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid item id"})
+		return
+	}
+
+	selectedComponentIDs, err := resolveCheckoutComponentIDs(realm, itemIDInt, body.ComponentItemIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+		return
+	}
+
+	if err := ensureCheckoutTargetsAvailable(table, itemsTable, itemIDInt, selectedComponentIDs); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"detail": err.Error()})
 		return
 	}
 
@@ -157,10 +539,18 @@ func checkoutItem(c *gin.Context) {
 		checkoutUserID = *body.UserID
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := database.DB.Exec(
-		fmt.Sprintf("INSERT INTO %s (item_id, user_id, status, due_date, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?)", table),
-		itemID, checkoutUserID, "active", body.DueDate, body.Notes, now, now,
+	now := database.TimestampNow()
+	tx, err := database.DB.Beginx()
+	if err != nil {
+		log.Printf("DB begin error in checkoutItem: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+		return
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(
+		fmt.Sprintf("INSERT INTO %s (item_id, bundle_parent_item_id, user_id, status, due_date, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)", table),
+		itemID, nil, checkoutUserID, "active", body.DueDate, body.Notes, now, now,
 	)
 	if err != nil {
 		log.Printf("DB insert error in checkoutItem: %v", err)
@@ -169,22 +559,34 @@ func checkoutItem(c *gin.Context) {
 	}
 
 	newID, _ := result.LastInsertId()
+	for _, componentID := range selectedComponentIDs {
+		if _, err := tx.Exec(
+			fmt.Sprintf("INSERT INTO %s (item_id, bundle_parent_item_id, user_id, status, due_date, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)", table),
+			componentID, itemIDInt, checkoutUserID, "active", body.DueDate, body.Notes, now, now,
+		); err != nil {
+			log.Printf("DB insert child checkout error in checkoutItem: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("DB commit error in checkoutItem: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+		return
+	}
 	audit(user.ID, "checkout.create", fmt.Sprintf("realm=%s item=%s", realm, itemID))
 
-	row := map[string]interface{}{}
-	sqlRow := database.DB.QueryRowx(fmt.Sprintf(
+	row, err := loadCheckoutRow(fmt.Sprintf(
 		`SELECT co.*, i.name AS item_name, COALESCE(u.display_name, u.email) AS user_name
 		FROM %s co
 		LEFT JOIN %s i ON co.item_id = i.id
 		LEFT JOIN users u ON co.user_id = u.id
-		WHERE co.id = ?`, table, itemsTable), newID)
-	if err := sqlRow.MapScan(row); err != nil {
+		WHERE co.id = ?`, table, itemsTable), realm, newID)
+	if err != nil {
 		log.Printf("DB read error in checkoutItem: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
-	cleanRow(row)
-	enrichCheckout(row, realm)
 	c.JSON(http.StatusCreated, row)
 }
 
@@ -193,16 +595,80 @@ func checkinItem(c *gin.Context) {
 	itemID := c.Param("item_id")
 	table := realm + "_checkouts"
 
-	if realm != "archive" && realm != "collection" {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid realm"})
+	if !ensureCheckoutRealm(c, realm) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := database.DB.Exec(
-		fmt.Sprintf("UPDATE %s SET status = 'returned', returned_at = ?, updated_at = ? WHERE item_id = ? AND status = 'active'", table),
-		now, now, itemID,
-	)
+	var body struct {
+		CheckoutID *int64 `json:"checkout_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
+		return
+	}
+
+	now := database.TimestampNow()
+	var result sql.Result
+	var err error
+	if body.CheckoutID != nil {
+		rootRow := map[string]interface{}{}
+		if err := database.DB.QueryRowx(
+			fmt.Sprintf("SELECT id, item_id, user_id, due_date, notes, created_at FROM %s WHERE id = ? AND item_id = ? AND status = 'active'", table),
+			*body.CheckoutID,
+			itemID,
+		).MapScan(rootRow); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				c.JSON(http.StatusNotFound, gin.H{"detail": "No active checkout found"})
+				return
+			}
+			log.Printf("DB checkout lookup error in checkinItem: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+		cleanRow(rootRow)
+		rootItemID := asInt64(rootRow["item_id"])
+		rootUserID := asInt64(rootRow["user_id"])
+		rootCreatedAt := normalizeNullableDBValue(rootRow["created_at"])
+		rootDueDate := normalizeNullableDBValue(rootRow["due_date"])
+		rootNotes := normalizeNullableDBValue(rootRow["notes"])
+
+		result, err = database.DB.Exec(
+			fmt.Sprintf(`UPDATE %s
+				SET status = 'returned', returned_at = ?, updated_at = ?
+				WHERE status = 'active'
+				  AND (
+				    id = ?
+				    OR (
+				      bundle_parent_item_id = ?
+				      AND user_id = ?
+				      AND created_at = ?
+				      AND (
+				        (due_date IS NULL AND ? IS NULL)
+				        OR due_date = ?
+				      )
+				      AND (
+				        (notes IS NULL AND ? IS NULL)
+				        OR notes = ?
+				      )
+				    )
+				  )`, table),
+			now,
+			now,
+			*body.CheckoutID,
+			rootItemID,
+			rootUserID,
+			rootCreatedAt,
+			rootDueDate,
+			rootDueDate,
+			rootNotes,
+			rootNotes,
+		)
+	} else {
+		result, err = database.DB.Exec(
+			fmt.Sprintf("UPDATE %s SET status = 'returned', returned_at = ?, updated_at = ? WHERE (item_id = ? OR bundle_parent_item_id = ?) AND status = 'active'", table),
+			now, now, itemID, itemID,
+		)
+	}
 	if err != nil {
 		log.Printf("DB update error in checkinItem: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
@@ -224,7 +690,11 @@ func checkinItem(c *gin.Context) {
 	user := middleware.GetUser(c)
 	audit(user.ID, "checkout.return", fmt.Sprintf("realm=%s item=%s", realm, itemID))
 	ws.M.Broadcast("stats."+realm+"_updated", nil)
-	c.JSON(http.StatusOK, gin.H{"status": "returned", "item_id": itemID})
+	response := gin.H{"status": "returned", "item_id": itemID}
+	if body.CheckoutID != nil {
+		response["checkout_id"] = *body.CheckoutID
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func updateCheckout(c *gin.Context) {
@@ -232,8 +702,7 @@ func updateCheckout(c *gin.Context) {
 	id := c.Param("id")
 	table := realm + "_checkouts"
 
-	if realm != "archive" && realm != "collection" {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid realm"})
+	if !ensureCheckoutRealm(c, realm) {
 		return
 	}
 
@@ -246,22 +715,22 @@ func updateCheckout(c *gin.Context) {
 	delete(body, "id")
 	delete(body, "item_id")
 	delete(body, "user_id")
-	body["updated_at"] = time.Now().UTC().Format(time.RFC3339)
+	body["updated_at"] = database.TimestampNow()
 
-	sets, vals := buildUpdate(body)
+	sets, vals, err := buildUpdate(body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid field name"})
+		return
+	}
 	vals = append(vals, id)
-	_, err := database.DB.Exec(fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", table, sets), vals...)
+	_, err = database.DB.Exec(fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", table, sets), vals...)
 	if err != nil {
 		log.Printf("DB update error in updateCheckout: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
 
-	row := map[string]interface{}{}
-	sqlRow := database.DB.QueryRowx(fmt.Sprintf("SELECT * FROM %s WHERE id = ?", table), id)
-	_ = sqlRow.MapScan(row)
-	cleanRow(row)
-	enrichCheckout(row, realm)
+	row, _ := loadCheckoutRow(fmt.Sprintf("SELECT * FROM %s WHERE id = ?", table), realm, id)
 	c.JSON(http.StatusOK, row)
 }
 
@@ -270,8 +739,7 @@ func listActiveCheckouts(c *gin.Context) {
 	table := realm + "_checkouts"
 	itemsTable := realm + "_items"
 
-	if realm != "archive" && realm != "collection" {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid realm"})
+	if !ensureCheckoutRealm(c, realm) {
 		return
 	}
 
@@ -280,28 +748,17 @@ func listActiveCheckouts(c *gin.Context) {
 		FROM %s co
 		LEFT JOIN %s i ON co.item_id = i.id
 		LEFT JOIN users u ON co.user_id = u.id
-		WHERE co.status = 'active'
+		WHERE co.status = 'active' AND co.bundle_parent_item_id IS NULL
 		ORDER BY co.created_at DESC`, table, itemsTable)
 
-	rows, err := database.DB.Queryx(query)
+	result, err := loadCheckoutRows(query, realm)
 	if err != nil {
 		log.Printf("DB query error in listActiveCheckouts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
-	defer rows.Close()
-
-	var result []map[string]interface{}
-	for rows.Next() {
-		row := map[string]interface{}{}
-		if rows.MapScan(row) == nil {
-			cleanRow(row)
-			enrichCheckout(row, realm)
-			result = append(result, row)
-		}
-	}
-	if result == nil {
-		result = []map[string]interface{}{}
+	for _, row := range result {
+		enrichActiveCheckoutComponents(row)
 	}
 	c.JSON(http.StatusOK, result)
 }
@@ -311,8 +768,7 @@ func listCheckoutHistory(c *gin.Context) {
 	table := realm + "_checkouts"
 	itemsTable := realm + "_items"
 
-	if realm != "archive" && realm != "collection" {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid realm"})
+	if !ensureCheckoutRealm(c, realm) {
 		return
 	}
 
@@ -321,36 +777,21 @@ func listCheckoutHistory(c *gin.Context) {
 		FROM %s co
 		LEFT JOIN %s i ON co.item_id = i.id
 		LEFT JOIN users u ON co.user_id = u.id
-		WHERE co.status = 'returned'
+		WHERE co.status = 'returned' AND co.bundle_parent_item_id IS NULL
 		ORDER BY co.updated_at DESC
 		LIMIT 50`, table, itemsTable)
 
-	rows, err := database.DB.Queryx(query)
+	result, err := loadCheckoutRows(query, realm)
 	if err != nil {
 		log.Printf("DB query error in listCheckoutHistory: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
-	}
-	defer rows.Close()
-
-	var result []map[string]interface{}
-	for rows.Next() {
-		row := map[string]interface{}{}
-		if rows.MapScan(row) == nil {
-			cleanRow(row)
-			enrichCheckout(row, realm)
-			result = append(result, row)
-		}
-	}
-	if result == nil {
-		result = []map[string]interface{}{}
 	}
 	c.JSON(http.StatusOK, result)
 }
 
 func listMyOverdueCheckouts(c *gin.Context) {
 	user := middleware.GetUser(c)
-	now := time.Now().UTC().Format(time.RFC3339)
 
 	var allOverdue []map[string]interface{}
 	for _, realm := range []string{"archive", "collection"} {
@@ -361,28 +802,26 @@ func listMyOverdueCheckouts(c *gin.Context) {
 			`SELECT co.*, i.name AS item_name, '%s' AS realm
 			FROM %s co
 			LEFT JOIN %s i ON co.item_id = i.id
-			WHERE co.user_id = ? AND co.status = 'active' AND co.due_date IS NOT NULL AND co.due_date < ?
+			WHERE co.user_id = ? AND co.status = 'active' AND co.due_date IS NOT NULL AND co.bundle_parent_item_id IS NULL
 			ORDER BY co.due_date`, realm, table, itemsTable)
 
-		rows, err := database.DB.Queryx(query, user.ID, now)
+		rows, err := loadCheckoutRows(query, realm, user.ID)
 		if err != nil {
 			continue
 		}
-
-		for rows.Next() {
-			row := map[string]interface{}{}
-			if rows.MapScan(row) == nil {
-				cleanRow(row)
-				enrichCheckout(row, realm)
+		for _, row := range rows {
+			if isOverdue, ok := row["is_overdue"].(bool); ok && isOverdue {
 				allOverdue = append(allOverdue, row)
 			}
 		}
-		rows.Close()
 	}
 
 	if allOverdue == nil {
 		allOverdue = []map[string]interface{}{}
 	}
+	sort.SliceStable(allOverdue, func(i, j int) bool {
+		return parseTime(allOverdue[i]["due_date"]).Before(parseTime(allOverdue[j]["due_date"]))
+	})
 	c.JSON(http.StatusOK, allOverdue)
 }
 
@@ -392,6 +831,7 @@ func createCheckoutRequest(c *gin.Context) {
 		Realm                 string  `json:"realm" binding:"required"`
 		ItemID                int     `json:"item_id" binding:"required"`
 		RequestedDurationDays *int    `json:"requested_duration_days"`
+		ComponentItemIDs      []int   `json:"component_item_ids"`
 		Notes                 *string `json:"notes"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -399,8 +839,7 @@ func createCheckoutRequest(c *gin.Context) {
 		return
 	}
 
-	if body.Realm != "archive" && body.Realm != "collection" {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid realm"})
+	if !ensureCheckoutRealm(c, body.Realm) {
 		return
 	}
 
@@ -419,6 +858,16 @@ func createCheckoutRequest(c *gin.Context) {
 	var activeCount int
 	database.DB.Get(&activeCount, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE item_id = ? AND status = 'active'", checkoutsTable), body.ItemID)
 
+	selectedComponentIDs, err := resolveCheckoutComponentIDs(body.Realm, body.ItemID, body.ComponentItemIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+		return
+	}
+	if err := ensureCheckoutTargetsAvailable(checkoutsTable, itemsTable, body.ItemID, selectedComponentIDs); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"detail": err.Error()})
+		return
+	}
+
 	// Count pending requests
 	var pendingCount int
 	database.DB.Get(&pendingCount,
@@ -433,11 +882,13 @@ func createCheckoutRequest(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	componentIDsJSON, _ := json.Marshal(selectedComponentIDs)
+
+	now := database.TimestampNow()
 	result, err := database.DB.Exec(
-		`INSERT INTO checkout_requests (realm, item_id, user_id, status, requested_duration_days, notes, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?)`,
-		body.Realm, body.ItemID, user.ID, "pending", body.RequestedDurationDays, body.Notes, now, now,
+		`INSERT INTO checkout_requests (realm, item_id, user_id, status, requested_duration_days, component_item_ids, notes, created_at, updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?)`,
+		body.Realm, body.ItemID, user.ID, "pending", body.RequestedDurationDays, string(componentIDsJSON), body.Notes, now, now,
 	)
 	if err != nil {
 		log.Printf("DB insert error in createCheckoutRequest: %v", err)
@@ -448,15 +899,12 @@ func createCheckoutRequest(c *gin.Context) {
 	newID, _ := result.LastInsertId()
 	ws.M.SendToAdmins("admin.checkout_requested", map[string]interface{}{"request_id": newID})
 
-	row := map[string]interface{}{}
-	sqlRow := database.DB.QueryRowx("SELECT * FROM checkout_requests WHERE id = ?", newID)
-	if err := sqlRow.MapScan(row); err != nil {
+	row, err := loadCheckoutRequestRow("SELECT * FROM checkout_requests WHERE id = ?", newID)
+	if err != nil {
 		log.Printf("DB read error in createCheckoutRequest: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
-	cleanRow(row)
-	enrichCheckoutRequest(row)
 	c.JSON(http.StatusCreated, row)
 }
 
@@ -497,6 +945,7 @@ func listCheckoutRequests(c *gin.Context) {
 		row := map[string]interface{}{}
 		if rows.MapScan(row) == nil {
 			cleanRow(row)
+			enrichCheckoutRequestComponents(row)
 			enrichCheckoutRequest(row)
 			result = append(result, row)
 		}
@@ -540,10 +989,19 @@ func enrichCheckoutRequest(row map[string]interface{}) {
 		}
 		if itemID, ok := row["item_id"]; ok && itemID != nil && (realmStr == "archive" || realmStr == "collection") {
 			itemsTable := realmStr + "_items"
-			var name *string
-			if database.DB.Get(&name, fmt.Sprintf("SELECT name FROM %s WHERE id = ?", itemsTable), itemID) == nil && name != nil {
-				row["item_name"] = *name
+			var itemMeta struct {
+				Name     *string `db:"name"`
+				IsBundle bool    `db:"is_bundle"`
+			}
+			if database.DB.Get(&itemMeta, fmt.Sprintf("SELECT name, is_bundle FROM %s WHERE id = ?", itemsTable), itemID) == nil {
+				row["is_bundle"] = itemMeta.IsBundle
+				if itemMeta.Name != nil {
+					row["item_name"] = *itemMeta.Name
+				} else {
+					row["item_name"] = nil
+				}
 			} else {
+				row["is_bundle"] = false
 				row["item_name"] = nil
 			}
 		}
@@ -568,12 +1026,74 @@ func enrichCheckoutRequest(row map[string]interface{}) {
 			row["approved_by_name"] = nil
 		}
 	}
+
+	// For approved requests, attach the current active checkout so the UI can
+	// show the real loan window and overdue state.
+	statusVal, _ := row["status"].(string)
+	if statusVal == "" {
+		if b, ok := row["status"].([]byte); ok {
+			statusVal = string(b)
+		}
+	}
+	if statusVal != "approved" {
+		return
+	}
+
+	realmStr := ""
+	switch v := row["realm"].(type) {
+	case string:
+		realmStr = v
+	case []byte:
+		realmStr = string(v)
+	}
+	if realmStr != "archive" && realmStr != "collection" {
+		return
+	}
+
+	itemID, hasItemID := row["item_id"]
+	userID, hasUserID := row["user_id"]
+	if !hasItemID || itemID == nil || !hasUserID || userID == nil {
+		return
+	}
+
+	checkoutsTable := realmStr + "_checkouts"
+	activeRow, err := loadCheckoutRow(
+		fmt.Sprintf(
+			`SELECT *
+			FROM %s
+			WHERE item_id = ? AND user_id = ? AND status = 'active'
+			ORDER BY created_at DESC
+			LIMIT 1`, checkoutsTable,
+		),
+		realmStr,
+		itemID,
+		userID,
+	)
+	if err != nil || activeRow == nil {
+		return
+	}
+
+	if dueDate, ok := activeRow["due_date"]; ok && dueDate != nil {
+		row["due_date"] = dueDate
+	}
+	if checkoutCreatedAt, ok := activeRow["created_at"]; ok && checkoutCreatedAt != nil {
+		row["checkout_created_at"] = checkoutCreatedAt
+	}
+	if durationDays, ok := activeRow["duration_days"]; ok && durationDays != nil {
+		row["duration_days"] = durationDays
+	}
+	if isOverdue, ok := activeRow["is_overdue"]; ok && isOverdue != nil {
+		row["is_overdue"] = isOverdue
+	}
+	if overdueDays, ok := activeRow["overdue_days"]; ok && overdueDays != nil {
+		row["overdue_days"] = overdueDays
+	}
 }
 
 func approveCheckoutRequest(c *gin.Context) {
 	id := c.Param("id")
 	user := middleware.GetUser(c)
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := database.TimestampNow()
 
 	// Get request
 	row := map[string]interface{}{}
@@ -587,12 +1107,13 @@ func approveCheckoutRequest(c *gin.Context) {
 	// Create checkout
 	realm, _ := row["realm"].(string)
 	table := realm + "_checkouts"
+	itemsTable := realm + "_items"
 	itemID := row["item_id"]
 	requestUserID := row["user_id"]
 
-	var activeCount int
-	if err := database.DB.Get(&activeCount, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE item_id = ? AND status = 'active'", table), itemID); err == nil && activeCount > 0 {
-		c.JSON(http.StatusConflict, gin.H{"detail": "Item ist bereits ausgeliehen"})
+	selectedComponentIDs := parseComponentIDsJSON(row["component_item_ids"])
+	if err := ensureCheckoutTargetsAvailable(table, itemsTable, asInt(itemID), selectedComponentIDs); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"detail": err.Error()})
 		return
 	}
 
@@ -617,42 +1138,66 @@ func approveCheckoutRequest(c *gin.Context) {
 		switch d := days.(type) {
 		case float64:
 			if d > 0 {
-				due := time.Now().UTC().AddDate(0, 0, int(d)).Format(time.RFC3339)
+				due := database.TimestampAt(time.Now().UTC().AddDate(0, 0, int(d)))
 				dueDate = &due
 			}
 		case int64:
 			if d > 0 {
-				due := time.Now().UTC().AddDate(0, 0, int(d)).Format(time.RFC3339)
+				due := database.TimestampAt(time.Now().UTC().AddDate(0, 0, int(d)))
 				dueDate = &due
 			}
 		}
 	}
 
-	database.DB.Exec(
-		fmt.Sprintf("INSERT INTO %s (item_id, user_id, status, due_date, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?)", table),
-		itemID, requestUserID, "active", dueDate, row["notes"], now, now,
-	)
+	tx, err := database.DB.Beginx()
+	if err != nil {
+		log.Printf("DB begin error in approveCheckoutRequest: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(
+		fmt.Sprintf("INSERT INTO %s (item_id, bundle_parent_item_id, user_id, status, due_date, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)", table),
+		itemID, nil, requestUserID, "active", dueDate, row["notes"], now, now,
+	); err != nil {
+		log.Printf("DB insert error in approveCheckoutRequest: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+		return
+	}
+	for _, componentID := range selectedComponentIDs {
+		if _, err := tx.Exec(
+			fmt.Sprintf("INSERT INTO %s (item_id, bundle_parent_item_id, user_id, status, due_date, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)", table),
+			componentID, asInt(itemID), requestUserID, "active", dueDate, row["notes"], now, now,
+		); err != nil {
+			log.Printf("DB insert child checkout error in approveCheckoutRequest: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("DB commit error in approveCheckoutRequest: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+		return
+	}
 
 	audit(user.ID, "checkout.approve", "request="+id)
 	ws.M.SendToUser(asInt(row["user_id"]), "checkout.approved", map[string]interface{}{"request_id": asInt(row["id"])})
 	ws.M.Broadcast("stats."+realm+"_updated", nil)
 
-	updatedRow := map[string]interface{}{}
-	sqlRow = database.DB.QueryRowx("SELECT * FROM checkout_requests WHERE id = ?", id)
-	if err := sqlRow.MapScan(updatedRow); err != nil {
+	updatedRow, err := loadCheckoutRequestRow("SELECT * FROM checkout_requests WHERE id = ?", id)
+	if err != nil {
 		log.Printf("DB read error in approveCheckoutRequest: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
-	cleanRow(updatedRow)
-	enrichCheckoutRequest(updatedRow)
 	c.JSON(http.StatusOK, updatedRow)
 }
 
 func rejectCheckoutRequest(c *gin.Context) {
 	id := c.Param("id")
 	user := middleware.GetUser(c)
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := database.TimestampNow()
 
 	result, err := database.DB.Exec(
 		"UPDATE checkout_requests SET status = 'rejected', approved_by = ?, updated_at = ? WHERE id = ? AND status = 'pending'",
@@ -669,15 +1214,12 @@ func rejectCheckoutRequest(c *gin.Context) {
 		return
 	}
 	audit(user.ID, "checkout.reject", "request="+id)
-	row := map[string]interface{}{}
-	sqlRow := database.DB.QueryRowx("SELECT * FROM checkout_requests WHERE id = ?", id)
-	if err := sqlRow.MapScan(row); err != nil {
+	row, err := loadCheckoutRequestRow("SELECT * FROM checkout_requests WHERE id = ?", id)
+	if err != nil {
 		log.Printf("DB read error in rejectCheckoutRequest: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
-	cleanRow(row)
-	enrichCheckoutRequest(row)
 	ws.M.SendToUser(asInt(row["user_id"]), "checkout.rejected", map[string]interface{}{"request_id": asInt(row["id"])})
 	c.JSON(http.StatusOK, row)
 }
@@ -692,5 +1234,40 @@ func asInt(v interface{}) int {
 		return int(n)
 	default:
 		return 0
+	}
+}
+
+func asInt64(v interface{}) int64 {
+	switch n := v.(type) {
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	case float64:
+		return int64(n)
+	default:
+		return 0
+	}
+}
+
+func normalizeNullableDBValue(v interface{}) interface{} {
+	if v == nil {
+		return nil
+	}
+	switch value := v.(type) {
+	case string:
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return nil
+		}
+		return trimmed
+	case []byte:
+		trimmed := strings.TrimSpace(string(value))
+		if trimmed == "" {
+			return nil
+		}
+		return trimmed
+	default:
+		return v
 	}
 }

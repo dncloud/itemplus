@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	huh "charm.land/huh/v2"
 	"github.com/itemplus/backend/internal/database"
@@ -36,7 +35,7 @@ func EnsureInitialAdmin() {
 }
 
 func createInitialAdmin(name, email string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := database.TimestampNow()
 	appleSub := "bootstrap_" + strings.ToLower(strings.TrimSpace(email))
 
 	_, err := database.DB.Exec(

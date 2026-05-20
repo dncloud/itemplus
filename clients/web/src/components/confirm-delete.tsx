@@ -4,6 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import { wsClient } from "@/lib/ws";
 import { useApp } from "@/lib/app-context";
 
+type DeleteTarget = { id: number; name: string; type: string };
+
+function getDeleteEventTarget(data: Record<string, unknown>): DeleteTarget {
+  return {
+    id: (data.entity_id || data.item_id) as number,
+    name: (data.entity_name || data.item_name || "") as string,
+    type: (data.entity_type || "item") as string,
+  };
+}
+
+function matchesDeleteTarget(target: DeleteTarget | null, candidate: Pick<DeleteTarget, "id" | "type">) {
+  return !!target && target.id === candidate.id && target.type === candidate.type;
+}
+
 /**
  * Unified delete flow:
  * - iOS Bestätigung an: WS zuerst, Fallback auf Name-Eingabe wenn kein iOS verbunden
@@ -14,8 +28,11 @@ export function useDeleteFlow(opts: {
   onDeleted: (entityId: number, entityType: string) => void;
 }) {
   const { iosDeleteConfirm } = useApp();
-  const [pending, setPending] = useState<{ id: number; name: string; type: string } | null>(null);
-  const [confirm, setConfirm] = useState<{ id: number; name: string; type: string } | null>(null);
+  const [pending, setPending] = useState<DeleteTarget | null>(null);
+  const [confirm, setConfirm] = useState<DeleteTarget | null>(null);
+  const dismissedRef = useRef<{ id: number; type: string; until: number } | null>(null);
+  const pendingRef = useRef<DeleteTarget | null>(null);
+  const confirmRef = useRef<DeleteTarget | null>(null);
 
   const onDeletedRef = useRef(opts.onDeleted);
 
@@ -24,20 +41,45 @@ export function useDeleteFlow(opts: {
   }, [opts.onDeleted]);
 
   useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
+
+  useEffect(() => {
+    confirmRef.current = confirm;
+  }, [confirm]);
+
+  useEffect(() => {
     const unsub1 = wsClient.on("delete.done", (data) => {
-      const id = (data.entity_id || data.item_id) as number;
-      const type = (data.entity_type || "item") as string;
+      const { id, type } = getDeleteEventTarget(data);
+      const activePending = pendingRef.current;
+      const activeConfirm = confirmRef.current;
+      if (!matchesDeleteTarget(activePending, { id, type }) && !matchesDeleteTarget(activeConfirm, { id, type })) {
+        return;
+      }
       setPending(null);
       setConfirm(null);
       onDeletedRef.current(id, type);
     });
-    const unsub2 = wsClient.on("delete.rejected", () => {
+    const unsub2 = wsClient.on("delete.rejected", (data) => {
+      const { id, type } = getDeleteEventTarget(data);
+      const activePending = pendingRef.current;
+      if (!matchesDeleteTarget(activePending, { id, type })) {
+        return;
+      }
       setPending(null);
     });
     const unsub3 = wsClient.on("delete.no_device", (data) => {
-      const id = (data.entity_id || data.item_id) as number;
-      const type = (data.entity_type || "item") as string;
-      const name = (data.entity_name || data.item_name || "") as string;
+      const { id, name, type } = getDeleteEventTarget(data);
+      const activePending = pendingRef.current;
+      const activeConfirm = confirmRef.current;
+      if (!matchesDeleteTarget(activePending, { id, type }) && !matchesDeleteTarget(activeConfirm, { id, type })) {
+        return;
+      }
+      const dismissed = dismissedRef.current;
+      if (dismissed && dismissed.id === id && dismissed.type === type && dismissed.until > Date.now()) {
+        setPending(null);
+        return;
+      }
       setPending(null);
       setConfirm({ id, name, type });
     });
@@ -61,7 +103,14 @@ export function useDeleteFlow(opts: {
     }
   };
 
-  const cancelConfirm = () => setConfirm(null);
+  const cancelConfirm = () => {
+    setConfirm((current) => {
+      if (current) {
+        dismissedRef.current = { id: current.id, type: current.type, until: Date.now() + 1500 };
+      }
+      return null;
+    });
+  };
 
   return { pending, confirm, requestDelete, cancelConfirm };
 }

@@ -3,7 +3,6 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Backend](https://img.shields.io/badge/backend-Go-green)
 ![Web](https://img.shields.io/badge/web-Next.js-black)
-![iOS](https://img.shields.io/badge/iOS-SwiftUI-orange)
 
 Open-source inventory and collection management for private households, collectors, and anyone who wants to keep track of their things without warehouse software, SaaS overhead, or ERP bloat.
 
@@ -17,7 +16,7 @@ item+ helps you keep track of what you own, where it lives, and who currently ha
 - Define item details the way they actually make sense for you, from dimensions and condition to ratings, priorities, or collector-specific fields
 - Track value, notes, attachments, and where things are stored
 - Manage lending and returns in a simple way
-- Use QR labels, iPhone companion features, and optional thermal printing when you want them
+- Use QR labels, cross-device workflows, and optional thermal printing when you want them
 
 ## Screenshots
 
@@ -53,14 +52,13 @@ item+ helps you keep track of what you own, where it lives, and who currently ha
 | --- | --- |
 | `backend/go` | Main backend for everyday use, local installs, and packaged builds |
 | `clients/web` | Main web interface |
-| `clients/ios` | iPhone companion app for scanning, photos, approvals, and QR-based workflows |
 
-The Go backend is the primary and only actively maintained backend on `main`.
+The active backend on `main` is Go.
 
-- Use `backend/go` for local installs, packaged builds, and production use.
-- Use `clients/web` with the Go backend.
-- Use `clients/ios` as an optional companion to the web app.
-- The former Python backend has been preserved on the `legacy/python-backend` branch.
+- Use `backend/go` for local installs, packaged builds, and deployment.
+- Use `clients/web` as the main UI.
+
+The iOS client is no longer shipped in this public repository.
 
 ## Quick Start
 
@@ -74,13 +72,7 @@ If you do not want to set up Go, Node.js, or Xcode, use a release build.
 
 That starts the backend and the embedded web app together.
 
-On first start, item+ creates a local `.env` automatically from `config/default.env`.
-
-If you want demo data too:
-
-```bash
-./itemplus-seed --reset
-```
+On first start, item+ creates a local `itemplus.conf` automatically from `config/itemplus.conf`.
 
 If you want to use the server without the embedded web app, for example while running the web client separately in development:
 
@@ -91,15 +83,63 @@ If you want to use the server without the embedded web app, for example while ru
 You can also override bind address and port:
 
 ```bash
-./itemplus-server --bind 0.0.0.0 --port 8000
+./itemplus-server --bind 0.0.0.0 --port 17117
 ```
+
+Or point item+ to an explicit config file:
+
+```bash
+./itemplus-server --config /etc/itemplus/itemplus.conf
+```
+
+You can also move uploads to a separate absolute storage path:
+
+```bash
+./itemplus-server --upload /opt/bigstorage/itemplus/uploads
+```
+
+Or override the database path directly at startup:
+
+```bash
+./itemplus-server --database sqlite+aiosqlite:///./data/itemplus.db
+```
+
+You can also move log files somewhere else:
+
+```bash
+./itemplus-server --logs ./logs
+```
+
+On Windows, the same flags work with Windows paths, for example:
+
+```bash
+itemplus-server.exe --upload "D:\\itemplus\\uploads"
+itemplus-server.exe --database "sqlite+aiosqlite:///D:/itemplus/data/itemplus.db"
+itemplus-server.exe --logs "D:\\itemplus\\logs"
+```
+
+If item+ runs behind a reverse proxy you control, you can also allow trusted
+forwarded headers explicitly:
+
+```bash
+./itemplus-server --config /etc/itemplus/itemplus.conf
+```
+
+and then in `itemplus.conf`:
+
+```conf
+TRUSTED_PROXIES=127.0.0.1,::1
+```
+
+Leave `TRUSTED_PROXIES` empty when item+ is reachable directly. In that case,
+item+ ignores forwarded client IP and protocol headers on purpose.
 
 ### Recommended: Go backend + web app
 
 ```bash
 git clone https://github.com/dncloud/itemplus.git
 cd itemplus/backend/go
-go run . --bind 0.0.0.0 --port 8000
+go run . --bind 0.0.0.0 --port 17117
 ```
 
 In a second terminal:
@@ -112,6 +152,55 @@ npm run dev
 
 Open the web app at `http://127.0.0.1:3000`.
 
+### Linux service with systemd
+
+For a small Linux server or NAS, the simplest production path is usually:
+
+1. build or download `itemplus-server`
+2. place it on the host
+3. run it as a `systemd` service behind nginx or Caddy
+
+This repository now includes a basic `systemd` setup:
+
+- [config/linux/systemd/itemplus.service](/Users/oli/Desktop/itemplus/config/linux/systemd/itemplus.service)
+- [config/linux/systemd/itemplus.conf.example](/Users/oli/Desktop/itemplus/config/linux/systemd/itemplus.conf.example)
+- [config/linux/systemd/install.sh](/Users/oli/Desktop/itemplus/config/linux/systemd/install.sh)
+
+Typical flow on a Linux host:
+
+```bash
+# build locally with the embedded web app, or use a release binary first
+cd backend/go
+bash build.sh
+
+# then on the target host, as root
+bash config/linux/systemd/install.sh /path/to/itemplus-server
+```
+
+The installer sets up:
+
+- binary in `/usr/local/bin/itemplus-server`
+- service user `itemplus`
+- writable state directory `/var/lib/itemplus`
+- systemd unit `itemplus.service`
+- config file `/etc/itemplus/itemplus.conf`
+
+After that, adjust `/etc/itemplus/itemplus.conf` for your real domain, CORS, SMTP, and printer settings.
+
+If you want attachments or the database on a different disk, you can also extend the service command with explicit overrides, for example:
+
+```ini
+ExecStart=/usr/local/bin/itemplus-server --config /etc/itemplus/itemplus.conf --database sqlite+aiosqlite:///var/lib/itemplus/data/itemplus.db --upload /opt/bigstorage/itemplus/uploads --logs /var/log/itemplus
+```
+
+Useful Linux service commands:
+
+```bash
+systemctl status itemplus
+journalctl -u itemplus -f
+systemctl restart itemplus
+```
+
 ### Web client only
 
 ```bash
@@ -120,29 +209,63 @@ npm install
 npm run dev
 ```
 
-The web client runs on `http://127.0.0.1:3000` and expects a backend on port `8000`.
-
-### iPhone companion app
-
-Open this project in Xcode:
-
-```text
-clients/ios/itemplus.xcodeproj
-```
-
-The iPhone app works as a companion to the web app for scanning, photos, QR-based login, and other cross-device actions. It requires iOS 17+ and a running backend the phone can reach.
+The web client runs on `http://127.0.0.1:3000` and expects a backend on port `17117`.
 
 ## Configuration
 
-The Go backend creates a local `.env` automatically on first start from `config/default.env`.
+The Go backend creates a local `itemplus.conf` automatically on first start from `config/itemplus.conf`.
 
 Settings you will usually want to review:
 
 - `APP_DOMAIN`
 - `CORS_ORIGINS`
-- `APPLE_BUNDLE_ID`
+- `TRUSTED_PROXIES`
 - SMTP settings for magic-link login
 - `UPLOAD_DIR`
+
+### Trusted reverse proxies
+
+By default, item+ does **not** trust any reverse proxy headers.
+
+That means:
+
+- `X-Forwarded-For` is ignored unless you explicitly allow a proxy
+- `X-Forwarded-Proto` is ignored unless you explicitly allow a proxy
+- localhost-only setup mode and IP-based rate limits use the direct remote
+  address by default
+
+This is the safer default for self-hosted installs, especially when people bind
+item+ to `0.0.0.0` without nginx or Caddy in front of it.
+
+Only set `TRUSTED_PROXIES` when item+ really runs behind a reverse proxy that
+you control.
+
+Examples:
+
+```conf
+# Local nginx / Caddy on the same machine
+TRUSTED_PROXIES=127.0.0.1,::1
+
+# Internal reverse proxy networks
+TRUSTED_PROXIES=10.0.0.0/8,192.168.0.0/16
+```
+
+If you are unsure, leave it empty.
+
+### External attachments
+
+Normal external attachment links are limited to `http://` and `https://`.
+
+For non-HTTP storage such as SFTP, the recommended direction is not direct
+client links, but a backend proxy flow:
+
+`client <-> item+ <-> SFTP`
+
+That design keeps authentication, access control, logging, and future caching
+inside item+ instead of exposing storage credentials or raw server paths to the
+client.
+
+See also: [docs/sftp-external-storage.md](/Users/oli/Desktop/itemplus/docs/sftp-external-storage.md)
 
 ## Current State
 

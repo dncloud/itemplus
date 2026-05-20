@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/itemplus/backend/internal/database"
@@ -13,9 +12,10 @@ import (
 )
 
 type brandingResponse struct {
-	Logo     *string `json:"logo"`
-	Subtitle string  `json:"subtitle"`
-	Width    int     `json:"width"`
+	Logo       *string `json:"logo"`
+	Subtitle   string  `json:"subtitle"`
+	FooterText string  `json:"footerText"`
+	Width      int     `json:"width"`
 }
 
 func GetBranding(c *gin.Context) {
@@ -24,9 +24,10 @@ func GetBranding(c *gin.Context) {
 
 func adminUpdateBranding(c *gin.Context) {
 	var body struct {
-		Logo     *string `json:"logo"`
-		Subtitle *string `json:"subtitle"`
-		Width    *int    `json:"width"`
+		Logo       *string `json:"logo"`
+		Subtitle   *string `json:"subtitle"`
+		FooterText *string `json:"footerText"`
+		Width      *int    `json:"width"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
@@ -38,6 +39,15 @@ func adminUpdateBranding(c *gin.Context) {
 		subtitle = strings.TrimSpace(*body.Subtitle)
 		if len(subtitle) > 200 {
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "Subtitle too long"})
+			return
+		}
+	}
+
+	footerText := ""
+	if body.FooterText != nil {
+		footerText = strings.TrimSpace(*body.FooterText)
+		if len(footerText) > 200 {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Footer text too long"})
 			return
 		}
 	}
@@ -67,24 +77,31 @@ func adminUpdateBranding(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := database.TimestampNow()
 	if logoValue == nil {
-		database.DB.MustExec("DELETE FROM app_settings WHERE key = ?", "branding.logo")
+		if _, err := database.DB.Exec("DELETE FROM app_settings WHERE `key` = ?", "branding.logo"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not save branding"})
+			return
+		}
 	} else {
-		database.DB.MustExec(
-			"INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-			"branding.logo", *logoValue, now,
-		)
+		if err := database.UpsertAppSetting("branding.logo", *logoValue, now); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not save branding"})
+			return
+		}
 	}
 
-	database.DB.MustExec(
-		"INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-		"branding.subtitle", subtitle, now,
-	)
-	database.DB.MustExec(
-		"INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-		"branding.width", strconv.Itoa(width), now,
-	)
+	if err := database.UpsertAppSetting("branding.subtitle", subtitle, now); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not save branding"})
+		return
+	}
+	if err := database.UpsertAppSetting("branding.footer_text", footerText, now); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not save branding"})
+		return
+	}
+	if err := database.UpsertAppSetting("branding.width", strconv.Itoa(width), now); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not save branding"})
+		return
+	}
 
 	user := middleware.GetUser(c)
 	audit(user.ID, "branding.update", "site branding updated")
@@ -92,7 +109,16 @@ func adminUpdateBranding(c *gin.Context) {
 }
 
 func adminResetBranding(c *gin.Context) {
-	database.DB.MustExec("DELETE FROM app_settings WHERE key IN (?, ?, ?)", "branding.logo", "branding.subtitle", "branding.width")
+	if _, err := database.DB.Exec(
+		"DELETE FROM app_settings WHERE `key` IN (?, ?, ?, ?)",
+		"branding.logo",
+		"branding.subtitle",
+		"branding.footer_text",
+		"branding.width",
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not reset branding"})
+		return
+	}
 	user := middleware.GetUser(c)
 	audit(user.ID, "branding.reset", "site branding reset")
 	c.JSON(http.StatusOK, loadBranding())
@@ -101,19 +127,24 @@ func adminResetBranding(c *gin.Context) {
 func loadBranding() brandingResponse {
 	var logo sql.NullString
 	var subtitle sql.NullString
+	var footerText sql.NullString
 	var width sql.NullString
 
-	_ = database.DB.Get(&logo, "SELECT value FROM app_settings WHERE key = ?", "branding.logo")
-	_ = database.DB.Get(&subtitle, "SELECT value FROM app_settings WHERE key = ?", "branding.subtitle")
-	_ = database.DB.Get(&width, "SELECT value FROM app_settings WHERE key = ?", "branding.width")
+	_ = database.DB.Get(&logo, "SELECT value FROM app_settings WHERE `key` = ?", "branding.logo")
+	_ = database.DB.Get(&subtitle, "SELECT value FROM app_settings WHERE `key` = ?", "branding.subtitle")
+	_ = database.DB.Get(&footerText, "SELECT value FROM app_settings WHERE `key` = ?", "branding.footer_text")
+	_ = database.DB.Get(&width, "SELECT value FROM app_settings WHERE `key` = ?", "branding.width")
 
-	resp := brandingResponse{Subtitle: "", Width: 180}
+	resp := brandingResponse{Subtitle: "", FooterText: "", Width: 180}
 	if logo.Valid && strings.TrimSpace(logo.String) != "" {
 		logoString := logo.String
 		resp.Logo = &logoString
 	}
 	if subtitle.Valid {
 		resp.Subtitle = subtitle.String
+	}
+	if footerText.Valid {
+		resp.FooterText = footerText.String
 	}
 	if width.Valid {
 		if parsed, err := strconv.Atoi(strings.TrimSpace(width.String)); err == nil && parsed >= 80 && parsed <= 480 {

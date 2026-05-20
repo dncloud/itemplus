@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/itemplus/backend/internal/database"
@@ -102,7 +101,7 @@ func listLabelTemplates(c *gin.Context) {
 	if len(clauses) > 0 {
 		query += " WHERE " + strings.Join(clauses, " AND ")
 	}
-	query += " ORDER BY is_default DESC, is_system DESC, name COLLATE NOCASE ASC"
+	query += " ORDER BY is_default DESC, is_system DESC, " + database.CaseInsensitiveOrder("name")
 
 	var templates []labelTemplate
 	if err := database.DB.Select(&templates, query, args...); err != nil {
@@ -130,6 +129,20 @@ func getLabelTemplate(c *gin.Context) {
 	c.JSON(http.StatusOK, tpl)
 }
 
+func beginLabelTemplateTx(c *gin.Context) (*sqlx.Tx, bool) {
+	tx, err := database.DB.Beginx()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+		return nil, false
+	}
+	return tx, true
+}
+
+func respondLabelTemplate(c *gin.Context, id int, status int) {
+	tpl, _ := loadLabelTemplate(id)
+	c.JSON(status, tpl)
+}
+
 func createLabelTemplate(c *gin.Context) {
 	var body labelTemplatePayload
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -153,10 +166,9 @@ func createLabelTemplate(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	tx, err := database.DB.Beginx()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+	now := database.TimestampNow()
+	tx, ok := beginLabelTemplateTx(c)
+	if !ok {
 		return
 	}
 	defer tx.Rollback()
@@ -196,9 +208,7 @@ func createLabelTemplate(c *gin.Context) {
 
 	user := middleware.GetUser(c)
 	audit(user.ID, "label_template.create", "template_id="+strconv.Itoa(id))
-
-	tpl, _ := loadLabelTemplate(id)
-	c.JSON(http.StatusCreated, tpl)
+	respondLabelTemplate(c, id, http.StatusCreated)
 }
 
 func updateLabelTemplate(c *gin.Context) {
@@ -297,10 +307,9 @@ func updateLabelTemplate(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	tx, err := database.DB.Beginx()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+	now := database.TimestampNow()
+	tx, ok := beginLabelTemplateTx(c)
+	if !ok {
 		return
 	}
 	defer tx.Rollback()
@@ -345,9 +354,7 @@ func updateLabelTemplate(c *gin.Context) {
 
 	user := middleware.GetUser(c)
 	audit(user.ID, "label_template.update", "template_id="+strconv.Itoa(id))
-
-	updated, _ := loadLabelTemplate(id)
-	c.JSON(http.StatusOK, updated)
+	respondLabelTemplate(c, id, http.StatusOK)
 }
 
 func setDefaultLabelTemplate(c *gin.Context) {
@@ -362,9 +369,8 @@ func setDefaultLabelTemplate(c *gin.Context) {
 		return
 	}
 
-	tx, err := database.DB.Beginx()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+	tx, ok := beginLabelTemplateTx(c)
+	if !ok {
 		return
 	}
 	defer tx.Rollback()
@@ -374,7 +380,7 @@ func setDefaultLabelTemplate(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Label template could not be updated"})
 		return
 	}
-	if _, err := tx.Exec("UPDATE label_templates SET is_active = 1, updated_at = ? WHERE id = ?", time.Now().UTC().Format(time.RFC3339), id); err != nil {
+	if _, err := tx.Exec("UPDATE label_templates SET is_active = 1, updated_at = ? WHERE id = ?", database.TimestampNow(), id); err != nil {
 		log.Printf("DB update error in setDefaultLabelTemplate: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Label template could not be updated"})
 		return
@@ -388,9 +394,7 @@ func setDefaultLabelTemplate(c *gin.Context) {
 
 	user := middleware.GetUser(c)
 	audit(user.ID, "label_template.default", "template_id="+strconv.Itoa(id))
-
-	updated, _ := loadLabelTemplate(id)
-	c.JSON(http.StatusOK, updated)
+	respondLabelTemplate(c, id, http.StatusOK)
 }
 
 func deleteLabelTemplate(c *gin.Context) {
@@ -439,7 +443,7 @@ func loadLabelTemplate(id int) (*labelTemplate, error) {
 }
 
 func clearTemplateDefaults(tx *sqlx.Tx, target string, keepID int) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := database.TimestampNow()
 	if _, err := tx.Exec("UPDATE label_templates SET is_default = 0, updated_at = ? WHERE target = ?", now, target); err != nil {
 		return err
 	}

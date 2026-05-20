@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/itemplus/backend/internal/database"
@@ -68,16 +69,26 @@ func RegisterCRUD(group *gin.RouterGroup, table string, readPerm, writePerm, del
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
 			return
 		}
+		var err error
+		body, err = sanitizeCRUDPayload(table, body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+			return
+		}
 		if endsWithAny(table, "_locations") {
 			if err := validateLocationHierarchy(table, 0, body, false); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
 				return
 			}
 		}
-		body["created_at"] = time.Now().UTC().Format(time.RFC3339)
+		body["created_at"] = database.TimestampNow()
 		body["updated_at"] = body["created_at"]
 
-		cols, vals, placeholders := buildInsert(body)
+		cols, vals, placeholders, err := buildInsert(body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid field name"})
+			return
+		}
 		query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, cols, placeholders)
 		result, err := database.DB.Exec(query, vals...)
 		if err != nil {
@@ -106,6 +117,12 @@ func RegisterCRUD(group *gin.RouterGroup, table string, readPerm, writePerm, del
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
 			return
 		}
+		var err error
+		body, err = sanitizeCRUDPayload(table, body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+			return
+		}
 		if endsWithAny(table, "_locations") {
 			locationID, err := strconv.ParseInt(id, 10, 64)
 			if err != nil {
@@ -117,9 +134,13 @@ func RegisterCRUD(group *gin.RouterGroup, table string, readPerm, writePerm, del
 				return
 			}
 		}
-		body["updated_at"] = time.Now().UTC().Format(time.RFC3339)
+		body["updated_at"] = database.TimestampNow()
 
-		sets, vals := buildUpdate(body)
+		sets, vals, err := buildUpdate(body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid field name"})
+			return
+		}
 		vals = append(vals, id)
 		query := fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", table, sets)
 		result, err := database.DB.Exec(query, vals...)
@@ -163,11 +184,78 @@ func RegisterCRUD(group *gin.RouterGroup, table string, readPerm, writePerm, del
 	})
 }
 
+func sanitizeCRUDPayload(table string, body map[string]interface{}) (map[string]interface{}, error) {
+	allowed := writableCRUDFields(table)
+	if len(allowed) == 0 {
+		return nil, fmt.Errorf("Unsupported table")
+	}
+
+	clean := make(map[string]interface{}, len(body))
+	for key, value := range body {
+		if isReadOnlyPayloadField(key) {
+			continue
+		}
+		if !allowed[key] {
+			return nil, fmt.Errorf("Invalid field: %s", key)
+		}
+		clean[key] = normalizeCRUDValue(key, value)
+	}
+	return clean, nil
+}
+
+func writableCRUDFields(table string) map[string]bool {
+	switch {
+	case endsWithAny(table, "_categories"):
+		return fieldSet("name", "description", "color", "position")
+	case endsWithAny(table, "_locations"):
+		return fieldSet("name", "description", "color", "parent_id", "manager_id", "image", "capacity", "position")
+	case endsWithAny(table, "_manufacturers"):
+		return fieldSet("name", "logo", "website", "email", "phone", "address", "support_email", "support_phone", "support_url")
+	case endsWithAny(table, "_suppliers"):
+		return fieldSet("name", "logo", "website", "email", "phone", "address", "contact_person", "account_manager")
+	case endsWithAny(table, "_vendors"):
+		return fieldSet("name", "logo", "website", "email", "phone", "address", "contact_person", "customer_number")
+	case table == "generic_sales_platforms":
+		return fieldSet("name", "logo", "website", "email", "phone", "address", "contact_person", "customer_number")
+	default:
+		return nil
+	}
+}
+
+func fieldSet(fields ...string) map[string]bool {
+	result := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		result[field] = true
+	}
+	return result
+}
+
+func isReadOnlyPayloadField(key string) bool {
+	return key == "id" || key == "created_at" || key == "updated_at"
+}
+
+func normalizeCRUDValue(key string, value interface{}) interface{} {
+	if key != "address" || value == nil {
+		return value
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case map[string]interface{}, []interface{}:
+		if encoded, err := json.Marshal(typed); err == nil {
+			return string(encoded)
+		}
+	}
+	return value
+}
+
 func defaultListOrder(table string) string {
 	switch {
 	case endsWithAny(table, "_categories", "_locations"):
 		return "position, id"
 	case endsWithAny(table, "_manufacturers", "_suppliers", "_vendors"):
+		return "name, id"
+	case table == "generic_sales_platforms":
 		return "name, id"
 	default:
 		return "id"
@@ -254,35 +342,56 @@ func parseNullableInt64(v interface{}) (int64, bool, error) {
 	}
 }
 
-// Helper: build INSERT columns, placeholders, values
-func buildInsert(data map[string]interface{}) (string, []interface{}, string) {
-	cols := ""
-	placeholders := ""
-	var vals []interface{}
-	for k, v := range data {
-		if cols != "" {
-			cols += ", "
-			placeholders += ", "
-		}
-		cols += k
-		placeholders += "?"
-		vals = append(vals, v)
+var sqlIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func quoteSQLIdentifier(name string) (string, error) {
+	if !sqlIdentifierPattern.MatchString(name) {
+		return "", fmt.Errorf("invalid SQL identifier")
 	}
-	return cols, vals, placeholders
+	return "`" + name + "`", nil
 }
 
-// Helper: build UPDATE SET clause
-func buildUpdate(data map[string]interface{}) (string, []interface{}) {
-	sets := ""
-	var vals []interface{}
-	for k, v := range data {
-		if sets != "" {
-			sets += ", "
-		}
-		sets += k + " = ?"
-		vals = append(vals, v)
+func sortedKeys(data map[string]interface{}) []string {
+	keys := make([]string, 0, len(data))
+	for key := range data {
+		keys = append(keys, key)
 	}
-	return sets, vals
+	sort.Strings(keys)
+	return keys
+}
+
+// Build INSERT parts from request data. Field names are checked and quoted here;
+// values still go through SQL placeholders, so user input never becomes SQL text.
+func buildInsert(data map[string]interface{}) (string, []interface{}, string, error) {
+	cols := make([]string, 0, len(data))
+	placeholders := make([]string, 0, len(data))
+	vals := make([]interface{}, 0, len(data))
+	for _, key := range sortedKeys(data) {
+		quoted, err := quoteSQLIdentifier(key)
+		if err != nil {
+			return "", nil, "", err
+		}
+		cols = append(cols, quoted)
+		placeholders = append(placeholders, "?")
+		vals = append(vals, data[key])
+	}
+	return strings.Join(cols, ", "), vals, strings.Join(placeholders, ", "), nil
+}
+
+// Build an UPDATE clause in a stable order. Stable SQL is easier to read in logs
+// and avoids needless query churn while keeping the same placeholder protection.
+func buildUpdate(data map[string]interface{}) (string, []interface{}, error) {
+	sets := make([]string, 0, len(data))
+	vals := make([]interface{}, 0, len(data))
+	for _, key := range sortedKeys(data) {
+		quoted, err := quoteSQLIdentifier(key)
+		if err != nil {
+			return "", nil, err
+		}
+		sets = append(sets, quoted+" = ?")
+		vals = append(vals, data[key])
+	}
+	return strings.Join(sets, ", "), vals, nil
 }
 
 // Helper: normalize SQLite row values for JSON serialization.

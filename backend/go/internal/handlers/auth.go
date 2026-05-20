@@ -79,11 +79,71 @@ func RegisterAuthRoutes(g *gin.RouterGroup) {
 	g.POST("/ws-ticket", middleware.Auth(), wsTicketGenerate)
 }
 
+func randomURLToken(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+func resolvedLoginEmail(explicit *string, fallback string) *string {
+	if explicit != nil && strings.TrimSpace(*explicit) != "" {
+		return explicit
+	}
+	if strings.TrimSpace(fallback) == "" {
+		return nil
+	}
+	return &fallback
+}
+
+func createUserForLogin(appleSub string, email *string, displayName *string) (*middleware.User, bool, error) {
+	var count int
+	database.DB.Get(&count, "SELECT COUNT(*) FROM users")
+	isFirst := count == 0
+	now := database.TimestampNow()
+
+	result, err := database.DB.Exec(
+		"INSERT INTO users (apple_sub, email, display_name, is_admin, is_active, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, '[]', ?, ?)",
+		appleSub, email, displayName, isFirst, isFirst, now, now,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+
+	newID, _ := result.LastInsertId()
+	var user middleware.User
+	if err := database.DB.Get(&user, "SELECT * FROM users WHERE id = ?", newID); err != nil {
+		return nil, false, err
+	}
+
+	if !isFirst {
+		ws.M.SendToAdmins("admin.new_user_registered", map[string]interface{}{"user_id": newID})
+	}
+
+	regEmail := ""
+	if email != nil {
+		regEmail = *email
+	}
+	audit(int(newID), "auth.register", "email="+regEmail)
+	return &user, isFirst, nil
+}
+
 // setAuthCookie sets the HttpOnly auth cookie on the response.
 func setAuthCookie(c *gin.Context, token string, maxAge int) {
-	secure := config.C.AppDomain != ""
+	secure := requestIsHTTPS(c)
 	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie("itemplus_token", token, maxAge, "/", "", secure, true)
+}
+
+func requestIsHTTPS(c *gin.Context) bool {
+	if c.Request.TLS != nil {
+		return true
+	}
+	if !config.RequestCameThroughTrustedProxy(c.Request.RemoteAddr) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")), "https")
 }
 
 // cookieMaxAge returns the cookie max-age in seconds based on JWT expiry config.
@@ -92,7 +152,6 @@ func cookieMaxAge() int {
 }
 
 func appleLogin(c *gin.Context) {
-	// TODO: Full Apple token verification
 	var body struct {
 		IdentityToken string  `json:"identity_token"`
 		Email         *string `json:"email"`
@@ -103,7 +162,6 @@ func appleLogin(c *gin.Context) {
 		return
 	}
 
-	// For now, decode the JWT without full Apple JWKS verification
 	claims, err := services.DecodeAppleToken(body.IdentityToken)
 	if err != nil {
 		log.Printf("Apple token verification failed: %v", err)
@@ -131,41 +189,17 @@ func appleLogin(c *gin.Context) {
 		}
 	}
 	if err != nil {
-		// New user
-		var count int
-		database.DB.Get(&count, "SELECT COUNT(*) FROM users")
-		isFirst := count == 0
-		now := time.Now().UTC().Format(time.RFC3339)
-
-		email := body.Email
-		if email == nil && claims.Email != "" {
-			email = &claims.Email
-		}
-
-		result, insertErr := database.DB.Exec(
-			"INSERT INTO users (apple_sub, email, display_name, is_admin, is_active, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, '[]', ?, ?)",
-			appleSub, email, body.DisplayName, isFirst, isFirst, now, now,
-		)
+		email := resolvedLoginEmail(body.Email, claims.Email)
+		createdUser, _, insertErr := createUserForLogin(appleSub, email, body.DisplayName)
 		if insertErr != nil {
 			log.Printf("Apple login user insert failed: %v", insertErr)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Benutzer konnte nicht angelegt werden"})
 			return
 		}
-		newID, _ := result.LastInsertId()
-		database.DB.Get(&user, "SELECT * FROM users WHERE id = ?", newID)
-
-		if !isFirst {
-			ws.M.SendToAdmins("admin.new_user_registered", map[string]interface{}{"user_id": newID})
-		}
-
-		regEmail := ""
-		if email != nil {
-			regEmail = *email
-		}
-		audit(int(newID), "auth.register", "email="+regEmail)
+		user = *createdUser
 	}
 
-	database.DB.Exec("UPDATE users SET last_login = ? WHERE id = ?", time.Now().UTC().Format(time.RFC3339), user.ID)
+	database.DB.Exec("UPDATE users SET last_login = ? WHERE id = ?", database.TimestampNow(), user.ID)
 
 	token, _ := services.CreateToken(user.ID, user.AppleSub, user.IsAdmin)
 
@@ -207,15 +241,16 @@ func magicLinkRequest(c *gin.Context) {
 		return
 	}
 
-	// Generate token
-	b := make([]byte, 36)
-	rand.Read(b)
-	token := base64.URLEncoding.EncodeToString(b)
+	token, err := randomURLToken(36)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Token could not be created"})
+		return
+	}
 	expiry := time.Now().UTC().Add(time.Duration(config.C.MagicLinkExpiryMinutes) * time.Minute)
 
 	database.DB.Exec(
 		"INSERT INTO magic_link_tokens (email, token, expires_at, used) VALUES (?, ?, ?, 0)",
-		email, token, expiry.Format(time.RFC3339),
+		email, token, database.TimestampAt(expiry),
 	)
 
 	// Check if user exists
@@ -255,7 +290,7 @@ func magicLinkVerify(c *gin.Context) {
 		return
 	}
 
-	expiry, parseErr := time.Parse(time.RFC3339, ml.ExpiresAt)
+	expiry, parseErr := database.ParseTimestamp(ml.ExpiresAt)
 	if parseErr != nil {
 		log.Printf("Magic link expiry parse error: %v (value=%s)", parseErr, ml.ExpiresAt)
 	}
@@ -267,28 +302,13 @@ func magicLinkVerify(c *gin.Context) {
 	var user middleware.User
 	err = database.DB.Get(&user, "SELECT * FROM users WHERE email = ?", ml.Email)
 	if err == sql.ErrNoRows {
-		var count int
-		database.DB.Get(&count, "SELECT COUNT(*) FROM users")
-		isFirst := count == 0
-		now := time.Now().UTC().Format(time.RFC3339)
-
-		result, insertErr := database.DB.Exec(
-			"INSERT INTO users (apple_sub, email, is_admin, is_active, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, '[]', ?, ?)",
-			"magic_"+ml.Email, ml.Email, isFirst, isFirst, now, now,
-		)
+		createdUser, _, insertErr := createUserForLogin("magic_"+ml.Email, &ml.Email, nil)
 		if insertErr != nil {
 			log.Printf("Magic link user insert failed: %v (email=%s)", insertErr, ml.Email)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Benutzer konnte nicht angelegt werden"})
 			return
 		}
-		newID, _ := result.LastInsertId()
-		database.DB.Get(&user, "SELECT * FROM users WHERE id = ?", newID)
-
-		if !isFirst {
-			ws.M.SendToAdmins("admin.new_user_registered", map[string]interface{}{"user_id": newID})
-		}
-
-		audit(int(newID), "auth.register", "email="+ml.Email)
+		user = *createdUser
 	} else if err != nil {
 		log.Printf("Magic link user lookup failed: %v (email=%s)", err, ml.Email)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Benutzer konnte nicht geladen werden"})
@@ -301,7 +321,7 @@ func magicLinkVerify(c *gin.Context) {
 		return
 	}
 
-	database.DB.Exec("UPDATE users SET last_login = ? WHERE id = ?", time.Now().UTC().Format(time.RFC3339), user.ID)
+	database.DB.Exec("UPDATE users SET last_login = ? WHERE id = ?", database.TimestampNow(), user.ID)
 
 	audit(user.ID, "auth.magic_verify", "email="+ml.Email)
 
@@ -318,7 +338,7 @@ func magicLinkVerify(c *gin.Context) {
 // ── Logout ──
 
 func authLogout(c *gin.Context) {
-	secure := config.C.AppDomain != ""
+	secure := requestIsHTTPS(c)
 	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie("itemplus_token", "", -1, "/", "", secure, true)
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -329,9 +349,11 @@ func authLogout(c *gin.Context) {
 func wsTicketGenerate(c *gin.Context) {
 	user := middleware.GetUser(c)
 
-	b := make([]byte, 32)
-	rand.Read(b)
-	ticket := base64.URLEncoding.EncodeToString(b)
+	ticket, err := randomURLToken(32)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Ticket could not be created"})
+		return
+	}
 
 	wsTicketsMu.Lock()
 	wsTickets[ticket] = &wsTicket{

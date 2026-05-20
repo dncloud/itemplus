@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/itemplus/backend/internal/database"
@@ -80,7 +79,7 @@ func updateMe(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := database.TimestampNow()
 	name := body.DisplayName
 	if name == nil {
 		name = body.Name
@@ -206,7 +205,7 @@ func updateUser(c *gin.Context) {
 	}
 	wasInactive := !current.IsActive
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := database.TimestampNow()
 	name := body.DisplayName
 	if name == nil {
 		name = body.Name
@@ -258,7 +257,7 @@ func activateUser(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := database.TimestampNow()
 	database.DB.Exec("UPDATE users SET is_active = 1, updated_at = ? WHERE id = ?", now, id)
 
 	// Re-read updated user

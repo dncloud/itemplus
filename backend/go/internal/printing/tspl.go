@@ -119,7 +119,7 @@ func loadActiveTemplate(entityType string) (*labelTemplateRecord, error) {
 			CASE WHEN target = ? THEN 0 ELSE 1 END,
 			is_default DESC,
 			is_system DESC,
-			name COLLATE NOCASE ASC
+	`+database.CaseInsensitiveOrder("name")+`
 		LIMIT 1
 	`, entityType, entityType)
 	if err != nil {

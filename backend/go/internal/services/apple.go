@@ -184,7 +184,7 @@ func DecodeAppleToken(tokenStr string) (*AppleClaims, error) {
 	// Validate audience (aud) — must match our Apple Bundle ID
 	bundleID := config.C.AppleBundleID
 	if bundleID == "" {
-		return nil, errors.New("APPLE_BUNDLE_ID not configured — cannot verify Apple token audience")
+		return nil, errors.New("Apple bundle ID not configured — cannot verify Apple token audience")
 	}
 	aud, _ := claims.GetAudience()
 	audMatch := false

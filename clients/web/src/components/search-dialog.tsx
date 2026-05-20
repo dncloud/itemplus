@@ -4,8 +4,15 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogPanel, Transition, TransitionChild } from "@headlessui/react";
 import { MagnifyingGlassIcon, CubeIcon, TagIcon, MapPinIcon } from "@heroicons/react/24/outline";
-import { api, type Item, type Category, type Location } from "@/lib/api";
+import { type Item, type Category, type Location } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import {
+  fetchSearchDialogReferenceData,
+  filterSearchDialogCategories,
+  filterSearchDialogLocations,
+  hasSearchDialogResults,
+  searchDialogItems,
+} from "@/components/search-dialog-utils";
 
 export default function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
@@ -23,8 +30,8 @@ export default function SearchDialog({ open, onClose }: { open: boolean; onClose
     if (!open) return;
     const timer = setTimeout(() => inputRef.current?.focus(), 50);
     if (!loaded) {
-      Promise.all([api.getCategories(), api.getLocations()])
-        .then(([c, l]) => { setCategories(c); setLocations(l); setLoaded(true); })
+      fetchSearchDialogReferenceData()
+        .then(({ categories, locations }) => { setCategories(categories); setLocations(locations); setLoaded(true); })
         .catch(() => {});
     }
     return () => clearTimeout(timer);
@@ -36,22 +43,20 @@ export default function SearchDialog({ open, onClose }: { open: boolean; onClose
     const timeout = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await api.getItems(1, query);
-        setItems(res.items.slice(0, 8));
+        setItems(await searchDialogItems(query));
       } catch { setItems([]); }
       setLoading(false);
     }, 200);
     return () => clearTimeout(timeout);
   }, [query]);
 
-  const q = query.toLowerCase();
   const filteredCats = useMemo(
-    () => (q ? categories.filter((c) => c.name.toLowerCase().includes(q)) : categories),
-    [categories, q],
+    () => filterSearchDialogCategories(categories, query),
+    [categories, query],
   );
   const filteredLocs = useMemo(
-    () => (q ? locations.filter((l) => l.name.toLowerCase().includes(q)) : locations),
-    [locations, q],
+    () => filterSearchDialogLocations(locations, query),
+    [locations, query],
   );
   const visibleItems = useMemo(() => (open && query.trim() ? items : []), [items, open, query]);
 
@@ -62,7 +67,9 @@ export default function SearchDialog({ open, onClose }: { open: boolean; onClose
     router.push(path);
   };
 
-  const hasResults = visibleItems.length > 0 || filteredCats.length > 0 || filteredLocs.length > 0;
+  const visibleCategories = filteredCats;
+  const visibleLocations = filteredLocs;
+  const hasResults = hasSearchDialogResults(visibleItems, visibleCategories, visibleLocations);
 
   return (
     <Transition show={open} as={Fragment}>
@@ -72,7 +79,7 @@ export default function SearchDialog({ open, onClose }: { open: boolean; onClose
           enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
           leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" />
+          <div className="fixed inset-0 bg-gray-500/25 backdrop-blur-sm dark:bg-black/40" />
         </TransitionChild>
         <div className="fixed inset-0 flex items-start justify-center pt-[15vh] px-4">
           <TransitionChild
@@ -80,81 +87,90 @@ export default function SearchDialog({ open, onClose }: { open: boolean; onClose
             enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100"
             leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
           >
-            <DialogPanel className="w-full max-w-xl rounded-xl bg-white dark:bg-gray-800 shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700 overflow-hidden">
-              {/* Search input */}
-              <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-                <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 shrink-0" />
+            <DialogPanel className="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl outline-1 outline-black/5 transition-all dark:bg-gray-900 dark:outline-white/10">
+              <div className="grid grid-cols-1 border-b border-gray-100 dark:border-white/10">
                 <input
                   ref={inputRef}
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={t("common.search")}
-                  className="flex-1 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-600 px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
+                  className="col-start-1 row-start-1 h-12 w-full pr-20 pl-11 text-base text-gray-900 outline-hidden placeholder:text-gray-400 sm:text-sm dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500"
                 />
-                <kbd className="text-xs text-gray-400 border border-gray-300 dark:border-gray-600 rounded px-1.5 py-0.5">Esc</kbd>
+                <MagnifyingGlassIcon className="pointer-events-none col-start-1 row-start-1 ml-4 h-5 w-5 self-center text-gray-400" />
+                <kbd className="col-start-1 row-start-1 mr-4 flex min-w-9 items-center justify-center self-center justify-self-end rounded border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-400 dark:border-white/10 dark:bg-white/5 dark:text-gray-500">
+                  Esc
+                </kbd>
               </div>
 
-              {/* Results */}
-              <div className="max-h-[60vh] overflow-y-auto">
-                {/* Items */}
-                {visibleItems.length > 0 && (
-                  <div className="p-2">
-                    <SectionHeader icon={<CubeIcon className="h-3.5 w-3.5" />} label={t("nav.items")} />
+              <div className="max-h-80 overflow-y-auto pb-2">
+                {!query && !loaded ? (
+                  <div className="flex justify-center py-8">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                  </div>
+                ) : null}
+
+                {visibleItems.length > 0 ? (
+                  <CommandGroup label={t("nav.items")}>
                     {visibleItems.map((item) => (
                       <ResultRow
                         key={`i-${item.id}`}
+                        icon={<CubeIcon className="h-6 w-6" />}
                         onClick={() => go(`/items/${item.id}`)}
                         label={item.name}
                         detail={item.purchase_price != null ? `${item.purchase_price.toLocaleString("de-DE", { style: "currency", currency: item.purchase_currency || "EUR" })} · ×${item.quantity}` : `×${item.quantity}`}
                       />
                     ))}
-                  </div>
-                )}
+                  </CommandGroup>
+                ) : null}
 
-                {/* Categories */}
-                {filteredCats.length > 0 && (
-                  <div className={`p-2 ${items.length > 0 ? "border-t border-gray-100 dark:border-gray-800" : ""}`}>
-                    <SectionHeader icon={<TagIcon className="h-3.5 w-3.5" />} label={t("nav.categories")} />
-                    {filteredCats.slice(0, q ? 10 : 5).map((cat) => (
+                {visibleCategories.length > 0 ? (
+                  <CommandGroup label={t("nav.categories")}>
+                    {visibleCategories.map((cat) => (
                       <ResultRow
                         key={`c-${cat.id}`}
+                        icon={<TagIcon className="h-6 w-6" />}
                         onClick={() => go(`/items?category=${cat.id}`)}
                         label={cat.name}
                         detail={cat.description || undefined}
-                        accent="blue"
                       />
                     ))}
-                  </div>
-                )}
+                  </CommandGroup>
+                ) : null}
 
-                {/* Locations */}
-                {filteredLocs.length > 0 && (
-                  <div className={`p-2 ${(items.length > 0 || filteredCats.length > 0) ? "border-t border-gray-100 dark:border-gray-800" : ""}`}>
-                    <SectionHeader icon={<MapPinIcon className="h-3.5 w-3.5" />} label={t("nav.locations")} />
-                    {filteredLocs.slice(0, q ? 10 : 5).map((loc) => (
+                {visibleLocations.length > 0 ? (
+                  <CommandGroup label={t("nav.locations")}>
+                    {visibleLocations.map((loc) => (
                       <ResultRow
                         key={`l-${loc.id}`}
+                        icon={<MapPinIcon className="h-6 w-6" />}
                         onClick={() => go(`/items?location=${loc.id}`)}
                         label={loc.name}
                         detail={loc.description || undefined}
-                        accent="green"
                       />
                     ))}
-                  </div>
-                )}
+                  </CommandGroup>
+                ) : null}
 
-                {/* No results */}
-                {query && !loading && !hasResults && (
-                  <p className="p-6 text-sm text-gray-500 text-center">{t("items.notFound")}</p>
-                )}
-
-                {/* Empty state — no query */}
-                {!query && !loaded && (
-                  <div className="flex justify-center py-8">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                {query && !loading && !hasResults ? (
+                  <div className="px-6 py-14 text-center text-sm sm:px-14">
+                    <MagnifyingGlassIcon className="mx-auto h-6 w-6 text-gray-400" />
+                    <p className="mt-4 font-semibold text-gray-900 dark:text-white">{t("items.notFound")}</p>
+                    <p className="mt-2 text-gray-500 dark:text-gray-400">{t("common.noResults")}</p>
                   </div>
-                )}
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-y-2 bg-gray-50 px-4 py-2.5 text-xs text-gray-700 dark:bg-white/5 dark:text-gray-300">
+                <span>{t("nav.items")}</span>
+                <kbd className="mx-2 flex h-6 min-w-10 items-center justify-center rounded-md border border-gray-300 bg-white px-2.5 font-semibold text-gray-900 dark:border-white/10 dark:bg-gray-900 dark:text-white">
+                  ↵
+                </kbd>
+                <span>{t("common.open")}</span>
+                <kbd className="mx-2 flex h-6 min-w-10 items-center justify-center rounded-md border border-gray-300 bg-white px-2.5 font-semibold text-gray-900 dark:border-white/10 dark:bg-gray-900 dark:text-white">
+                  Esc
+                </kbd>
+                <span>{t("common.close")}</span>
               </div>
             </DialogPanel>
           </TransitionChild>
@@ -164,28 +180,32 @@ export default function SearchDialog({ open, onClose }: { open: boolean; onClose
   );
 }
 
-function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
+function CommandGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">
-      {icon}
-      {label}
+    <div className="pt-2">
+      <div className="bg-gray-100 px-4 py-2.5 text-xs font-semibold text-gray-900 dark:bg-white/10 dark:text-white">
+        {label}
+      </div>
+      <div className="mt-2 text-sm text-gray-800 dark:text-gray-200">{children}</div>
     </div>
   );
 }
 
-function ResultRow({ onClick, label, detail, accent }: {
-  onClick: () => void; label: string; detail?: string; accent?: "blue" | "green";
+function ResultRow({ onClick, label, detail, icon }: {
+  onClick: () => void; label: string; detail?: string; icon: React.ReactNode;
 }) {
-  const dotColor = accent === "blue" ? "bg-blue-400" : accent === "green" ? "bg-green-400" : "bg-gray-300 dark:bg-gray-600";
-
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+      className="group flex w-full items-center px-4 py-2 text-left select-none focus:outline-hidden hover:bg-gray-50 hover:text-indigo-600 dark:hover:bg-white/5 dark:hover:text-white"
     >
-      <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor}`} />
-      <span className="truncate flex-1">{label}</span>
-      {detail && <span className="text-xs text-gray-400 shrink-0 max-w-[40%] truncate">{detail}</span>}
+      <span className="flex-none text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-white">{icon}</span>
+      <span className="ml-3 flex-auto truncate">{label}</span>
+      {detail && (
+        <span className="ml-3 hidden max-w-[40%] flex-none truncate text-xs text-gray-400 sm:block group-hover:text-gray-600 dark:group-hover:text-gray-300">
+          {detail}
+        </span>
+      )}
     </button>
   );
 }

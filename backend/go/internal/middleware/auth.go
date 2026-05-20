@@ -78,27 +78,23 @@ func (u *User) HasAnyPermission(perms ...string) bool {
 
 // Auth extracts and validates the JWT token, sets "user" in context.
 func Auth() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		user, err := extractUser(c)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"detail": "Invalid token"})
-			return
-		}
-		if !user.IsActive {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"detail": "Account not activated"})
-			return
-		}
-		c.Set("user", user)
-		c.Next()
-	}
+	return authMiddleware(true)
 }
 
 // AuthAllowInactive extracts user but doesn't require activation.
 func AuthAllowInactive() gin.HandlerFunc {
+	return authMiddleware(false)
+}
+
+func authMiddleware(requireActive bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, err := extractUser(c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"detail": "Invalid token"})
+			return
+		}
+		if requireActive && !user.IsActive {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"detail": "Account not activated"})
 			return
 		}
 		c.Set("user", user)

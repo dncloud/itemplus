@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
@@ -23,14 +21,16 @@ func RegisterQRLoginRoutes(g *gin.RouterGroup) {
 }
 
 func createQRToken(c *gin.Context) {
-	b := make([]byte, 32)
-	rand.Read(b)
-	token := base64.URLEncoding.EncodeToString(b)
+	token, err := randomURLToken(32)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+		return
+	}
 	expiry := time.Now().UTC().Add(time.Duration(qrTokenExpiry) * time.Second)
 
-	_, err := database.DB.Exec(
+	_, err = database.DB.Exec(
 		"INSERT INTO qr_login_tokens (token, expires_at, used) VALUES (?, ?, 0)",
-		token, expiry.Format(time.RFC3339),
+		token, database.TimestampAt(expiry),
 	)
 	if err != nil {
 		log.Printf("DB insert error in createQRToken: %v", err)
@@ -66,7 +66,7 @@ func confirmQRToken(c *gin.Context) {
 		return
 	}
 
-	expiry, _ := time.Parse(time.RFC3339, qr.ExpiresAt)
+	expiry, _ := database.ParseTimestamp(qr.ExpiresAt)
 	if time.Now().UTC().After(expiry) {
 		c.JSON(http.StatusGone, gin.H{"detail": "Token expired"})
 		return
@@ -103,7 +103,7 @@ func pollQRToken(c *gin.Context) {
 		return
 	}
 
-	expiry, _ := time.Parse(time.RFC3339, qr.ExpiresAt)
+	expiry, _ := database.ParseTimestamp(qr.ExpiresAt)
 	if time.Now().UTC().After(expiry) {
 		c.JSON(http.StatusOK, gin.H{"status": "expired"})
 		return

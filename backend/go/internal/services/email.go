@@ -17,7 +17,7 @@ func SendMagicLink(email, token string, isNewUser bool) bool {
 	baseURL := strings.TrimRight(config.C.MagicLinkBaseURL, "/")
 	link := fmt.Sprintf("%s/auth/magic/%s", baseURL, token)
 	expiry := config.C.MagicLinkExpiryMinutes
-	logoURL := fmt.Sprintf("%s/logo.svg", baseURL)
+	logoURL := "https://itemplus.app/logo.svg"
 	imprintURL := fmt.Sprintf("%s/imprint", baseURL)
 	githubURL := "https://github.com/dncloud/itemplus"
 
@@ -53,18 +53,24 @@ func SendMagicLink(email, token string, isNewUser bool) bool {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
   <title>%s</title>
   <!--[if mso]>
   <style>
     * { font-family: Arial, sans-serif !important; }
   </style>
   <![endif]-->
+  <style>
+    :root { color-scheme: light; supported-color-schemes: light; }
+    body, table, td, div, p, a { color-scheme: light; }
+  </style>
 </head>
-<body style="margin:0;padding:0;background-color:#081524;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#97adc7;">
+<body style="margin:0;padding:0;background-color:#081524;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#97adc7;" bgcolor="#081524">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">
     Use this secure link to continue with item+.
   </div>
-  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color:#081524;margin:0;padding:0;width:100%%;">
+  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" bgcolor="#081524" style="background-color:#081524;margin:0;padding:0;width:100%%;">
     <tr>
       <td align="center" style="padding:40px 16px 24px 16px;">
         <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width:660px;margin:0 auto;">
@@ -74,7 +80,7 @@ func SendMagicLink(email, token string, isNewUser bool) bool {
             </td>
           </tr>
           <tr>
-            <td style="border:1px solid #374151;background-color:#ffffff;border-radius:8px;padding:40px;">
+            <td bgcolor="#ffffff" style="border:1px solid #374151;background-color:#ffffff;border-radius:8px;padding:40px;">
               <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td style="padding:0 0 10px 0;font-size:12px;line-height:18px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#3b82f6;">

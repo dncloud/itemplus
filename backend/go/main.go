@@ -1,5 +1,3 @@
-//go:build !seedtool
-
 package main
 
 import (
@@ -19,6 +17,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -43,20 +42,35 @@ const banner = `▄▄ ▄▄▄▄▄▄ ▄▄▄▄▄ ▄▄   ▄▄   ▄
 `
 
 func main() {
+	if delayEnv := strings.TrimSpace(os.Getenv("ITEMPLUS_RESTART_DELAY_MS")); delayEnv != "" {
+		if delayMS, err := strconv.Atoi(delayEnv); err == nil && delayMS > 0 {
+			time.Sleep(time.Duration(delayMS) * time.Millisecond)
+		}
+	}
+
 	// CLI flags
 	bindFlag := flag.String("bind", "", "Bind address (e.g. 0.0.0.0, 172.20.20.2)")
-	portFlag := flag.Int("port", 0, "API port (default: from .env or 8000)")
+	portFlag := flag.Int("port", 0, fmt.Sprintf("API port (default: from itemplus.conf or %d)", config.DefaultPort))
+	configFlag := flag.String("config", "", "Config file path (default: auto-discover itemplus.conf)")
+	databaseFlag := flag.String("database", "", "Database URL override (e.g. sqlite+aiosqlite:///./data/itemplus.db)")
+	uploadFlag := flag.String("upload", "", "Upload directory override (absolute or relative to itemplus.conf)")
+	logsFlag := flag.String("logs", "", "Log directory override (absolute or relative to itemplus.conf)")
 	noWebapp := flag.Bool("no-webapp", false, "API-only mode (don't start embedded WebApp)")
 	flag.Parse()
 
+	config.SetConfigPath(*configFlag)
 	config.Load()
+	applyCLIOverrides(*bindFlag, *portFlag, *databaseFlag, *uploadFlag, *logsFlag)
 
 	if config.C.SetupRequired {
-		log.Println("Default configuration detected.")
-		log.Printf("Before starting item+, please review %s", config.C.EnvPath)
-		log.Println("When you are happy with the settings, remove the ITEMPLUS_SETUP_REQUIRED line and start the server again.")
-		log.Println("The generated defaults are fine for orientation, but they may not match your real domain, SMTP, upload, or printer setup.")
-		os.Exit(1)
+		fmt.Print(banner)
+		fmt.Println("item+ first-start setup")
+		fmt.Println()
+		if err := bootstrap.RunInitialSetup(); err != nil {
+			log.Fatal(err)
+		}
+		config.Load()
+		applyCLIOverrides(*bindFlag, *portFlag, *databaseFlag, *uploadFlag, *logsFlag)
 	}
 
 	// Setup logging
@@ -74,17 +88,8 @@ func main() {
 	log.Println()
 
 	database.Connect()
-	log.Println("Database connected")
-
+	log.Printf("Database connected: %s", database.CurrentConnectionSummary())
 	bootstrap.EnsureInitialAdmin()
-
-	// CLI flags override config
-	if *bindFlag != "" {
-		config.C.Host = *bindFlag
-	}
-	if *portFlag > 0 {
-		config.C.Port = *portFlag
-	}
 
 	if !config.C.Debug {
 		gin.SetMode(gin.ReleaseMode)
@@ -92,10 +97,10 @@ func main() {
 
 	_ = os.MkdirAll(config.C.UploadDir, 0755)
 
-	// Check port
 	apiAddr := fmt.Sprintf("%s:%d", config.C.Host, config.C.Port)
-	if !portAvailable(config.C.Host, config.C.Port) {
-		log.Fatalf("Port %d is already in use", config.C.Port)
+	listener, err := net.Listen("tcp", apiAddr)
+	if err != nil {
+		log.Fatalf("Could not bind to %s. Another item+ server or local service may already be using this port, or the address is not available: %v", apiAddr, err)
 	}
 
 	// Start embedded WebApp
@@ -111,12 +116,11 @@ func main() {
 		if envPort := os.Getenv("WEBAPP_PORT"); envPort != "" {
 			fmt.Sscanf(envPort, "%d", &webappPort)
 		}
-		webappCmd, webappTmpDir = startEmbeddedWebApp(webappPort)
+		webappCmd, webappTmpDir, webappPort = startEmbeddedWebApp(webappPort)
 		if webappCmd != nil {
 			webappURL = fmt.Sprintf("http://127.0.0.1:%d", webappPort)
 			defer func() {
-				webappCmd.Process.Signal(syscall.SIGTERM)
-				webappCmd.Wait()
+				stopEmbeddedWebApp(webappCmd, 3*time.Second)
 				if webappTmpDir != "" {
 					os.RemoveAll(webappTmpDir)
 				}
@@ -125,6 +129,9 @@ func main() {
 	}
 
 	r := gin.New()
+	if err := r.SetTrustedProxies(config.C.TrustedProxies); err != nil {
+		log.Fatalf("Invalid TRUSTED_PROXIES configuration: %v", err)
+	}
 	r.Use(gin.Recovery())
 
 	// Access log (skip Next.js RSC prefetch noise)
@@ -177,6 +184,15 @@ func main() {
 		c.Next()
 	})
 
+	// Conservative browser security headers. Avoid a strict CSP here because the
+	// embedded Next.js app and dev mode both manage their own script loading.
+	r.Use(func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "SAMEORIGIN")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Next()
+	})
+
 	// Serve uploads with security headers
 	r.GET("/uploads/*filepath", func(c *gin.Context) {
 		cleanRelPath, fullPath, err := storage.ResolveUploadPath(config.C.UploadDir, c.Param("filepath"))
@@ -219,7 +235,9 @@ func main() {
 	api := r.Group("/api")
 	{
 		api.GET("/health", handlers.Health)
+
 		api.GET("/branding", handlers.GetBranding)
+		handlers.RegisterCRUD(api.Group("/sales-platforms"), "generic_sales_platforms", "vendors.read", "vendors.write", "vendors.delete")
 
 		for _, realm := range []string{"archive", "collection"} {
 			rg := api.Group("/" + realm)
@@ -238,6 +256,7 @@ func main() {
 		handlers.RegisterDeviceRoutes(api.Group("/devices"))
 		handlers.RegisterCheckoutRoutes(api)
 		handlers.RegisterQRLoginRoutes(api.Group("/login"))
+		handlers.RegisterAIRoutes(api.Group("/ai"))
 		handlers.RegisterPrinterRoutes(api.Group("/print"))
 		handlers.RegisterStatsRoutes(api)
 		handlers.RegisterAdminRoutes(api.Group("/admin"))
@@ -275,7 +294,7 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() {
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}
 		close(errCh)
@@ -400,9 +419,26 @@ func (w *rotatingWriter) rotate() {
 	w.size = 0
 }
 
+func applyCLIOverrides(bind string, port int, databaseURL, uploadDir, logDir string) {
+	if bind != "" {
+		config.C.Host = bind
+	}
+	if port > 0 {
+		config.C.Port = port
+	}
+	if err := config.SetDatabaseURL(databaseURL); err != nil {
+		log.Fatal(err)
+	}
+	if err := config.SetUploadDir(uploadDir); err != nil {
+		log.Fatal(err)
+	}
+	if err := config.SetLogDir(logDir); err != nil {
+		log.Fatal(err)
+	}
+}
+
 func setupLogging() *os.File {
-	logDir := filepath.Join(config.C.DataDir, "..", "logs")
-	rw := newRotatingWriter(logDir, "itemplus.log", 5120, 10) // 5 MB (5120 KB), keep 10
+	rw := newRotatingWriter(config.C.LogDir, "itemplus.log", 5120, 10) // 5 MB (5120 KB), keep 10
 	if rw == nil {
 		return nil
 	}
@@ -416,22 +452,26 @@ func setupLogging() *os.File {
 
 // ── Embedded WebApp ──
 
-func startEmbeddedWebApp(port int) (*exec.Cmd, string) {
+func startEmbeddedWebApp(preferredPort int) (*exec.Cmd, string, int) {
 	entries, err := fs.ReadDir(webappFS, "build/webapp")
 	if err != nil || len(entries) == 0 {
 		log.Println("No embedded WebApp found — API-only mode")
-		return nil, ""
+		return nil, "", 0
 	}
 
 	nodePath, err := exec.LookPath("node")
 	if err != nil {
 		log.Println("Node.js not found — WebApp disabled (install Node.js to enable)")
-		return nil, ""
+		return nil, "", 0
 	}
 
-	if !portAvailable("127.0.0.1", port) {
-		log.Printf("WebApp port %d is in use — WebApp disabled", port)
-		return nil, ""
+	port, err := chooseWebAppPort(preferredPort)
+	if err != nil {
+		log.Printf("Could not find a free WebApp port near %d — WebApp disabled: %v", preferredPort, err)
+		return nil, "", 0
+	}
+	if port != preferredPort {
+		log.Printf("WebApp port %d is in use — falling back to %d", preferredPort, port)
 	}
 
 	// Clean up leftover temp dirs from previous runs
@@ -445,21 +485,21 @@ func startEmbeddedWebApp(port int) (*exec.Cmd, string) {
 	tmpDir, err := os.MkdirTemp("", "itemplus-webapp-*")
 	if err != nil {
 		log.Printf("Failed to create temp dir: %v", err)
-		return nil, ""
+		return nil, "", 0
 	}
 
 	log.Println("Extracting WebApp...")
 	if err := extractFS(webappFS, "build/webapp", tmpDir); err != nil {
 		log.Printf("Failed to extract WebApp: %v", err)
 		os.RemoveAll(tmpDir)
-		return nil, ""
+		return nil, "", 0
 	}
 
 	serverJS := filepath.Join(tmpDir, "server.js")
 	if _, err := os.Stat(serverJS); err != nil {
 		log.Println("WebApp server.js not found — disabled")
 		os.RemoveAll(tmpDir)
-		return nil, ""
+		return nil, "", 0
 	}
 
 	cmd := exec.Command(nodePath, serverJS)
@@ -477,7 +517,7 @@ func startEmbeddedWebApp(port int) (*exec.Cmd, string) {
 	if err := cmd.Start(); err != nil {
 		log.Printf("Failed to start WebApp: %v", err)
 		os.RemoveAll(tmpDir)
-		return nil, ""
+		return nil, "", 0
 	}
 
 	// Wait for ready
@@ -495,11 +535,27 @@ func startEmbeddedWebApp(port int) (*exec.Cmd, string) {
 		log.Println("WebApp failed to start within 6 seconds")
 		cmd.Process.Kill()
 		os.RemoveAll(tmpDir)
-		return nil, ""
+		return nil, "", 0
 	}
 
 	log.Printf("WebApp ready (port %d)", port)
-	return cmd, tmpDir
+	return cmd, tmpDir, port
+}
+
+func chooseWebAppPort(preferredPort int) (int, error) {
+	start := preferredPort
+	if start < 1 {
+		start = config.DefaultPort + 1
+	}
+	for candidate := start; candidate < start+20; candidate++ {
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", candidate))
+		if err != nil {
+			continue
+		}
+		_ = ln.Close()
+		return candidate, nil
+	}
+	return 0, fmt.Errorf("no free port in range %d-%d", start, start+19)
 }
 
 func stopEmbeddedWebApp(cmd *exec.Cmd, timeout time.Duration) {
@@ -567,17 +623,8 @@ func extractFS(fsys embed.FS, root, dest string) error {
 	return err
 }
 
-func portAvailable(host string, port int) bool {
-	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
-	if err != nil {
-		return false
-	}
-	ln.Close()
-	return true
-}
-
 func init() {
-	if _, err := os.Stat(".env"); err != nil {
+	if _, err := os.Stat("itemplus.conf"); err != nil {
 		exe, _ := os.Executable()
 		dir := filepath.Dir(exe)
 		_ = os.Chdir(dir)

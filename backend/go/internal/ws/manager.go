@@ -9,12 +9,15 @@ import (
 )
 
 type Connection struct {
-	Conn       *websocket.Conn
-	UserID     int
-	SessionID  int
-	DeviceType string
-	DeviceName string
-	IsAdmin    bool
+	Conn         *websocket.Conn
+	UserID       int
+	SessionID    int
+	DeviceType   string
+	DeviceName   string
+	CurrentPath  string
+	CurrentLabel string
+	CurrentRealm string
+	IsAdmin      bool
 }
 
 type Manager struct {
@@ -132,6 +135,16 @@ func (m *Manager) SessionBelongsToUser(sessionID, userID int) bool {
 	return false
 }
 
+func (m *Manager) UpdatePresence(sessionID int, path, label, realm string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if c, ok := m.connections[sessionID]; ok {
+		c.CurrentPath = path
+		c.CurrentLabel = label
+		c.CurrentRealm = realm
+	}
+}
+
 func (m *Manager) GetUserDevices(userID int) []map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -139,9 +152,12 @@ func (m *Manager) GetUserDevices(userID int) []map[string]interface{} {
 	for _, c := range m.connections {
 		if c.UserID == userID {
 			devices = append(devices, map[string]interface{}{
-				"session_id":  c.SessionID,
-				"device_type": c.DeviceType,
-				"device_name": c.DeviceName,
+				"session_id":    c.SessionID,
+				"device_type":   c.DeviceType,
+				"device_name":   c.DeviceName,
+				"current_path":  c.CurrentPath,
+				"current_label": c.CurrentLabel,
+				"current_realm": c.CurrentRealm,
 			})
 		}
 	}

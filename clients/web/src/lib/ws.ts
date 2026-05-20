@@ -8,6 +8,7 @@ type EventHandler = (data: Record<string, unknown>) => void;
 const VALID_EVENTS = new Set([
   "pong", "device.connected", "device.disconnected", "devices.list",
   "browser.open_item", "browser.open_location", "photo.request", "photo.uploaded",
+  "barcode.capture_unavailable", "barcode.scanned",
   "delete.confirm_request", "delete.done", "delete.rejected", "delete.no_device",
   "session.ready", "session.kicked", "login.confirmed", "user.activated",
   "print.done", "print.failed",
@@ -20,74 +21,33 @@ class WSClient {
   private ws: WebSocket | null = null;
   private handlers: Map<string, Set<EventHandler>> = new Map();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionId: number | null = null;
+  private lastPresence: Record<string, unknown> | null = null;
 
   get sessionId() { return this._sessionId; }
   get connected() { return this.ws?.readyState === WebSocket.OPEN; }
+  private get debug() { return process.env.NODE_ENV !== "production"; }
 
   async connect(serverURL: string) {
     // Don't reconnect if already connected or connecting
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
 
     // Get a short-lived WS ticket via the HttpOnly cookie session
-    let ticket: string;
-    try {
-      const res = await fetch("/api/auth/ws-ticket", { method: "POST", credentials: "include" });
-      if (!res.ok) return;
-      const data = await res.json();
-      ticket = data.ticket;
-    } catch {
-      return;
-    }
+    const ticket = await this.fetchTicket();
+    if (!ticket) return;
 
-    const base = typeof window !== "undefined" ? window.location.origin : serverURL;
+    const base = serverURL;
     const wsUrl = base.replace(/^http/, "ws");
     const url = `${wsUrl}/ws?ticket=${encodeURIComponent(ticket)}&device_type=browser&device_name=${encodeURIComponent(this.getBrowserName())}`;
 
     this.ws = new WebSocket(url);
-
-    this.ws.onopen = () => {
-      console.log("[WS] Connected");
-      this.emit("_connected", {});
-      // Start ping interval
-      this.startPing();
-    };
-
-    this.ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === "pong") return;
-        if (msg.event && VALID_EVENTS.has(msg.event)) {
-          if (msg.event === "session.ready" && typeof msg.data?.session_id === "number") {
-            this._sessionId = msg.data.session_id;
-          }
-          this.emit(msg.event, msg.data || {});
-        }
-      } catch {}
-    };
-
-    this.ws.onclose = () => {
-      console.log("[WS] Disconnected");
-      this.emit("_disconnected", {});
-      this.ws = null;
-      // Reconnect after 5 seconds
-      this.reconnectTimer = setTimeout(() => {
-        if (typeof window !== "undefined") {
-          this.connect(serverURL);
-        }
-      }, 5000);
-    };
-
-    this.ws.onerror = () => {
-      this.ws?.close();
-    };
+    this.attachSocketHandlers(serverURL);
   }
 
   disconnect() {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
+    this.clearReconnectTimer();
+    this.stopPing();
     this.ws?.close();
     this.ws = null;
     this._sessionId = null;
@@ -97,6 +57,11 @@ class WSClient {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type, ...data }));
     }
+  }
+
+  updatePresence(data: Record<string, unknown>) {
+    this.lastPresence = data;
+    this.send("presence.update", data);
   }
 
   on(event: string, handler: EventHandler) {
@@ -111,14 +76,92 @@ class WSClient {
     });
   }
 
+  private async fetchTicket() {
+    try {
+      const res = await fetch("/api/auth/ws-ticket", { method: "POST", credentials: "include" });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return typeof data.ticket === "string" ? data.ticket : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private attachSocketHandlers(serverURL: string) {
+    if (!this.ws) return;
+
+    this.ws.onopen = () => {
+      if (this.debug) console.debug("[WS] Connected");
+      this.emit("_connected", {});
+      this.startPing();
+      this.flushPresence();
+    };
+
+    this.ws.onmessage = (event) => {
+      this.handleMessage(event.data);
+    };
+
+    this.ws.onclose = () => {
+      if (this.debug) console.debug("[WS] Disconnected");
+      this.stopPing();
+      this.emit("_disconnected", {});
+      this.ws = null;
+      this.scheduleReconnect(serverURL);
+    };
+
+    this.ws.onerror = () => {
+      this.ws?.close();
+    };
+  }
+
+  private handleMessage(raw: unknown) {
+    try {
+      const msg = JSON.parse(String(raw));
+      if (msg.type === "pong") return;
+      if (!msg.event || !VALID_EVENTS.has(msg.event)) return;
+      if (msg.event === "session.ready" && typeof msg.data?.session_id === "number") {
+        this._sessionId = msg.data.session_id;
+      }
+      this.emit(msg.event, msg.data || {});
+    } catch {}
+  }
+
+  private clearReconnectTimer() {
+    if (!this.reconnectTimer) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  private scheduleReconnect(serverURL: string) {
+    this.clearReconnectTimer();
+    this.reconnectTimer = setTimeout(() => {
+      if (typeof window !== "undefined") {
+        void this.connect(serverURL);
+      }
+    }, 5000);
+  }
+
   private startPing() {
-    const interval = setInterval(() => {
+    this.stopPing();
+    this.pingTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: "ping" }));
       } else {
-        clearInterval(interval);
+        this.stopPing();
       }
     }, 30000);
+  }
+
+  private flushPresence() {
+    if (this.lastPresence) {
+      this.send("presence.update", this.lastPresence);
+    }
+  }
+
+  private stopPing() {
+    if (!this.pingTimer) return;
+    clearInterval(this.pingTimer);
+    this.pingTimer = null;
   }
 
   private getBrowserName(): string {

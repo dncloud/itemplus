@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/itemplus/backend/internal/database"
@@ -15,7 +14,7 @@ import (
 func RegisterPropertyRoutes(g *gin.RouterGroup, realm string) {
 	table := realm + "_properties"
 
-	g.GET("", middleware.Auth(), middleware.RequireAllPermissions("categories.read", "items.read"), listProperties(table))
+	g.GET("", middleware.Auth(), middleware.RequirePermission("items.read"), listProperties(table))
 	g.POST("", middleware.Auth(), middleware.RequirePermission("categories.write"), createProperty(table))
 	g.PUT("/:id", middleware.Auth(), middleware.RequirePermission("categories.write"), updateProperty(table))
 	g.DELETE("/:id", middleware.Auth(), middleware.RequirePermission("categories.delete"), deleteProperty(table))
@@ -84,7 +83,7 @@ func createProperty(table string) gin.HandlerFunc {
 			propType = "text"
 		}
 
-		now := time.Now().UTC().Format(time.RFC3339)
+		now := database.TimestampNow()
 		options := "{}"
 		if body.Options != nil {
 			options = string(*body.Options)
@@ -148,28 +147,21 @@ func updateProperty(table string) gin.HandlerFunc {
 			delete(body, "type")
 		}
 
-		// Serialize options to JSON string for storage
-		if opts, has := body["options"]; has && opts != nil {
-			switch v := opts.(type) {
-			case string:
-				// Already a JSON string — store as-is
-				body["options"] = v
-			case map[string]interface{}, []interface{}:
-				if b, err := json.Marshal(v); err == nil {
-					body["options"] = string(b)
-				}
-			default:
-				if b, err := json.Marshal(v); err == nil {
-					body["options"] = string(b)
-				}
-			}
+		var err error
+		body, err = sanitizePropertyPayload(body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+			return
 		}
+		body["updated_at"] = database.TimestampNow()
 
-		body["updated_at"] = time.Now().UTC().Format(time.RFC3339)
-
-		sets, vals := buildUpdate(body)
+		sets, vals, err := buildUpdate(body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid field name"})
+			return
+		}
 		vals = append(vals, id)
-		_, err := database.DB.Exec(fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", table, sets), vals...)
+		_, err = database.DB.Exec(fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", table, sets), vals...)
 		if err != nil {
 			log.Printf("DB update error in updateProperty: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
@@ -182,6 +174,43 @@ func updateProperty(table string) gin.HandlerFunc {
 		cleanRow(row)
 		c.JSON(http.StatusOK, row)
 	}
+}
+
+func sanitizePropertyPayload(body map[string]interface{}) (map[string]interface{}, error) {
+	allowed := fieldSet("category_id", "name", "property_type", "unit", "options", "required", "show_in_list", "display_width", "position")
+	clean := make(map[string]interface{}, len(body))
+	for key, value := range body {
+		if isReadOnlyPayloadField(key) {
+			continue
+		}
+		if !allowed[key] {
+			return nil, fmt.Errorf("Invalid field: %s", key)
+		}
+		if key == "options" {
+			value = normalizePropertyOptions(value)
+		}
+		clean[key] = value
+	}
+	return clean, nil
+}
+
+func normalizePropertyOptions(value interface{}) interface{} {
+	if value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case map[string]interface{}, []interface{}:
+		if encoded, err := json.Marshal(typed); err == nil {
+			return string(encoded)
+		}
+	default:
+		if encoded, err := json.Marshal(typed); err == nil {
+			return string(encoded)
+		}
+	}
+	return value
 }
 
 func deleteProperty(table string) gin.HandlerFunc {

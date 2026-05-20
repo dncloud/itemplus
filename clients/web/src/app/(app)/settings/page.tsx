@@ -1,75 +1,83 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  Cog6ToothIcon,
+} from "@heroicons/react/24/outline";
 import { useApp } from "@/lib/app-context";
-import { api, type LabelTemplate, type LabelTemplateMeta, type LabelTemplatePayload, type PrinterStatus, type User } from "@/lib/api";
-import { parseTSPLPreview } from "@/components/tspl-template-preview";
+import { api, type ExternalSource, type LabelTemplate, type LabelTemplateMeta, type PrinterStatus, type User } from "@/lib/api";
+import { SettingsAppSection } from "@/components/settings-app-section";
+import { SettingsAISection } from "@/components/settings-ai-section";
+import { SettingsBrandingSection } from "@/components/settings-branding-section";
+import { SettingsDevicesSection } from "@/components/settings-devices-section";
+import { SettingsCard, StatusMessage } from "@/components/settings-ui";
+import { SettingsPrinterSection } from "@/components/settings-printer-section";
+import { SettingsStorageSection } from "@/components/settings-storage-section";
+import { SettingsSystemSection } from "@/components/settings-system-section";
+import { SettingsPageHeader, SettingsSectionsNav } from "@/components/settings-sections-nav";
+import {
+  createEmptyAIDraft,
+  createEmptyExternalSourceDraft,
+  createEmptyTemplateDraft,
+  createProviderDraft,
+  defaultAIBaseURL,
+  defaultAIModel,
+  draftFromExternalSource,
+  draftFromAISettings,
+  draftFromTemplate,
+  isAIKeyOptional,
+  type AISettingsDraft,
+  type ExternalSourceDraft,
+  type LabelTemplateDraft,
+} from "@/components/settings-drafts";
 import { LOCALES } from "@/lib/i18n";
-
-type LabelTemplateDraft = LabelTemplatePayload;
-
-function createEmptyTemplateDraft(): LabelTemplateDraft {
-  return {
-    name: "",
-    description: "",
-    target: "both",
-    dpi: 600,
-    width_mm: 20,
-    height_mm: 20,
-    gap_mm: 3,
-    speed: 4,
-    density: 8,
-    direction: 1,
-    reference_x: 0,
-    reference_y: 0,
-    shift_x: 0,
-    shift_y: 0,
-    copies_default: 1,
-    is_default: false,
-    is_active: true,
-    tspl_template: `SIZE 20 mm,20 mm
-GAP 3.0 mm,0 mm
-SPEED 4
-DENSITY 8
-DIRECTION 1
-CODEPAGE 1252
-CLS
-QRCODE 55,55,H,13,A,0,M2,"{{qr_content}}"
-PRINT 1`,
-  };
-}
-
-function draftFromTemplate(template: LabelTemplate): LabelTemplateDraft {
-  return {
-    name: template.name,
-    description: template.description || "",
-    target: template.target,
-    dpi: template.dpi,
-    width_mm: template.width_mm,
-    height_mm: template.height_mm,
-    gap_mm: template.gap_mm,
-    speed: template.speed,
-    density: template.density,
-    direction: template.direction,
-    reference_x: template.reference_x,
-    reference_y: template.reference_y,
-    shift_x: template.shift_x,
-    shift_y: template.shift_y,
-    copies_default: template.copies_default,
-    is_default: template.is_default,
-    is_active: template.is_active,
-    tspl_template: template.tspl_template,
-  };
-}
+import {
+  buildSettingsSections,
+  settingsDangerButtonClass,
+  settingsInputClass,
+  settingsMonoTextareaClass,
+  settingsPrimaryButtonClass,
+  settingsSecondaryButtonClass,
+} from "./settings-page-meta";
+import { flashStatus, messageFromError } from "./settings-page-status";
+import {
+  fetchExternalSourceList,
+  fetchInitialSettingsData,
+  fetchTemplateList,
+  type DeviceSession,
+} from "./settings-page-utils";
+import {
+  buildBrandingPayload,
+  calibratePrinter,
+  deleteExternalSourceDraft,
+  deleteTemplateDraft,
+  exportBackupBundleBlob,
+  fetchDefaultTSPLPreview,
+  fetchExternalSourceHostKeyDraft,
+  fetchLocationHealth,
+  fixLocationHealth,
+  makeTemplateDefault,
+  printTemplateNow,
+  recoverBackupBundleFile,
+  resetBrandingSettings,
+  saveAISettingsDraft,
+  saveExternalSourceDraft,
+  savePrinterConfig,
+  saveTemplateDraft,
+  testAISettingsDraft,
+  testExternalSourceDraft,
+  type LocationHealthResult,
+} from "./settings-page-actions";
 
 export default function SettingsPage() {
-  const { locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, brandingLogo, brandingSubtitle, brandingWidth, refreshBranding, isAdmin, can, t } = useApp();
-  const [locIssues, setLocIssues] = useState<{ issues: { realm: string; id: number; name: string; type: string }[]; total_checked: number } | null>(null);
-  const [locFixing, setLocFixing] = useState(false);
-  const [sessions, setSessions] = useState<{ id: number; device_type: string; device_name: string | null; ip_address: string | null; is_online: boolean; last_seen: string | null }[]>([]);
+  const { locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, isAdmin, can, t } = useApp();
   const [me, setMe] = useState<User | null>(null);
-  const [profileName, setProfileName] = useState("");
-  const [profileStatus, setProfileStatus] = useState<string | null>(null);
+  const [displayNameDraft, setDisplayNameDraft] = useState("");
+  const [emailDraft, setEmailDraft] = useState("");
+  const [accountStatus, setAccountStatus] = useState<string | null>(null);
+  const [locIssues, setLocIssues] = useState<LocationHealthResult | null>(null);
+  const [locFixing, setLocFixing] = useState(false);
+  const [sessions, setSessions] = useState<DeviceSession[]>([]);
   const [printer, setPrinter] = useState<PrinterStatus | null>(null);
   const [printerStatus, setPrinterStatus] = useState<string | null>(null);
   const [testPrintStatus, setTestPrintStatus] = useState<string | null>(null);
@@ -78,37 +86,62 @@ export default function SettingsPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | "new" | null>(null);
   const [templateDraft, setTemplateDraft] = useState<LabelTemplateDraft>(createEmptyTemplateDraft());
   const [templateStatus, setTemplateStatus] = useState<string | null>(null);
+  const [externalSources, setExternalSources] = useState<ExternalSource[]>([]);
+  const [selectedExternalSourceId, setSelectedExternalSourceId] = useState<number | "new" | null>(null);
+  const [externalSourceDraft, setExternalSourceDraft] = useState<ExternalSourceDraft>(createEmptyExternalSourceDraft());
+  const [externalSourceStatus, setExternalSourceStatus] = useState<string | null>(null);
+  const [externalSourceBusy, setExternalSourceBusy] = useState<"hostkey" | "test" | null>(null);
   const [brandingStatus, setBrandingStatus] = useState<string | null>(null);
+  const [aiDraft, setAiDraft] = useState<AISettingsDraft>(createEmptyAIDraft());
+  const [aiStatus, setAiStatus] = useState<string | null>(null);
+  const [aiTesting, setAiTesting] = useState(false);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [backupBusy, setBackupBusy] = useState<"export" | "recover" | null>(null);
+  const [recoverFile, setRecoverFile] = useState<File | null>(null);
+  const [recoverSelection, setRecoverSelection] = useState({ database: true, attachments: true, config: true });
+  const [activeSection, setActiveSection] = useState("account");
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [subtitleDraft, setSubtitleDraft] = useState("");
+  const [footerTextDraft, setFooterTextDraft] = useState("");
   const [logoDraft, setLogoDraft] = useState<string | null>(null);
   const [widthDraft, setWidthDraft] = useState<number>(180);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const recoverInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    api.getMe().then((u) => {
-      setMe(u);
-      setProfileName(u.name || "");
-      if (u.is_admin) {
-        api.getPrinterStatus().then(setPrinter).catch(() => {});
-      }
-      if (u.is_admin || (u.permissions || []).includes("print")) {
-        api.getLabelTemplateMeta().then(setTemplateMeta).catch(() => {});
-        api.getLabelTemplates(undefined, u.is_admin).then((list) => {
-          setTemplates(list);
-          setSelectedTemplateId((prev) => prev ?? (list[0]?.id ?? null));
-        }).catch(() => {});
-      }
-    }).catch(() => {});
-    // Load sessions
-    fetch(`${api.baseURL}/api/devices/sessions`, { credentials: "include" })
-      .then((r) => r.ok ? r.json() : { sessions: [] })
-      .then((d) => setSessions(d.sessions || []))
-      .catch(() => {});
+    void fetchInitialSettingsData()
+      .then((data) => {
+        setMe(data.me);
+        setDisplayNameDraft(data.me.name || "");
+        setEmailDraft(data.me.email || "");
+        setSessions(data.sessions);
+        if (data.printer) setPrinter(data.printer);
+        if (data.templateMeta) setTemplateMeta(data.templateMeta);
+        if (data.templates.length > 0) {
+          setTemplates(data.templates);
+          setSelectedTemplateId((prev) => prev ?? (data.templates[0]?.id ?? null));
+        }
+        if (data.externalSources.length > 0) {
+          setExternalSources(data.externalSources);
+          setSelectedExternalSourceId((prev) => prev ?? (data.externalSources[0]?.id ?? null));
+        }
+        if (data.aiDraft) {
+          setAiDraft(data.aiDraft);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setSettingsLoaded(true);
+      });
   }, []);
 
   useEffect(() => {
     setSubtitleDraft(brandingSubtitle);
   }, [brandingSubtitle]);
+
+  useEffect(() => {
+    setFooterTextDraft(brandingFooterText);
+  }, [brandingFooterText]);
 
   useEffect(() => {
     setLogoDraft(brandingLogo);
@@ -129,55 +162,55 @@ export default function SettingsPage() {
     }
   }, [selectedTemplateId, templates]);
 
-  const saveProfile = async () => {
-    setProfileStatus(null);
-    try {
-      await api.updateMe({ display_name: profileName });
-      setProfileStatus(t("settings.profileSaved"));
-      api.getMe().then(setMe);
-    } catch {
-      setProfileStatus(t("settings.profileFailed"));
+  useEffect(() => {
+    if (selectedExternalSourceId === "new") {
+      setExternalSourceDraft(createEmptyExternalSourceDraft());
+      return;
     }
-  };
-
-  const logout = async () => {
-    try { await fetch("/api/auth/logout", { method: "POST", credentials: "include" }); } catch {}
-    window.location.href = "/auth";
-  };
+    const selected = externalSources.find((source) => source.id === selectedExternalSourceId);
+    if (selected) {
+      setExternalSourceDraft(draftFromExternalSource(selected));
+    }
+  }, [selectedExternalSourceId, externalSources]);
 
   const checkLocations = async () => {
     try {
-      const res = await fetch(`${api.baseURL}/api/admin/health/locations`, {
-        credentials: "include",
-      });
-      if (res.ok) setLocIssues(await res.json());
+      const result = await fetchLocationHealth();
+      setLocIssues(result);
     } catch {}
   };
 
   const fixLocations = async () => {
     setLocFixing(true);
     try {
-      const res = await fetch(`${api.baseURL}/api/admin/health/locations/fix`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-      });
-      if (res.ok) {
-        await res.json();
-        setLocIssues(null);
-      }
+      await fixLocationHealth();
+      setLocIssues(null);
     } catch {}
     setLocFixing(false);
   };
 
   const saveBranding = async () => {
     try {
-      await api.updateBranding({ logo: logoDraft, subtitle: subtitleDraft.trim(), width: widthDraft });
+      await api.updateBranding(buildBrandingPayload(logoDraft, subtitleDraft, footerTextDraft, widthDraft));
       await refreshBranding();
-      setBrandingStatus(t("settings.brandingSaved"));
-      setTimeout(() => setBrandingStatus(null), 2500);
+      flashStatus(setBrandingStatus, t("settings.brandingSaved"));
     } catch {
       setBrandingStatus(t("settings.brandingFailed"));
+    }
+  };
+
+  const saveAccount = async () => {
+    setAccountStatus(null);
+    try {
+      const updated = await api.updateMe({
+        display_name: displayNameDraft.trim() || undefined,
+      });
+      setMe(updated);
+      setDisplayNameDraft(updated.name || "");
+      setEmailDraft(updated.email || "");
+      flashStatus(setAccountStatus, t("settings.accountSaved"));
+    } catch (err) {
+      setAccountStatus(messageFromError(err, t("common.error")));
     }
   };
 
@@ -200,8 +233,9 @@ export default function SettingsPage() {
 
   const canManageTemplates = isAdmin;
   const selectedTemplate = selectedTemplateId === "new" ? null : templates.find((tpl) => tpl.id === selectedTemplateId) || null;
+  const selectedExternalSource = selectedExternalSourceId === "new" ? null : externalSources.find((source) => source.id === selectedExternalSourceId) || null;
   const loadTemplates = async (includeInactive = isAdmin) => {
-    const list = await api.getLabelTemplates(undefined, includeInactive);
+    const list = await fetchTemplateList(includeInactive);
     setTemplates(list);
     setSelectedTemplateId((prev) => {
       if (prev === "new") return prev;
@@ -210,41 +244,30 @@ export default function SettingsPage() {
     });
     return list;
   };
+  const loadExternalSources = async (includeInactive = true) => {
+    const list = await fetchExternalSourceList(includeInactive);
+    setExternalSources(list);
+    setSelectedExternalSourceId((prev) => {
+      if (prev === "new") return prev;
+      if (prev && list.some((source) => source.id === prev)) return prev;
+      return list[0]?.id ?? null;
+    });
+    return list;
+  };
 
   const saveTemplate = async () => {
     setTemplateStatus(null);
     try {
-      const parsed = parseTSPLPreview(templateDraft.tspl_template);
-      const payload: LabelTemplatePayload = {
-        ...templateDraft,
-        target: "both",
-        width_mm: parsed.widthMM,
-        height_mm: parsed.heightMM,
-        gap_mm: parsed.gapMM,
-        speed: parsed.speed,
-        density: parsed.density,
-        direction: parsed.direction,
-        reference_x: parsed.referenceX,
-        reference_y: parsed.referenceY,
-        shift_x: parsed.shiftX,
-        shift_y: parsed.shiftY,
-        name: templateDraft.name.trim(),
-        description: templateDraft.description?.trim() || null,
-        tspl_template: templateDraft.tspl_template,
-      };
-      let saved: LabelTemplate;
-      if (selectedTemplateId === "new" || !selectedTemplate) {
-        saved = await api.createLabelTemplate(payload);
-      } else {
-        saved = await api.updateLabelTemplate(selectedTemplate.id, payload);
-      }
+      const saved = await saveTemplateDraft(
+        templateDraft,
+        selectedTemplateId === "new" ? null : selectedTemplate,
+      );
       const list = await loadTemplates(true);
       const resolved = list.find((tpl) => tpl.id === saved.id);
       setSelectedTemplateId(resolved?.id || saved.id);
-      setTemplateStatus(t("settings.templateSaved"));
-      setTimeout(() => setTemplateStatus(null), 2500);
+      flashStatus(setTemplateStatus, t("settings.templateSaved"));
     } catch (err) {
-      setTemplateStatus(err instanceof Error ? err.message : t("settings.templateSaveFailed"));
+      setTemplateStatus(messageFromError(err, t("settings.templateSaveFailed")));
     }
   };
 
@@ -252,13 +275,12 @@ export default function SettingsPage() {
     if (!selectedTemplate) return;
     setTemplateStatus(null);
     try {
-      await api.deleteLabelTemplate(selectedTemplate.id);
+      await deleteTemplateDraft(selectedTemplate);
       const list = await loadTemplates(true);
       setSelectedTemplateId(list[0]?.id ?? null);
-      setTemplateStatus(t("settings.templateDeleted"));
-      setTimeout(() => setTemplateStatus(null), 2500);
+      flashStatus(setTemplateStatus, t("settings.templateDeleted"));
     } catch (err) {
-      setTemplateStatus(err instanceof Error ? err.message : t("settings.templateDeleteFailed"));
+      setTemplateStatus(messageFromError(err, t("settings.templateDeleteFailed")));
     }
   };
 
@@ -266,630 +288,422 @@ export default function SettingsPage() {
     if (!selectedTemplate) return;
     setTemplateStatus(null);
     try {
-      await api.setDefaultLabelTemplate(selectedTemplate.id);
+      await makeTemplateDefault(selectedTemplate);
       await loadTemplates(true);
-      setTemplateStatus(t("settings.templateDefaultSaved"));
-      setTimeout(() => setTemplateStatus(null), 2500);
+      flashStatus(setTemplateStatus, t("settings.templateDefaultSaved"));
     } catch (err) {
-      setTemplateStatus(err instanceof Error ? err.message : t("settings.templateSaveFailed"));
+      setTemplateStatus(messageFromError(err, t("settings.templateSaveFailed")));
     }
   };
 
+  const saveExternalSource = async () => {
+    setExternalSourceStatus(null);
+    try {
+      const saved = await saveExternalSourceDraft(
+        externalSourceDraft,
+        selectedExternalSourceId === "new" ? null : selectedExternalSource,
+      );
+      const list = await loadExternalSources(true);
+      const resolved = list.find((source) => source.id === saved.id);
+      setSelectedExternalSourceId(resolved?.id || saved.id);
+      flashStatus(setExternalSourceStatus, t("settings.externalSourceSaved"));
+    } catch (err) {
+      setExternalSourceStatus(messageFromError(err, t("settings.externalSourceSaveFailed")));
+    }
+  };
+
+  const deleteExternalSource = async () => {
+    if (!selectedExternalSource) return;
+    setExternalSourceStatus(null);
+    try {
+      await deleteExternalSourceDraft(selectedExternalSource);
+      const list = await loadExternalSources(true);
+      setSelectedExternalSourceId(list[0]?.id ?? null);
+      flashStatus(setExternalSourceStatus, t("settings.externalSourceDeleted"));
+    } catch (err) {
+      setExternalSourceStatus(messageFromError(err, t("settings.externalSourceDeleteFailed")));
+    }
+  };
+
+  const fetchExternalSourceHostKey = async () => {
+    setExternalSourceStatus(null);
+    setExternalSourceBusy("hostkey");
+    try {
+      const info = await fetchExternalSourceHostKeyDraft(externalSourceDraft);
+      setExternalSourceDraft((prev) => ({ ...prev, known_host_key: info.authorized_key }));
+      setExternalSourceStatus(t("settings.externalSourceHostKeyFetched", { algorithm: info.algorithm, fingerprint: info.fingerprint_sha256 }));
+    } catch (err) {
+      setExternalSourceStatus(messageFromError(err, t("settings.externalSourceHostKeyFetchFailed")));
+    } finally {
+      setExternalSourceBusy(null);
+    }
+  };
+
+  const testExternalSource = async () => {
+    setExternalSourceStatus(null);
+    setExternalSourceBusy("test");
+    try {
+      await testExternalSourceDraft(externalSourceDraft);
+      setExternalSourceStatus(t("settings.externalSourceTestSucceeded"));
+    } catch (err) {
+      setExternalSourceStatus(messageFromError(err, t("settings.externalSourceTestFailed")));
+    } finally {
+      setExternalSourceBusy(null);
+    }
+  };
+
+  const saveAISettings = async () => {
+    setAiStatus(null);
+    try {
+      const saved = await saveAISettingsDraft(aiDraft);
+      setAiDraft(draftFromAISettings(saved));
+      flashStatus(setAiStatus, t("settings.aiSaved"));
+    } catch (err) {
+      setAiStatus(messageFromError(err, t("settings.aiSaveFailed")));
+    }
+  };
+
+  const testAISettings = async () => {
+    setAiStatus(null);
+    setAiTesting(true);
+    try {
+      const result = await testAISettingsDraft(aiDraft);
+      setAiStatus(result.output_text?.trim() ? `${t("settings.aiTestSucceeded")}: ${result.output_text.trim()}` : t("settings.aiTestSucceeded"));
+    } catch (err) {
+      setAiStatus(messageFromError(err, t("settings.aiTestFailed")));
+    } finally {
+      setAiTesting(false);
+    }
+  };
+
+  const exportBackupBundle = async () => {
+    setBackupStatus(null);
+    setBackupBusy("export");
+    try {
+      const blob = await exportBackupBundleBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `itemplus-backup-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      flashStatus(setBackupStatus, t("settings.exportSuccess"));
+    } catch (err) {
+      setBackupStatus(messageFromError(err, t("settings.exportFailed")));
+    } finally {
+      setBackupBusy(null);
+    }
+  };
+
+  const recoverBackupBundle = async () => {
+    if (!recoverFile) return;
+    setBackupStatus(null);
+    setBackupBusy("recover");
+    try {
+      const result = await recoverBackupBundleFile(recoverFile, recoverSelection);
+      setBackupStatus(result.requires_restart ? `${t("settings.recoverSuccess")} ${t("settings.restartQueued")}` : t("settings.recoverSuccess"));
+      setRecoverFile(null);
+      if (recoverInputRef.current) recoverInputRef.current.value = "";
+    } catch (err) {
+      setBackupStatus(messageFromError(err, t("settings.recoverFailed")));
+    } finally {
+      setBackupBusy(null);
+    }
+  };
+
+  const settingsSections = buildSettingsSections({
+    t,
+    hasAccount: !!me,
+    hasSessions: sessions.length > 0,
+    canPrint: can("print"),
+    isAdmin,
+  });
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    if (!settingsSections.some((section) => section.id === activeSection)) {
+      setActiveSection(settingsSections[0]?.id || "account");
+    }
+  }, [activeSection, settingsLoaded, settingsSections]);
+
   return (
-    <div className="w-full max-w-none space-y-8">
-      <h1 className="text-2xl font-bold">{t("settings.title")}</h1>
+    <div className="w-full max-w-none">
+      <SettingsPageHeader t={t} />
 
-      {/* Profile */}
-      <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4">
-        <h2 className="text-lg font-semibold">{t("settings.profile")}</h2>
-        {me && (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.displayName")}</label>
-                <input
-                  value={profileName}
-                  onChange={(e) => { setProfileName(e.target.value); setProfileStatus(null); }}
-                  className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.email")}</label>
-                <input
-                  type="email"
-                  value={me.email || ""}
-                  readOnly
-                  className="w-full h-[38px] rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 text-gray-500 px-3 py-2 text-sm cursor-not-allowed"
-                />
-              </div>
-            </div>
+      <div className="pt-6 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)] lg:gap-x-8">
+        <SettingsSectionsNav
+          sections={settingsSections}
+          activeSection={activeSection}
+          setActiveSection={setActiveSection}
+        />
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={saveProfile}
-                className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition"
-              >
-                {t("common.save")}
-              </button>
-              {me.is_admin ? (
-                <span className="text-xs text-red-500 font-medium bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded">{t("settings.administrator")}</span>
-              ) : null}
-              {profileStatus && (
-                <span className={`text-sm ${profileStatus.includes("fehlgeschlagen") || profileStatus.toLowerCase().includes("failed") ? "text-red-500" : "text-green-600"}`}>{profileStatus}</span>
-              )}
-            </div>
-
-</>
-        )}
-      </section>
-
-      {/* Connected Devices — online first, max 5 */}
-      {sessions.length > 0 && (() => {
-        const online = sessions.filter((s) => s.is_online);
-        const offline = sessions.filter((s) => !s.is_online);
-        const display = [...online, ...offline.slice(0, Math.max(0, 5 - online.length))];
-        return (
-        <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-3">
-          <h2 className="text-lg font-semibold">Devices</h2>
-          <div className="space-y-2">
-            {display.map((s) => (
-              <div key={s.id} className="flex items-center gap-3 rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2">
-                <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${s.is_online ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600"}`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{s.device_name || s.device_type}</p>
-                  <p className="text-xs text-gray-400">
-                    {[
-                      s.device_type === "ios" ? "iOS App" : "Browser",
-                      s.ip_address,
-                      s.last_seen ? new Date(s.last_seen).toLocaleString() : null,
-                    ].filter(Boolean).join(" · ")}
-                  </p>
-                </div>
-                <button
-                    onClick={async () => {
-                      await fetch(`${api.baseURL}/api/devices/sessions/${s.id}`, {
-                        method: "DELETE",
-                        credentials: "include",
-                      });
-                      setSessions((prev) => prev.filter((x) => x.id !== s.id));
-                    }}
-                    className="text-xs text-red-500 hover:text-red-600"
-                  >
-                    {t("common.remove")}
-                  </button>
-              </div>
-            ))}
-          </div>
-        </section>
-        );
-      })()}
-
-      {/* Settings */}
-      <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4">
-        <h2 className="text-lg font-semibold">{t("settings.title")}</h2>
-
-        {/* iOS Delete Confirmation */}
-        <label className="flex items-center justify-between cursor-pointer">
-          <div>
-            <p className="text-xs font-medium text-gray-500">{t("settings.iosDeleteConfirm")}</p>
-            <p className="text-[10px] text-gray-400">{t("settings.iosDeleteConfirmHint")}</p>
-          </div>
-          <button
-            onClick={() => setIosDeleteConfirm(!iosDeleteConfirm)}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition shrink-0 ml-4 ${iosDeleteConfirm ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}
+        <div className="space-y-12 [&>section:last-child]:border-b-0 [&>section:last-child]:pb-0">
+        {me && activeSection === "account" ? (
+          <SettingsCard
+            sectionId="account"
+            icon={Cog6ToothIcon}
+            title={t("settings.sectionAccount")}
+            description={t("settings.accountDescription")}
           >
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${iosDeleteConfirm ? "translate-x-6" : "translate-x-1"}`} />
-          </button>
-        </label>
-
-        {/* Language */}
-        <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
-          <label className="block text-xs font-medium text-gray-500 mb-2">{t("settings.language")}</label>
-          <div className="flex flex-wrap gap-2">
-            {LOCALES.map((l) => (
-              <button
-                key={l.code}
-                onClick={() => setLocale(l.code)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium border-2 transition ${
-                  locale === l.code
-                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
-                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                }`}
-              >
-                <span className="text-base">{l.flag}</span> {l.name}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Date Format */}
-        <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
-          <label className="block text-xs font-medium text-gray-500 mb-2">{t("settings.dateFormat")}</label>
-          <div className="flex flex-wrap gap-2">
-            {(["DD.MM.YYYY", "MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD"] as const).map((fmt) => (
-              <button
-                key={fmt}
-                onClick={() => setDateFormat(fmt)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium border-2 transition ${
-                  dateFormat === fmt
-                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
-                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                }`}
-              >
-                {fmt}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {isAdmin && (
-        <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.branding")}</label>
-            <p className="text-[11px] text-gray-400">{t("settings.brandingHint")}</p>
-          </div>
-          <div className="flex items-start gap-4">
-            <div className="min-h-20 min-w-24 max-w-[22rem] shrink-0 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 overflow-hidden flex items-center justify-center px-3 py-3">
-              <img src={logoDraft || "/logo.svg"} alt="Current site logo" className="max-h-20 max-w-full object-contain" />
-            </div>
-            <div className="flex-1 space-y-3">
-              <div className="flex flex-wrap gap-2">
-                <input
-                  ref={logoInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => onLogoSelect(e.target.files?.[0] || null)}
-                />
-                <button
-                  onClick={() => logoInputRef.current?.click()}
-                  className="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-                >
-                  {t("settings.chooseLogo")}
-                </button>
-                <button
-                  onClick={() => {
-                    setLogoDraft(null);
-                    setBrandingStatus(null);
-                  }}
-                  className="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-                >
-                  {t("common.remove")}
-                </button>
+            <div className="grid max-w-2xl grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
+              <div className="sm:col-span-3">
+                <label className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.displayName")}</label>
+                <div className="mt-2">
+                  <input value={displayNameDraft} onChange={(e) => setDisplayNameDraft(e.target.value)} className={settingsInputClass} />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.logoWidth")}</label>
-                <input
-                  type="number"
-                  min={80}
-                  max={480}
-                  step={10}
-                  value={widthDraft}
-                  onChange={(e) => {
-                    const next = Number(e.target.value);
-                    setWidthDraft(Number.isFinite(next) ? Math.min(480, Math.max(80, next)) : 180);
-                    setBrandingStatus(null);
-                  }}
-                  className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <p className="mt-1 text-[11px] text-gray-400">{t("settings.logoWidthHint")}</p>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.logoSubtitle")}</label>
-                <textarea
-                  value={subtitleDraft}
-                  onChange={(e) => { setSubtitleDraft(e.target.value); setBrandingStatus(null); }}
-                  rows={2}
-                  maxLength={120}
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={t("settings.logoSubtitlePlaceholder")}
-                />
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={saveBranding}
-                  className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition"
-                >
-                  {t("common.save")}
-                </button>
-                <button
-                  onClick={async () => {
-                    await api.resetBranding();
-                    await refreshBranding();
-                    setLogoDraft(null);
-                    setSubtitleDraft("");
-                    setWidthDraft(180);
-                    setBrandingStatus(t("settings.brandingReset"));
-                    setTimeout(() => setBrandingStatus(null), 2500);
-                  }}
-                  className="rounded-lg border border-gray-300 dark:border-gray-700 px-4 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-                >
-                  {t("settings.resetBranding")}
-                </button>
-                {brandingStatus ? (
-                  <span className={`text-sm ${brandingStatus === t("settings.brandingInvalid") || brandingStatus === t("settings.brandingTooLarge") || brandingStatus === t("settings.brandingFailed") ? "text-red-500" : "text-green-600"}`}>{brandingStatus}</span>
-                ) : null}
+              <div className="sm:col-span-3">
+                <label className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.email")}</label>
+                <div className="mt-2">
+                  <input type="email" value={emailDraft} readOnly disabled className={`${settingsInputClass} cursor-not-allowed opacity-70 disabled:cursor-not-allowed disabled:opacity-70`} />
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-        )}
-      </section>
-
-      {/* Printer */}
-      {(can("print") || isAdmin) && (
-      <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">{t("settings.printerTitle")}</h2>
-            <p className="mt-1 text-sm text-gray-500">{t("settings.templateSettingsMoved")}</p>
-          </div>
-          {printMode === "server" && printer && (
-            <span className={`h-2.5 w-2.5 rounded-full ${printer.reachable ? "bg-emerald-500" : "bg-gray-300"}`} />
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <label className="block text-xs font-medium text-gray-500">{t("settings.printMode")}</label>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setPrintMode("server")}
-              className={`min-w-[13rem] rounded-lg border px-3 py-2 text-left transition ${printMode === "server" ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"}`}
-            >
-              <div className="text-sm font-medium">{t("settings.printModeServer")}</div>
-              <div className="text-[11px] text-gray-400">{t("settings.printModeServerHint")}</div>
-            </button>
-            <button
-              onClick={() => setPrintMode("ios")}
-              className={`min-w-[13rem] rounded-lg border px-3 py-2 text-left transition ${printMode === "ios" ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"}`}
-            >
-              <div className="text-sm font-medium">{t("settings.printModeIOS")}</div>
-              <div className="text-[11px] text-gray-400">{t("settings.printModeIOSHint")}</div>
-            </button>
-          </div>
-        </div>
-
-        {printMode === "ios" && (
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-4 py-3 text-sm text-gray-500">
-            {t("settings.printModeIOSInfo")}
-          </div>
-        )}
-
-        {printMode === "server" && isAdmin && printer && (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.ipAddress")}</label>
-                <input value={printer.host} onChange={(e) => setPrinter({ ...printer, host: e.target.value })} className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="192.168.1.100" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.port")}</label>
-                <input type="number" value={printer.port} onChange={(e) => setPrinter({ ...printer, port: Number(e.target.value) })} className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={async () => {
-                  await api.updatePrinterConfig({ host: printer.host, port: printer.port });
-                  const updated = await api.getPrinterStatus();
-                  setPrinter(updated);
-                  setPrinterStatus(updated.reachable ? t("settings.printerConnected") : t("settings.printerNotReachable"));
-                  setTimeout(() => setPrinterStatus(null), 3000);
-                }}
-                className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition"
-              >
+            <div className="flex items-center gap-3">
+              <button onClick={saveAccount} className={settingsPrimaryButtonClass}>
                 {t("common.save")}
               </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const res = await fetch(`${api.baseURL}/api/print/calibrate`, {
-                      method: "POST",
-                      credentials: "include",
-                    });
-                    setPrinterStatus(res.ok ? t("settings.calibrated") : t("settings.error"));
-                  } catch {
-                    setPrinterStatus(t("settings.connectionError"));
-                  }
-                  setTimeout(() => setPrinterStatus(null), 3000);
-                }}
-                className="rounded-lg border border-gray-300 dark:border-gray-700 px-4 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-              >
-                {t("settings.calibrate")}
-              </button>
-              {printerStatus && (
-                <span className={`self-center text-sm ${printerStatus === t("settings.printerConnected") || printerStatus === t("settings.calibrated") ? "text-green-600" : "text-red-500"}`}>{printerStatus}</span>
+              {accountStatus ? <StatusMessage tone={accountStatus === t("settings.accountSaved") ? "success" : "error"}>{accountStatus}</StatusMessage> : null}
+            </div>
+          </SettingsCard>
+        ) : null}
+
+        {sessions.length > 0 && activeSection === "devices" ? (
+          <SettingsDevicesSection
+            sessions={sessions}
+            t={t}
+            onRemove={(sessionId) => setSessions((prev) => prev.filter((entry) => entry.id !== sessionId))}
+          />
+        ) : null}
+
+          {activeSection === "app" && (
+            <SettingsAppSection
+              t={t}
+              locale={locale}
+              setLocale={(value) => setLocale(value as typeof locale)}
+              dateFormat={dateFormat}
+              setDateFormat={setDateFormat}
+              itemsPerPage={itemsPerPage}
+              setItemsPerPage={setItemsPerPage}
+              iosDeleteConfirm={iosDeleteConfirm}
+              setIosDeleteConfirm={setIosDeleteConfirm}
+              showItemImages={showItemImages}
+              setShowItemImages={setShowItemImages}
+              showItemPlaceholders={showItemPlaceholders}
+              setShowItemPlaceholders={setShowItemPlaceholders}
+              showItemCategory={showItemCategory}
+              setShowItemCategory={setShowItemCategory}
+              showItemLocation={showItemLocation}
+              setShowItemLocation={setShowItemLocation}
+              showItemDescription={showItemDescription}
+              setShowItemDescription={setShowItemDescription}
+              showItemStock={showItemStock}
+              setShowItemStock={setShowItemStock}
+              showItemConsumable={showItemConsumable}
+              setShowItemConsumable={setShowItemConsumable}
+              showItemPrice={showItemPrice}
+              setShowItemPrice={setShowItemPrice}
+              showItemTotal={showItemTotal}
+              setShowItemTotal={setShowItemTotal}
+              showItemProperties={showItemProperties}
+              setShowItemProperties={setShowItemProperties}
+              showItemActivity={showItemActivity}
+              setShowItemActivity={setShowItemActivity}
+              itemStockWarningPercent={itemStockWarningPercent}
+              setItemStockWarningPercent={setItemStockWarningPercent}
+              itemStockCriticalPercent={itemStockCriticalPercent}
+              setItemStockCriticalPercent={setItemStockCriticalPercent}
+              localeOptions={LOCALES.map((l) => ({ value: l.code, label: l.name }))}
+            />
+          )}
+
+          {(can("print") || isAdmin) && (activeSection === "branding" || activeSection === "printer") && (
+            <>
+              {isAdmin && activeSection === "branding" && (
+                <SettingsBrandingSection
+                  t={t}
+                  logoDraft={logoDraft}
+                  subtitleDraft={subtitleDraft}
+                  footerTextDraft={footerTextDraft}
+                  widthDraft={widthDraft}
+                  brandingStatus={brandingStatus}
+                  logoInputRef={logoInputRef}
+                  setSubtitleDraft={setSubtitleDraft}
+                  setFooterTextDraft={setFooterTextDraft}
+                  setWidthDraft={setWidthDraft}
+                  setLogoDraft={setLogoDraft}
+                  setBrandingStatus={setBrandingStatus}
+                  onLogoSelect={onLogoSelect}
+                  saveBranding={saveBranding}
+                  resetBranding={() => {
+                    void (async () => {
+                      await resetBrandingSettings();
+                      await refreshBranding();
+                      setLogoDraft(null);
+                      setSubtitleDraft("");
+                      setFooterTextDraft("");
+                      setWidthDraft(180);
+                      setBrandingStatus(t("settings.brandingReset"));
+                      setTimeout(() => setBrandingStatus(null), 2500);
+                    })();
+                  }}
+                  primaryButtonClass={settingsPrimaryButtonClass}
+                  secondaryButtonClass={settingsSecondaryButtonClass}
+                />
               )}
-            </div>
+              {activeSection === "printer" ? (
+                <SettingsPrinterSection
+                  t={t}
+                  isAdmin={isAdmin}
+                  printMode={printMode}
+                  setPrintMode={setPrintMode}
+                  printer={printer}
+                  setPrinter={setPrinter}
+                  printerStatus={printerStatus}
+                  templateMeta={templateMeta}
+                  templates={templates}
+                  selectedTemplateId={selectedTemplateId}
+                  setSelectedTemplateId={setSelectedTemplateId}
+                  templateDraft={templateDraft}
+                  setTemplateDraft={setTemplateDraft}
+                  templateStatus={templateStatus}
+                  canManageTemplates={canManageTemplates}
+                  testPrintStatus={testPrintStatus}
+                  createNewTemplate={() => {
+                    setSelectedTemplateId("new");
+                    setTemplateDraft(createEmptyTemplateDraft());
+                    setTemplateStatus(null);
+                  }}
+                  savePrinterConfig={() => {
+                    void (async () => {
+                      if (!printer) return;
+                      const updated = await savePrinterConfig(printer);
+                      setPrinter(updated);
+                      setPrinterStatus(updated.reachable ? t("settings.printerConnected") : t("settings.printerNotReachable"));
+                      setTimeout(() => setPrinterStatus(null), 3000);
+                    })();
+                  }}
+                  calibratePrinter={() => {
+                    void (async () => {
+                      try {
+                        const ok = await calibratePrinter();
+                        setPrinterStatus(ok ? t("settings.calibrated") : t("settings.error"));
+                      } catch {
+                        setPrinterStatus(t("settings.connectionError"));
+                      }
+                      setTimeout(() => setPrinterStatus(null), 3000);
+                    })();
+                  }}
+                  saveTemplate={() => { void saveTemplate(); }}
+                  deleteTemplate={() => { void deleteTemplate(); }}
+                  makeDefaultTemplate={() => { void makeDefaultTemplate(); }}
+                  printTemplateNow={() => {
+                    void (async () => {
+                      setTestPrintStatus(null);
+                      try {
+                        const result = await printTemplateNow(templateDraft);
+                        if (result.ok) {
+                          setTestPrintStatus(t("settings.printSuccess"));
+                        } else {
+                          setTestPrintStatus(result.detail || t("settings.error"));
+                        }
+                      } catch {
+                        setTestPrintStatus(t("settings.connectionError"));
+                      }
+                      setTimeout(() => setTestPrintStatus(null), 3000);
+                    })();
+                  }}
+                  loadDefaultTSPL={() => {
+                    void (async () => {
+                      const data = await fetchDefaultTSPLPreview();
+                      if (data) {
+                        setTemplateDraft({ ...templateDraft, tspl_template: data.tspl });
+                      }
+                    })();
+                  }}
+                  primaryButtonClass={settingsPrimaryButtonClass}
+                  secondaryButtonClass={settingsSecondaryButtonClass}
+                  dangerButtonClass={settingsDangerButtonClass}
+                  inputClass={settingsInputClass}
+                  monoTextareaClass={settingsMonoTextareaClass}
+                />
+              ) : null}
+            </>
+          )}
 
-          </>
-        )}
+          {isAdmin && activeSection === "storage" && (
+            <SettingsStorageSection
+              t={t}
+              externalSources={externalSources}
+              selectedExternalSourceId={selectedExternalSourceId}
+              setSelectedExternalSourceId={setSelectedExternalSourceId}
+              externalSourceDraft={externalSourceDraft}
+              setExternalSourceDraft={setExternalSourceDraft}
+              selectedExternalSource={selectedExternalSource}
+              externalSourceStatus={externalSourceStatus}
+              externalSourceBusy={externalSourceBusy}
+              createNewExternalSource={() => {
+                setSelectedExternalSourceId("new");
+                setExternalSourceDraft(createEmptyExternalSourceDraft());
+                setExternalSourceStatus(null);
+              }}
+              fetchExternalSourceHostKey={() => { void fetchExternalSourceHostKey(); }}
+              testExternalSource={() => { void testExternalSource(); }}
+              saveExternalSource={() => { void saveExternalSource(); }}
+              deleteExternalSource={() => { void deleteExternalSource(); }}
+              inputClass={settingsInputClass}
+              monoTextareaClass={settingsMonoTextareaClass}
+              primaryButtonClass={settingsPrimaryButtonClass}
+              secondaryButtonClass={settingsSecondaryButtonClass}
+              dangerButtonClass={settingsDangerButtonClass}
+            />
+          )}
 
-        <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-medium text-gray-500">{t("settings.labelTemplates")}</p>
-              <p className="text-[10px] text-gray-400">{t("settings.labelTemplatesHint")}</p>
-            </div>
-            {canManageTemplates && (
-              <button
-                onClick={() => {
-                  setSelectedTemplateId("new");
-                  setTemplateDraft(createEmptyTemplateDraft());
-                  setTemplateStatus(null);
-                }}
-                className="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-              >
-                {t("settings.newTemplate")}
-              </button>
-            )}
-          </div>
+          {isAdmin && activeSection === "ai" && (
+            <SettingsAISection
+              t={t}
+              aiDraft={aiDraft}
+              setAiDraft={setAiDraft}
+              aiTesting={aiTesting}
+              aiStatus={aiStatus}
+              saveAISettings={saveAISettings}
+              testAISettings={testAISettings}
+              defaultAIModel={defaultAIModel}
+              defaultAIBaseURL={defaultAIBaseURL}
+              isAIKeyOptional={isAIKeyOptional}
+              createProviderDraft={createProviderDraft}
+              inputClass={settingsInputClass}
+              primaryButtonClass={settingsPrimaryButtonClass}
+              secondaryButtonClass={settingsSecondaryButtonClass}
+            />
+          )}
 
-          <div className="grid gap-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
-            <div className="space-y-2">
-              {templates.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 px-4 py-6 text-sm text-gray-500">
-                  {t("settings.noTemplates")}
-                </div>
-              ) : (
-                templates.map((tpl) => (
-                  <button
-                    key={tpl.id}
-                    onClick={() => {
-                      setSelectedTemplateId(tpl.id);
-                      setTemplateStatus(null);
-                    }}
-                    className={`w-full rounded-lg border px-3 py-3 text-left transition ${selectedTemplateId === tpl.id ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"}`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{tpl.name}</div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {tpl.is_default ? <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{t("settings.defaultTemplate")}</span> : null}
-                      </div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
+          {isAdmin && activeSection === "system" && (
+              <SettingsSystemSection
+                t={t}
+                backupBusy={backupBusy}
+                backupStatus={backupStatus}
+                recoverFile={recoverFile}
+                recoverInputRef={recoverInputRef}
+                recoverSelection={recoverSelection}
+                setRecoverFile={setRecoverFile}
+                setRecoverSelection={setRecoverSelection}
+                exportBackupBundle={exportBackupBundle}
+                recoverBackupBundle={recoverBackupBundle}
+                checkLocations={checkLocations}
+                locIssues={locIssues}
+                locFixing={locFixing}
+                fixLocations={fixLocations}
+                primaryButtonClass={settingsPrimaryButtonClass}
+                secondaryButtonClass={settingsSecondaryButtonClass}
+                dangerButtonClass={settingsDangerButtonClass}
+              />
+          )}
 
-            <div className="space-y-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4">
-              {selectedTemplateId === null && templates.length === 0 ? (
-                <div className="text-sm text-gray-500">{t("settings.noTemplates")}</div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.templateName")}</label>
-                      <input
-                        value={templateDraft.name}
-                        onChange={(e) => setTemplateDraft({ ...templateDraft, name: e.target.value })}
-                        disabled={!canManageTemplates}
-                        className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">{t("settings.templateDescription")}</label>
-                      <input
-                        value={templateDraft.description || ""}
-                        onChange={(e) => setTemplateDraft({ ...templateDraft, description: e.target.value })}
-                        disabled={!canManageTemplates}
-                        className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-xs font-medium text-gray-500">{t("settings.tsplTemplate")}</label>
-                      </div>
-                      <textarea
-                        value={templateDraft.tspl_template}
-                        onChange={(e) => setTemplateDraft({ ...templateDraft, tspl_template: e.target.value })}
-                        rows={18}
-                        disabled={!canManageTemplates}
-                        className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      />
-                      {isAdmin && printMode === "server" && (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={async () => {
-                              setTestPrintStatus(null);
-                              try {
-                                const res = await fetch(`${api.baseURL}/api/print/test`, {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  credentials: "include",
-                                  body: JSON.stringify({ tspl: templateDraft.tspl_template || null }),
-                                });
-                                if (res.ok) {
-                                  setTestPrintStatus(t("settings.printSuccess"));
-                                } else {
-                                  const err = await res.json().catch(() => ({}));
-                                  setTestPrintStatus(err.detail || t("settings.error"));
-                                }
-                              } catch {
-                                setTestPrintStatus(t("settings.connectionError"));
-                              }
-                              setTimeout(() => setTestPrintStatus(null), 3000);
-                            }}
-                            className="rounded-lg bg-gray-800 dark:bg-gray-200 dark:text-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:hover:bg-gray-300 transition"
-                          >
-                            {t("settings.printNow")}
-                          </button>
-                          <button
-                            onClick={async () => {
-                              const res = await fetch(`${api.baseURL}/api/print/test/preview`, {
-                                credentials: "include",
-                              });
-                              if (res.ok) {
-                                const data = await res.json();
-                                setTemplateDraft({ ...templateDraft, tspl_template: data.tspl });
-                              }
-                            }}
-                            className="rounded-lg border border-gray-300 dark:border-gray-700 px-4 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-                          >
-                            {t("settings.loadDefaultTSPL")}
-                          </button>
-                          {testPrintStatus && (
-                            <span className={`text-sm ${testPrintStatus === t("settings.printSuccess") ? "text-green-600" : "text-red-500"}`}>{testPrintStatus}</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid gap-4 xl:grid-cols-2">
-                      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
-                        <div className="mb-2 text-xs font-medium text-gray-500">{t("settings.templateVariables")}</div>
-                        <div className="max-h-48 space-y-2 overflow-auto pr-1">
-                          {(templateMeta?.variables || []).map((variable) => {
-                            const translationKey = `settings.templateVariableDescriptions.${variable.key}`;
-                            const translated = t(translationKey);
-                            return (
-                              <div key={variable.key} className="text-xs">
-                                <div className="font-mono text-blue-500">{"{{"}{variable.key}{"}}"}</div>
-                                <div className="text-gray-500">{translated === translationKey ? variable.description : translated}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
-                        <div className="mb-2 text-xs font-medium text-gray-500">{t("settings.supportedCommands")}</div>
-                        <div className="flex flex-wrap gap-2">
-                          {(templateMeta?.supported_commands || []).map((command) => (
-                            <span key={command} className="rounded bg-gray-100 dark:bg-gray-800 px-2 py-1 text-xs font-mono text-gray-600 dark:text-gray-300">{command}</span>
-                          ))}
-                        </div>
-                        <p className="mt-2 text-xs text-gray-500">{t("settings.supportedCommandsHint")}</p>
-                        <p className="mt-2 text-xs text-gray-500">
-                          {t("settings.supportedCommandsManualPrefix")}{" "}
-                          <a
-                            href="https://fs.tscprinters.com/system/files/31-0000001-00_tspl_tspl2_programming_2_0.pdf"
-                            title={t("settings.supportedCommandsManualTitle")}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-500 hover:text-blue-400"
-                          >
-                            https://fs.tscprinters.com/system/files/31-0000001-00_tspl_tspl2_programming_2_0.pdf
-                          </a>
-                        </p>
-                      </div>
-                    </div>
-
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    {canManageTemplates && (
-                      <>
-                        <button onClick={saveTemplate} className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition">
-                          {selectedTemplateId === "new" ? t("settings.createTemplate") : t("common.save")}
-                        </button>
-                        {selectedTemplate && (
-                          <button onClick={makeDefaultTemplate} className="rounded-lg border border-gray-300 dark:border-gray-700 px-4 py-2 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-                            {t("settings.makeDefault")}
-                          </button>
-                        )}
-                        {selectedTemplate && (
-                          <button onClick={deleteTemplate} className="rounded-lg border border-red-300 dark:border-red-800 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
-                            {t("common.delete")}
-                          </button>
-                        )}
-                      </>
-                    )}
-                    {templateStatus ? (
-                      <span className={`text-sm ${templateStatus === t("settings.templateSaved") || templateStatus === t("settings.templateDeleted") || templateStatus === t("settings.templateDefaultSaved") ? "text-green-600" : "text-red-500"}`}>
-                        {templateStatus}
-                      </span>
-                    ) : null}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
         </div>
-      </section>
-      )}
-
-      {/* Admin-only sections */}
-      {isAdmin && (<>
-      {/* Health Check */}
-      <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4">
-        <h2 className="text-lg font-semibold">{t("settings.healthCheck")}</h2>
-        <p className="text-xs text-gray-500">{t("settings.healthCheckHint")}</p>
-        <button
-          onClick={checkLocations}
-          className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition"
-        >
-          {t("settings.checkLocations")}
-        </button>
-        {locIssues && (
-          <div className="space-y-2">
-            <p className="text-sm">
-              {t("settings.locationsChecked", { n: locIssues.total_checked })} —{" "}
-              {locIssues.issues.length === 0 ? (
-                <span className="text-green-600 font-medium">{t("settings.noProblems")}</span>
-              ) : (
-                <span className="text-red-500 font-medium">{t("settings.problems", { n: locIssues.issues.length })}</span>
-              )}
-            </p>
-            {locIssues.issues.length > 0 && (
-              <>
-                <div className="rounded-lg bg-red-50 dark:bg-red-900/10 p-3 space-y-1">
-                  {locIssues.issues.map((iss) => (
-                    <p key={`${iss.realm}-${iss.id}`} className="text-xs text-red-600 dark:text-red-400">
-                      [{iss.realm}] {iss.name} — {iss.type === "self_parent" ? "Self-Parenting" : t("locations.circularError")}
-                    </p>
-                  ))}
-                </div>
-                <button
-                  onClick={fixLocations}
-                  disabled={locFixing}
-                  className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50 transition"
-                >
-                  {locFixing ? t("settings.fixing") : t("settings.fix", { n: locIssues.issues.length })}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </section>
-      </>)}
-
-      {/* Account */}
-      <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4">
-        <h2 className="text-lg font-semibold">{t("settings.account")}</h2>
-        <button
-          onClick={logout}
-          className="rounded-lg border border-red-300 dark:border-red-800 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
-        >
-          {t("nav.logout")}
-        </button>
-      </section>
-
-      {/* About */}
-      <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">item<span className="text-red-400">+</span></h2>
-          <p className="text-sm text-gray-500">{t("settings.aboutText").replace("item+ — ", "")}</p>
-        </div>
-        <ul className="text-xs text-gray-500 space-y-1.5 list-none">
-          {t("settings.aboutFeatures").split(". ").filter(Boolean).map((f, i) => (
-            <li key={i} className="flex gap-2"><span className="text-gray-300 shrink-0">—</span> {f.replace(/\.$/, "")}</li>
-          ))}
-        </ul>
-        <hr className="border-gray-100 dark:border-gray-800" />
-        <div className="flex items-center justify-between text-xs text-gray-400">
-          <span>{t("settings.aboutCopyright")} · {t("settings.aboutLicense")}</span>
-          <div className="flex gap-3">
-            <a href={t("settings.aboutGithub")} target="_blank" rel="noopener noreferrer" className="hover:text-gray-600 transition">GitHub</a>
-            <a href={t("settings.aboutWebsite")} target="_blank" rel="noopener noreferrer" className="hover:text-gray-600 transition">Website</a>
-          </div>
-        </div>
-      </section>
+      </div>
     </div>
   );
 }

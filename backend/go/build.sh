@@ -8,8 +8,8 @@ BUILD_DIR="$SCRIPT_DIR/build"
 WEBAPP_DIR="$BUILD_DIR/webapp"
 DIST_DIR="$BUILD_DIR"
 GOCACHE_DIR="${GOCACHE:-$BUILD_DIR/.gocache}"
-DEFAULT_ENV_SOURCE="$ROOT_DIR/config/default.env"
-APP_VERSION="1.1"
+DEFAULT_CONFIG_SOURCE="$ROOT_DIR/config/itemplus.conf"
+APP_VERSION="1.2"
 APP_BUILD="dev"
 SERVER_BASENAME="itemplus-server"
 SERVER_LOCAL_NAME="itemplus-server"
@@ -29,8 +29,8 @@ GO_VERSION_LDFLAGS="-X github.com/itemplus/backend/internal/config.defaultAppVer
 mkdir -p "$GOCACHE_DIR"
 export GOCACHE="$GOCACHE_DIR"
 
-if [ -f "$DEFAULT_ENV_SOURCE" ]; then
-  cp "$DEFAULT_ENV_SOURCE" "$SCRIPT_DIR/internal/config/templates/default.env"
+if [ -f "$DEFAULT_CONFIG_SOURCE" ]; then
+  cp "$DEFAULT_CONFIG_SOURCE" "$SCRIPT_DIR/internal/config/templates/itemplus.conf"
 fi
 
 if [ -d "$SCRIPT_DIR/../../clients/web" ]; then
@@ -64,7 +64,7 @@ if [ "$SHOW_HELP" = true ]; then
 Usage: ./build.sh [options]
 
 Options:
-  --all         Build server and seed for all target platforms
+  --all         Build server for all target platforms
   --skip-webapp Skip the web client build and embed step
   --clean       Remove the build directory before continuing
   --delete      Alias for --clean
@@ -117,6 +117,7 @@ if [ "$SKIP_WEBAPP" = false ]; then
   rsync -a "$WEBCLIENT_DIR/.next/static/" "$WEBAPP_DIR/.next/static/"
   mkdir -p "$WEBAPP_DIR/public"
   cp -r "$WEBCLIENT_DIR/public/"* "$WEBAPP_DIR/public/" 2>/dev/null || true
+  touch "$WEBAPP_DIR/.gitkeep"
 
   FILE_COUNT=$(find "$WEBAPP_DIR" -type f | wc -l | tr -d ' ')
   SIZE=$(du -sh "$WEBAPP_DIR" | cut -f1)
@@ -135,7 +136,7 @@ echo ""
 cd "$SCRIPT_DIR"
 
 if [ "$BUILD_ALL" = true ]; then
-  echo "[3/3] Building server and seed for all platforms..."
+  echo "[3/3] Building server for all platforms..."
   mkdir -p "$DIST_DIR"
   mkdir -p "$DIST_DIR/data"
 
@@ -153,17 +154,10 @@ if [ "$BUILD_ALL" = true ]; then
     if [ "$os" = "darwin" ]; then
       platform_name="macos"
     fi
-    seed_name="itemplus-seed-${platform_name}-${arch}"
-    if [ "$platform_name" = "windows" ]; then
-      seed_name="${seed_name}.exe"
-    fi
     echo "      $os/$arch..."
     CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -ldflags="-s -w ${GO_VERSION_LDFLAGS}" -o "$DIST_DIR/$name" .
-    CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -tags seedtool -ldflags="-s -w ${GO_VERSION_LDFLAGS}" -o "$DIST_DIR/$seed_name" .
     SERVER_SIZE=$(du -sh "$DIST_DIR/$name" | cut -f1)
-    SEED_SIZE=$(du -sh "$DIST_DIR/$seed_name" | cut -f1)
     echo "        $name ($SERVER_SIZE)"
-    echo "        $seed_name ($SEED_SIZE)"
   done
 
   echo ""
@@ -176,19 +170,15 @@ else
   mkdir -p "$DIST_DIR"
   mkdir -p "$DIST_DIR/data"
   CGO_ENABLED=0 go build -ldflags="-s -w ${GO_VERSION_LDFLAGS}" -o "$DIST_DIR/$SERVER_LOCAL_NAME" .
-  CGO_ENABLED=0 go build -tags seedtool -ldflags="-s -w ${GO_VERSION_LDFLAGS}" -o "$DIST_DIR/itemplus-seed" .
   SERVER_SIZE=$(du -sh "$DIST_DIR/$SERVER_LOCAL_NAME" | cut -f1)
-  SEED_SIZE=$(du -sh "$DIST_DIR/itemplus-seed" | cut -f1)
   echo "      Binary: $DIST_DIR/$SERVER_LOCAL_NAME ($SERVER_SIZE)"
-  echo "      Binary: $DIST_DIR/itemplus-seed ($SEED_SIZE)"
 
   echo ""
   echo "=== Done! ==="
   echo ""
   echo "Run:  ./build/$SERVER_LOCAL_NAME"
-  echo "Seed: ./build/itemplus-seed --reset"
   echo "  --bind 0.0.0.0    Bind address"
-  echo "  --port 8000       API port"
+  echo "  --port 17117      API port"
   echo ""
   echo "Cross-compile all:  bash build.sh --all"
 fi

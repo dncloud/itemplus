@@ -4,12 +4,6 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  --color-primary: #0ea5e9;
-  --color-primary-hover: #0284c7;
-  --color-surface: #ffffff;
-  --color-surface-alt: #f8fafc;
-  --color-border: #e5e7eb;
-  --color-muted: #6b7280;
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "SFMono-Regular", ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
@@ -18,76 +12,11 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
-/* ── item+ Dark Theme (Nova exact values from compiled CSS) ──
-   .bg-gray-900 = rgb(8,21,36)    #081524  — page background
-   .bg-gray-800 = rgb(15,33,55)   #0f2137  — cards / boxes
-   .bg-gray-700 = rgb(55,65,81)   #374151  — hover states
-   .border-gray-800 = rgb(15,33,55)
-   .border-gray-700 = rgb(55,65,81)
-   .border-gray-600 = rgb(75,85,99)
-   .text-gray-400 = rgb(151,173,199) #97adc7
-   .text-gray-500 = rgb(107,114,128)
-   .text-gray-300 = rgb(209,213,219)
-*/
-.dark {
-  /* Page background */
-  --color-gray-950: #040c18;
-  --color-gray-900: #081524;
-  /* Cards / boxes / elevated surfaces */
-  --color-gray-800: #0f2137;
-  /* Hover / interactive */
-  --color-gray-700: #374151;
-  /* Borders */
-  --color-gray-600: #4b5563;
-  /* Text */
-  --color-gray-500: #6b7280;
-  --color-gray-400: #97adc7;
-  --color-gray-300: #d1d5db;
-  --color-gray-200: #e5e7eb;
-  --color-gray-100: #f9fafb;
-  --color-gray-50: #f9fafb;
-
-  /* Accent: blue (Nova uses rgb(59,130,246) = #3b82f6) */
-  --color-blue-50: #eff6ff;
-  --color-blue-100: #dbeafe;
-  --color-blue-200: #bfdbfe;
-  --color-blue-300: #93c5fd;
-  --color-blue-400: #60a5fa;
-  --color-blue-500: #3b82f6;
-  --color-blue-600: #2563eb;
-  --color-blue-700: #1d4ed8;
-  --color-blue-900: #1e3a8a;
-}
-
-/* Dark mode form controls — !important to override Tailwind's text-foreground */
-.dark input,
-.dark select,
-.dark textarea {
-  color-scheme: dark;
-  color: #97adc7 !important;
-}
-
-.dark input[type="date"],
-.dark input[type="datetime-local"],
-.dark input[type="time"] {
-  color: inherit;
-}
-
-
-.dark input::placeholder,
-.dark textarea::placeholder {
-  color: #4b5563;
-}
-
-/* Checkbox as toggle-style */
-.dark input[type="checkbox"] {
-  color-scheme: dark;
-}
-
 /* MD editor resize handle */
-.dark textarea {
+textarea {
   resize: vertical;
 }
+
 textarea::-webkit-resizer {
   display: none;
 }
