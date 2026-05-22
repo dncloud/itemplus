@@ -70,7 +70,7 @@ import {
 } from "./settings-page-actions";
 
 export default function SettingsPage() {
-  const { locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, isAdmin, can, t } = useApp();
+  const { locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, isAdmin, can, t } = useApp();
   const [me, setMe] = useState<User | null>(null);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [emailDraft, setEmailDraft] = useState("");
@@ -511,6 +511,8 @@ export default function SettingsPage() {
               setShowItemProperties={setShowItemProperties}
               showItemActivity={showItemActivity}
               setShowItemActivity={setShowItemActivity}
+              showAttachmentUploadOnItemDetail={showAttachmentUploadOnItemDetail}
+              setShowAttachmentUploadOnItemDetail={setShowAttachmentUploadOnItemDetail}
               itemStockWarningPercent={itemStockWarningPercent}
               setItemStockWarningPercent={setItemStockWarningPercent}
               itemStockCriticalPercent={itemStockCriticalPercent}

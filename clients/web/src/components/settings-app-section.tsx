@@ -35,6 +35,8 @@ export function SettingsAppSection({
   setShowItemProperties,
   showItemActivity,
   setShowItemActivity,
+  showAttachmentUploadOnItemDetail,
+  setShowAttachmentUploadOnItemDetail,
   itemStockWarningPercent,
   setItemStockWarningPercent,
   itemStockCriticalPercent,
@@ -72,6 +74,8 @@ export function SettingsAppSection({
   setShowItemProperties: (value: boolean) => void;
   showItemActivity: boolean;
   setShowItemActivity: (value: boolean) => void;
+  showAttachmentUploadOnItemDetail: boolean;
+  setShowAttachmentUploadOnItemDetail: (value: boolean) => void;
   itemStockWarningPercent: number;
   setItemStockWarningPercent: (value: number) => void;
   itemStockCriticalPercent: number;
@@ -151,6 +155,13 @@ export function SettingsAppSection({
         description={t("settings.itemListPlaceholdersHint")}
         checked={showItemPlaceholders}
         onToggle={() => setShowItemPlaceholders(!showItemPlaceholders)}
+      />
+
+      <ToggleRow
+        title={t("settings.showAttachmentUploadOnItemDetail")}
+        description={t("settings.showAttachmentUploadOnItemDetailHint")}
+        checked={showAttachmentUploadOnItemDetail}
+        onToggle={() => setShowAttachmentUploadOnItemDetail(!showAttachmentUploadOnItemDetail)}
       />
 
       <div className="space-y-3 pt-2">

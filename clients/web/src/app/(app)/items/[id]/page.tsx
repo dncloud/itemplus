@@ -22,13 +22,11 @@ import {
   getBadgeStyle,
   requestConnectedDevices,
 } from "@/app/(app)/items/[id]/item-detail-utils";
-import {
-} from "@heroicons/react/24/outline";
 
 export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { realm, serverURL, can, fmtDate, fmtDateTime, printItemQR, t } = useApp();
+  const { realm, serverURL, can, fmtDate, fmtDateTime, printItemQR, showAttachmentUploadOnItemDetail, t } = useApp();
   const [item, setItem] = useState<Item | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -220,6 +218,8 @@ export default function ItemDetailPage() {
     return <ItemDetailLoadingView />;
   }
 
+  const canUploadAttachmentsOnDetail = can("attachments.write") && showAttachmentUploadOnItemDetail;
+
   return (
     <div className="w-full space-y-6">
       {notification && (
@@ -357,7 +357,14 @@ export default function ItemDetailPage() {
       <ItemDetailSections item={item} properties={properties} fmtDate={fmtDate} t={t} />
 
       {/* Attachments */}
-      <AttachmentManager itemId={Number(id)} attachments={item.attachments || []} onChange={load} readOnly showUploadActions={false} showGallery={false} />
+      <AttachmentManager
+        itemId={Number(id)}
+        attachments={item.attachments || []}
+        onChange={load}
+        readOnly
+        showUploadActions={canUploadAttachmentsOnDetail}
+        showGallery={false}
+      />
 
       {deleteFlow.confirm?.id === Number(id) && (
         <ConfirmDelete

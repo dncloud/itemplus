@@ -75,7 +75,9 @@ export function AppShellHeader({
                 )}
               >
                 <DevicePhoneMobileIcon className="size-4 shrink-0" />
-                <span className="hidden sm:inline">{iosBridgeStatus === "connected" ? "iPhone verbunden" : "iPhone offline"}</span>
+                <span className="hidden sm:inline">
+                  {iosBridgeStatus === "connected" ? t("settings.iphoneConnected") : t("settings.iphoneOffline")}
+                </span>
                 <span className="sm:hidden">iPhone</span>
               </div>
             ) : null}

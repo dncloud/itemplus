@@ -15,12 +15,12 @@ export function AttachmentUploadProgress({
   uploadSpeed: string | null;
 }) {
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-1.5">
+    <div className="space-y-1.5 rounded-xl border border-gray-200 bg-white p-4 dark:border-[#374151] dark:bg-[#182131]">
       <div className="flex items-center justify-between text-xs">
         <span className="text-gray-500 truncate">{uploadInfo}</span>
         <span className="text-blue-500 font-medium shrink-0 ml-2">{uploadProgress}%</span>
       </div>
-      <div className="h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+      <div className="h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-[#242d3c]">
         <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
       </div>
       {uploadSpeed && <p className="text-[10px] text-gray-400 text-right">{uploadSpeed}</p>}
@@ -42,7 +42,7 @@ export function AttachmentUploadActions({
   onOpenSftpModal: () => void;
 }) {
   const buttonClassName =
-    "rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center transition hover:border-blue-400 dark:border-white/25 dark:hover:border-blue-400";
+    "rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center transition hover:border-blue-400 hover:bg-white dark:border-[#374151] dark:bg-[#242d3c] dark:hover:border-blue-500 dark:hover:bg-[#2b3546]";
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

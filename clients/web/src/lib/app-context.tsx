@@ -68,6 +68,8 @@ interface AppContextValue {
   setShowItemProperties: (v: boolean) => void;
   showItemActivity: boolean;
   setShowItemActivity: (v: boolean) => void;
+  showAttachmentUploadOnItemDetail: boolean;
+  setShowAttachmentUploadOnItemDetail: (v: boolean) => void;
   itemStockWarningPercent: number;
   setItemStockWarningPercent: (v: number) => void;
   itemStockCriticalPercent: number;
@@ -108,6 +110,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [showItemTotal, _setShowItemTotal] = useState(() => getStoredFlag("itemplus_show_item_total", true));
   const [showItemProperties, _setShowItemProperties] = useState(() => getStoredFlag("itemplus_show_item_properties", true));
   const [showItemActivity, _setShowItemActivity] = useState(() => getStoredFlag("itemplus_show_item_activity", true));
+  const [showAttachmentUploadOnItemDetail, _setShowAttachmentUploadOnItemDetail] = useState(() => getStoredFlag("itemplus_show_attachment_upload_on_item_detail", false));
   const [itemStockWarningPercent, _setItemStockWarningPercent] = useState(() => getStoredPercent("itemplus_item_stock_warning_percent", 100));
   const [itemStockCriticalPercent, _setItemStockCriticalPercent] = useState(() => getStoredPercent("itemplus_item_stock_critical_percent", 15));
   const [itemsPerPage, _setItemsPerPage] = useState(getStoredItemsPerPage);
@@ -255,6 +258,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setStoredBoolean(_setShowItemActivity, "itemplus_show_item_activity", v);
   };
 
+  const setShowAttachmentUploadOnItemDetail = (v: boolean) => {
+    setStoredBoolean(_setShowAttachmentUploadOnItemDetail, "itemplus_show_attachment_upload_on_item_detail", v);
+  };
+
   const setItemStockWarningPercent = (v: number) => {
     const next = Math.min(500, Math.max(0, Math.round(v)));
     setStoredNumber(_setItemStockWarningPercent, "itemplus_item_stock_warning_percent", next);
@@ -332,7 +339,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AppContext.Provider value={{ realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, printItemQR, printLocationQR, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, fmtDate, fmtDateTime, t }}>
+    <AppContext.Provider value={{ realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, printItemQR, printLocationQR, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, fmtDate, fmtDateTime, t }}>
       {children}
     </AppContext.Provider>
   );

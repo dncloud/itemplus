@@ -7,7 +7,6 @@ import {
   api,
   type AIParseItemIntentResult,
   type AIParseStreamEvent,
-  type Attachment,
   type Category,
   type Item,
   type ItemComponent,
@@ -25,12 +24,11 @@ import { extractPartialAIOutput } from "@/components/item-create-ai-utils";
 import { buildAIViewState, deriveAISuggestions } from "@/components/item-create-ai-state";
 import { InventorySection, PropertiesSection } from "@/components/item-create-form-sections";
 import { ItemCreateBasicsSection } from "@/components/item-create-basics-section";
-import { ImageSection, VendorsSection } from "@/components/item-create-media-sections";
+import { VendorsSection } from "@/components/item-create-media-sections";
 import {
   fetchCategoryProperties,
   fetchEditItemData,
   fetchItemCreateReferenceData,
-  findFirstImageAttachment,
 } from "@/components/item-create-data";
 import {
   requestItemBarcodeCapture,
@@ -55,7 +53,7 @@ type ItemCreatePageProps = {
 export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { realm, locale, serverURL, t } = useApp();
+  const { realm, locale, t } = useApp();
   const isEditMode = mode === "edit";
   const initialBarcode = searchParams.get("barcode") || "";
   const initialSymbology = searchParams.get("symbology") || "";
@@ -64,8 +62,6 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   const [sourceItem, setSourceItem] = useState<Item | null>(null);
   const [itemLoaded, setItemLoaded] = useState(!isEditMode);
   const [itemLoadFailed, setItemLoadFailed] = useState(false);
-  const [pendingImage, setPendingImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [barcodeDraft, setBarcodeDraft] = useState<{ code: string; symbology?: string | null } | null>(
     initialBarcode ? { code: initialBarcode, symbology: initialSymbology || null } : null,
   );
@@ -93,29 +89,13 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   const [catProperties, setCatProperties] = useState<Property[]>([]);
   const [propValues, setPropValues] = useState<Record<string, unknown>>({});
 
-  const getAttachmentPreviewUrl = useCallback(
-    (attachment: Attachment) =>
-      attachment.download_url
-        ? `${serverURL}${attachment.download_url}`
-        : attachment.url || `${serverURL}/uploads/${attachment.file_path}`,
-    [serverURL],
-  );
-
   const loadSourceItem = useCallback(async () => {
     if (!isEditMode || !itemId) return;
     const loaded = await fetchEditItemData(itemId);
     setSourceItem(loaded);
     setEditItem(loaded);
     setPropValues(loaded.properties || {});
-
-    try {
-      const firstImage = findFirstImageAttachment(loaded.attachments || []);
-      setImagePreview(firstImage ? getAttachmentPreviewUrl(firstImage) : null);
-    } catch {
-      setImagePreview(null);
-    }
-    setPendingImage(null);
-  }, [getAttachmentPreviewUrl, isEditMode, itemId]);
+  }, [isEditMode, itemId]);
 
   useEffect(() => {
     fetchItemCreateReferenceData(itemId).then((data) => {
@@ -307,7 +287,6 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
         itemId,
         item: editItem,
         propValues,
-        pendingImage,
       });
 
       if (isEditMode && itemId) {
@@ -379,7 +358,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     [aiSuggestedItem, editItem, aiSuggestedPropValues, propValues, aiAssistStatus, aiLiveText, categories, valuesEqual, t],
   );
 
-  const pageTitle = isEditMode ? t("common.edit") : t("items.new");
+  const pageTitle = isEditMode && editItem.name?.trim() ? `${t("common.edit")} - ${editItem.name.trim()}` : isEditMode ? t("common.edit") : t("items.new");
   const cancelHref = isEditMode && itemId ? `/items/${itemId}` : "/items";
 
   if (!itemLoaded) {
@@ -428,6 +407,18 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
         requestPhotoLookup={requestPhotoLookup}
       />
 
+      {isEditMode && itemId && sourceItem ? (
+        <ModalSection title={t("attachments.title")}>
+          <AttachmentManager
+            itemId={itemId}
+            attachments={sourceItem.attachments || []}
+            onChange={() => {
+              void loadSourceItem();
+            }}
+          />
+        </ModalSection>
+      ) : null}
+
       <ItemCreateBasicsSection
         t={t}
         editItem={editItem}
@@ -443,16 +434,6 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
         runAIAssist={() => {
           void runAIAssist();
         }}
-      />
-
-      <ImageSection
-        t={t}
-        imagePreview={imagePreview}
-        pendingImage={pendingImage}
-        sourceItem={sourceItem}
-        getAttachmentPreviewUrl={getAttachmentPreviewUrl}
-        setPendingImage={setPendingImage}
-        setImagePreview={setImagePreview}
       />
 
       <VendorsSection
@@ -503,17 +484,6 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
         </button>
       </div>
 
-      {isEditMode && itemId && sourceItem ? (
-        <ModalSection title={t("attachments.title")}>
-          <AttachmentManager
-            itemId={itemId}
-            attachments={sourceItem.attachments || []}
-            onChange={() => {
-              void loadSourceItem();
-            }}
-          />
-        </ModalSection>
-      ) : null}
     </div>
   );
 }

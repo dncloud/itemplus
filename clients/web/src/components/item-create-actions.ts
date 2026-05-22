@@ -57,7 +57,6 @@ type PersistItemOptions = {
   itemId?: number;
   item: Partial<Item>;
   propValues: Record<string, unknown>;
-  pendingImage: File | null;
 };
 
 export async function persistItemWithUploads(options: PersistItemOptions): Promise<number> {
@@ -69,8 +68,8 @@ export async function persistItemWithUploads(options: PersistItemOptions): Promi
 
   const resolvedItemId =
     options.isEditMode && options.itemId
-      ? await updateExistingItem(options.itemId, payload, options.pendingImage, pendingFiles)
-      : await createNewItem(payload, options.pendingImage, pendingFiles);
+      ? await updateExistingItem(options.itemId, payload, pendingFiles)
+      : await createNewItem(payload, pendingFiles);
 
   return resolvedItemId;
 }
@@ -78,11 +77,9 @@ export async function persistItemWithUploads(options: PersistItemOptions): Promi
 async function updateExistingItem(
   itemId: number,
   payload: Partial<Item>,
-  pendingImage: File | null,
   pendingFiles: Array<{ propId: string; file: File }>,
 ) {
   await api.updateItem(itemId, payload);
-  if (pendingImage) await api.uploadAttachment(itemId, pendingImage);
   for (const { propId, file } of pendingFiles) {
     await api.uploadPropertyFile(itemId, Number(propId), file);
   }
@@ -91,11 +88,9 @@ async function updateExistingItem(
 
 async function createNewItem(
   payload: Partial<Item>,
-  pendingImage: File | null,
   pendingFiles: Array<{ propId: string; file: File }>,
 ) {
   const created = await api.createItem(payload);
-  if (pendingImage) await api.uploadAttachment(created.id, pendingImage);
   for (const { propId, file } of pendingFiles) {
     await api.uploadPropertyFile(created.id, Number(propId), file);
   }

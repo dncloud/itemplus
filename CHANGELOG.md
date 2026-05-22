@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.1 - 2026-05-22
+
+### Web app
+- Fixed item grid edit actions so they open the dedicated edit page instead of the detail view.
+- Removed the duplicate top image upload from add/edit item forms and moved attachment management to the top of the edit flow.
+- Added an optional setting to show attachment upload actions on item detail pages for users with attachment write permissions.
+- Updated attachment upload, link, SFTP, and attachment edit dialogs to match the TWP dark form styling.
+- Improved the edit page title, iPhone connection labels in English, and detail-page attachment behavior.
+
+### Data and repository
+- Added merge-safe English and German SQL import files for the curated demo data without creating users or applying bundle/checkout state.
+- Added a MariaDB/MySQL clear database helper that preserves user accounts while resetting item data.
+- Refreshed the public screenshots for the 1.2 web UI.
+
 ## 1.2 - 2026-05-20
 
 ### Backend

@@ -315,7 +315,7 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
             canPrint={can("print")}
             pendingDelete={pendingDelete}
             onOpenItem={(itemId) => router.push(`/items/${itemId}`)}
-            onOpenEdit={(item) => router.push(`/items/${item.id}?edit=1`)}
+            onOpenEdit={(item) => router.push(`/items/${item.id}/edit`)}
             onFilter={setFilter}
             onPrint={async (item) => { try { await printItemQR(item.id); } catch {} }}
             onRemove={(itemId) => {
