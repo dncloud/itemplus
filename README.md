@@ -28,13 +28,13 @@ item+ helps you keep track of what you own, where it lives, and who currently ha
 
 ### Items and Details
 
-| Items List | Items Grid |
+| Items Grid | Item Detail A |
 | --- | --- |
-| ![Items list](docs/screenshots/03-items-list-dark.png) | ![Items grid](docs/screenshots/04-items-grid-dark.png) |
+| ![Items grid](docs/screenshots/03-items-grid-dark.png) | ![Item detail A](docs/screenshots/04-item-detail-dark-a.png) |
 
-| Item Detail | Categories |
+| Item Detail B | Categories |
 | --- | --- |
-| ![Item detail](docs/screenshots/05-item-detail-dark.png) | ![Categories](docs/screenshots/06-categories-dark.png) |
+| ![Item detail B](docs/screenshots/05-item-detail-dark-b.png) | ![Categories](docs/screenshots/06-categories-dark.png) |
 
 ### Structure and Settings
 
