@@ -152,48 +152,35 @@ npm run dev
 
 Open the web app at `http://127.0.0.1:3000`.
 
-### Linux service with systemd
+### Linux service
 
-For a small Linux server or NAS, the simplest production path is usually:
+For a small Linux server or NAS, the usual production path is to download or build
+`itemplus-server`, place it on the host, and run it behind nginx or Caddy.
 
-1. build or download `itemplus-server`
-2. place it on the host
-3. run it as a `systemd` service behind nginx or Caddy
+item+ does not ship an installer or systemd unit. Linux service setup depends on
+the distribution, filesystem layout, reverse proxy, backup strategy, and database
+choice. If you use systemd, create your own unit and config file for your host.
 
-This repository now includes a basic `systemd` setup:
+A typical manual layout might be:
 
-- [config/linux/systemd/itemplus.service](/Users/oli/Desktop/itemplus/config/linux/systemd/itemplus.service)
-- [config/linux/systemd/itemplus.conf.example](/Users/oli/Desktop/itemplus/config/linux/systemd/itemplus.conf.example)
-- [config/linux/systemd/install.sh](/Users/oli/Desktop/itemplus/config/linux/systemd/install.sh)
+- binary: `/usr/local/bin/itemplus-server`
+- config: `/etc/itemplus/itemplus.conf`
+- data directory: `/var/lib/itemplus`
+- uploads: `/var/lib/itemplus/uploads`
+- logs: `/var/lib/itemplus/logs`
 
-Typical flow on a Linux host:
-
-```bash
-# build locally with the embedded web app, or use a release binary first
-cd backend/go
-bash build.sh
-
-# then on the target host, as root
-bash config/linux/systemd/install.sh /path/to/itemplus-server
-```
-
-The installer sets up:
-
-- binary in `/usr/local/bin/itemplus-server`
-- service user `itemplus`
-- writable state directory `/var/lib/itemplus`
-- systemd unit `itemplus.service`
-- config file `/etc/itemplus/itemplus.conf`
-
-After that, adjust `/etc/itemplus/itemplus.conf` for your real domain, CORS, SMTP, and printer settings.
-
-If you want attachments or the database on a different disk, you can also extend the service command with explicit overrides, for example:
+A minimal systemd `ExecStart` can look like this:
 
 ```ini
-ExecStart=/usr/local/bin/itemplus-server --config /etc/itemplus/itemplus.conf --database sqlite+aiosqlite:///var/lib/itemplus/data/itemplus.db --upload /opt/bigstorage/itemplus/uploads --logs /var/log/itemplus
+ExecStart=/usr/local/bin/itemplus-server --config /etc/itemplus/itemplus.conf
 ```
 
-Useful Linux service commands:
+Then adjust `/etc/itemplus/itemplus.conf` for your domain, CORS, SMTP, database,
+upload path, logs, and printer settings. Use `127.0.0.1` as the bind host when
+the app sits behind a reverse proxy, or bind to `0.0.0.0` only when you
+understand the network exposure.
+
+Useful systemd commands, if you choose that setup:
 
 ```bash
 systemctl status itemplus

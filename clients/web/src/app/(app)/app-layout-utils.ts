@@ -116,6 +116,10 @@ export function registerAppShellEvents({
 }) {
   const unsub1 = wsClient.on("browser.open_item", (data) => {
     const itemId = Number(data.item_id);
+    const nextRealm = data.realm as string;
+    if ((nextRealm === "archive" || nextRealm === "collection") && nextRealm !== realm) {
+      setRealm(nextRealm);
+    }
     if (Number.isFinite(itemId) && itemId > 0) routerPush(`/items/${itemId}`);
   });
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.2 - 2026-05-23
+
+### Backend and web app
+- Preserved the active realm when mobile bridge events open an item in the browser, preventing archive/collection mix-ups for matching item IDs.
+- Updated the browser bridge handler so item navigation from connected mobile clients switches realm before opening the item detail page.
+- Removed the packaged Linux/systemd installer, unit, and config example; the README now keeps Linux service setup as manual guidance only.
+
 ## 1.2.1 - 2026-05-22
 
 ### Web app

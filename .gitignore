@@ -32,6 +32,8 @@ logs/
 .swiftpm/
 Packages/
 DerivedData/
+.xcode-derived-data/
+.swift-module-cache/
 *.xcuserstate
 *.xcuserdatad/
 *.pbxuser

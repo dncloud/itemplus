@@ -357,9 +357,11 @@ func handleWSMessage(data map[string]interface{}, userID, sessionID int, deviceT
 
 	case "qr.scan":
 		itemID := jsonInt(data, "item_id")
+		realm, _ := data["realm"].(string)
 		targetSession := jsonInt(data, "target_session")
 		sendToTargetOrBrowsers(userID, targetSession, "browser.open_item", map[string]interface{}{
 			"item_id":      itemID,
+			"realm":        realm,
 			"from_device":  deviceType,
 			"from_session": sessionID,
 		})
