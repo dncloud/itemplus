@@ -195,12 +195,18 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     [],
   );
 
-  const runAIAssist = useCallback(async (promptOverride?: string, allowWebSearch = true, tempImageID?: string) => {
+  const runAIAssist = useCallback(async (
+    promptOverride?: string,
+    allowWebSearch = true,
+    tempImageID?: string,
+    options?: { identifyOnly?: boolean },
+  ) => {
     const promptText = (promptOverride ?? buildAIAssistPrompt()).trim();
     if (!promptText) {
       setAiAssistStatus(t("items.aiAssistNeedsBasics"));
       return;
     }
+    const identifyOnly = options?.identifyOnly === true;
     setAiLastRequest(promptText);
     setAiAssistBusy(true);
     setAiAssistStatus(null);
@@ -222,8 +228,9 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
           temp_image_id: tempImageID,
           locale,
           selected_category_id:
-            typeof editItem?.category_id === "number" ? editItem.category_id : undefined,
+            identifyOnly ? undefined : typeof editItem?.category_id === "number" ? editItem.category_id : undefined,
           allow_web_search: allowWebSearch,
+          identify_only: identifyOnly,
         },
         (event: AIParseStreamEvent) => {
           if (event.type === "status" && event.message) {
@@ -328,7 +335,9 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
           buildAIAssistPrompt,
           buildBarcodeLookupPrompt,
         });
-        void runAIAssist(prompt, true, tempImageID);
+        void runAIAssist(prompt, true, tempImageID, {
+          identifyOnly: !(editItem.name?.trim() && typeof editItem.category_id === "number"),
+        });
       },
     });
   }, [barcodeDraft?.code, buildAIAssistPrompt, buildBarcodeLookupPrompt, editItem.category_id, editItem.name, runAIAssist, t]);
@@ -339,7 +348,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     if ((editItem.name || "").trim()) return;
     if (lastBarcodeLookupCode === code) return;
     setLastBarcodeLookupCode(code);
-    void runAIAssist(buildBarcodeLookupPrompt(code), true);
+    void runAIAssist(buildBarcodeLookupPrompt(code), true, undefined, { identifyOnly: true });
   }, [barcodeDraft?.code, buildBarcodeLookupPrompt, editItem.name, lastBarcodeLookupCode, runAIAssist]);
 
   const { suggestedCategoryName, hasVisibleSuggestions, aiStatusDetails, aiErrorInsights } = useMemo(

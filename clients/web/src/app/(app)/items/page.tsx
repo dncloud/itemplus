@@ -20,7 +20,10 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
     can,
     locale,
     isDark,
+    iosBridgeStatus,
+    printerBridgeStatus,
     printItemQR,
+    showPrintFeatures,
     showItemImages,
     showItemPlaceholders,
     showItemCategory,
@@ -191,13 +194,7 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
 
   useEffect(() => {
     const unsubScanned = wsClient.on("barcode.scanned", (data) => {
-      const code = typeof data.code === "string" ? data.code : "";
-      const symbology = typeof data.symbology === "string" ? data.symbology : null;
-      if (!code) return;
       setBarcodeCapturePending(false);
-      const params = new URLSearchParams({ barcode: code });
-      if (symbology) params.set("symbology", symbology);
-      router.push(`/items/new?${params.toString()}`);
     });
 
     const unsubUnavailable = wsClient.on("barcode.capture_unavailable", () => {
@@ -209,7 +206,7 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
       unsubScanned();
       unsubUnavailable();
     };
-  }, [router, showNotification, t]);
+  }, [showNotification, t]);
 
   const catName = (id?: number) => categories.find((category) => category.id === id)?.name || "—";
   const catColor = (id?: number) => categories.find((category) => category.id === id)?.color;
@@ -223,6 +220,7 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
         realm={realm}
         t={t}
         canWrite={can("items.write")}
+        showBarcodeCapture={can("items.write") && iosBridgeStatus === "connected"}
         barcodeCapturePending={barcodeCapturePending}
         onRequestBarcodeCapture={() => {
           setBarcodeCapturePending(true);
@@ -312,7 +310,7 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
             locColor={locColor}
             canWrite={can("items.write")}
             canDelete={can("items.delete")}
-            canPrint={can("print")}
+            canPrint={can("print") && showPrintFeatures && printerBridgeStatus === "connected"}
             pendingDelete={pendingDelete}
             onOpenItem={(itemId) => router.push(`/items/${itemId}`)}
             onOpenEdit={(item) => router.push(`/items/${item.id}/edit`)}

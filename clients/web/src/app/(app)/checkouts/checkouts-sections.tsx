@@ -41,7 +41,7 @@ export function CheckoutFilterTabs({
     <div className="flex gap-2 flex-wrap">
       {tabDefs.map(({ key, label }) => {
         const count = key === "all"
-          ? requests.filter((r) => r.realm === realm).length
+          ? requests.filter((r) => r.realm === realm && (r.status === "active" || r.status === "pending")).length
           : requests.filter((r) => r.status === key && r.realm === realm).length;
         return (
           <button
@@ -126,6 +126,35 @@ export function CheckoutRequestsList({
     });
   };
 
+  const renderLateDuration = (req: CheckoutListEntry) => {
+    const days = Math.max(1, Math.round(req.overdue_days ?? 1));
+    if (days === 1) return t("checkouts.lateDurationOneDay");
+
+    const weeks = Math.floor(days / 7);
+    const remainingDays = days % 7;
+    if (weeks >= 1 && remainingDays > 0) {
+      return t("checkouts.lateDurationWeeksAndDays", { weeks, days: remainingDays });
+    }
+    if (weeks >= 1) {
+      return t("checkouts.lateDurationWeeks", { weeks });
+    }
+    return t("checkouts.lateDurationDays", { days });
+  };
+
+  const renderReturnTiming = (req: CheckoutListEntry) => {
+    if (req.status !== "completed" || !req.returned_at || !req.due_date) return null;
+    if (req.was_overdue || (req.overdue_days ?? 0) > 0) {
+      return {
+        label: t("checkouts.returnTimingLate", { duration: renderLateDuration(req) }),
+        className: "text-red-600 dark:text-red-400",
+      };
+    }
+    return {
+      label: t("checkouts.returnTimingOnTime"),
+      className: "text-emerald-600 dark:text-emerald-400",
+    };
+  };
+
   const renderBundleState = (req: CheckoutListEntry) => {
     const isBundleRequest = Boolean(
       req.is_bundle
@@ -149,7 +178,8 @@ export function CheckoutRequestsList({
       {requests.map((req) => {
         const style = STATUS_STYLES[req.status] || STATUS_STYLES.pending;
         const loanWindow = renderLoanWindow(req);
-        const relativeDueState = renderRelativeDueState(req);
+        const relativeDueState = req.status === "completed" ? null : renderRelativeDueState(req);
+        const returnTiming = renderReturnTiming(req);
         return (
           <div key={req.id} className="px-4 py-5 hover:bg-gray-50 sm:px-6 dark:hover:bg-white/2.5">
             <div className="flex items-start justify-between gap-4">
@@ -185,6 +215,12 @@ export function CheckoutRequestsList({
                         {relativeDueState}
                       </span>
                     ) : null}
+                  </div>
+                ) : null}
+                {req.status === "completed" && req.returned_at ? (
+                  <div className="flex gap-3 text-xs text-gray-500 flex-wrap">
+                    <span>{t("checkouts.returnedAt", { date: fmtDateTime(req.returned_at) })}</span>
+                    {returnTiming ? <span className={returnTiming.className}>{returnTiming.label}</span> : null}
                   </div>
                 ) : null}
                 {req.bundle_component_names && req.bundle_component_names.length > 0 ? (

@@ -31,7 +31,7 @@ import {
 } from "./categories-page-utils";
 
 export default function CategoriesPage() {
-  const { realm, fmtDateTime, t } = useApp();
+  const { realm, fmtDateTime, t, can } = useApp();
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [editCat, setEditCat] = useState<Partial<Category> | null>(null);
@@ -41,6 +41,9 @@ export default function CategoriesPage() {
   const [editProp, setEditProp] = useState<Partial<Property> | null>(null);
   const [isNewProp, setIsNewProp] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const canWriteCategories = can("categories.write");
+  const canDeleteCategories = can("categories.delete");
+  const canReadItems = can("items.read");
 
   const loadingRef = useRef(false);
   const load = useCallback(async () => {
@@ -88,6 +91,7 @@ export default function CategoriesPage() {
   };
 
   const saveCat = async () => {
+    if (!canWriteCategories) return;
     if (!editCat?.name) return;
     if (isNew) await api.createCategory({ ...editCat, position: categories.length });
     else if (editCat.id) await api.updateCategory(editCat.id, editCat);
@@ -96,11 +100,13 @@ export default function CategoriesPage() {
   };
 
   const deleteCat = (id: number) => {
+    if (!canDeleteCategories) return;
     const cat = categories.find((c) => c.id === id);
     deleteFlow.requestDelete(id, cat?.name || `#${id}`, "category");
   };
 
   const onCatDragEnd = async (event: DragEndEvent) => {
+    if (!canWriteCategories) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIdx = categories.findIndex((c) => c.id === active.id);
@@ -111,6 +117,7 @@ export default function CategoriesPage() {
   };
 
   const onPropDragEnd = async (event: DragEndEvent) => {
+    if (!canWriteCategories) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIdx = properties.findIndex((p) => p.id === active.id);
@@ -121,6 +128,7 @@ export default function CategoriesPage() {
   };
 
   const saveProp = async () => {
+    if (!canWriteCategories) return;
     if (!editProp?.name || !editProp?.property_type) return;
     if (isNewProp) await api.createProperty({ ...editProp, category_id: expanded!, position: properties.length });
     else if (editProp.id) await api.updateProperty(editProp.id, editProp);
@@ -129,11 +137,13 @@ export default function CategoriesPage() {
   };
 
   const deleteProp = (id: number) => {
+    if (!canDeleteCategories) return;
     const prop = properties.find((p) => p.id === id);
     deleteFlow.requestDelete(id, prop?.name || `#${id}`, "property");
   };
 
   const toggleShowInList = async (prop: Property) => {
+    if (!canWriteCategories) return;
     await api.updateProperty(prop.id, { show_in_list: !prop.show_in_list });
     if (expanded) loadProps(expanded);
   };
@@ -162,18 +172,20 @@ export default function CategoriesPage() {
           <h2 className="text-2xl font-bold">{t("categories.title")}</h2>
         </div>
 
-        <div className="flex items-center justify-center gap-2 rounded-sm px-2 py-3 sm:justify-end sm:bg-transparent sm:px-0">
-          <button
-            onClick={() => { setEditCat({ name: "" }); setIsNew(true); }}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            title={t("common.new")}
-          >
-            <PlusIcon className="h-4 w-4" />
-          </button>
-        </div>
+        {canWriteCategories ? (
+          <div className="flex items-center justify-center gap-2 rounded-sm px-2 py-3 sm:justify-end sm:bg-transparent sm:px-0">
+            <button
+              onClick={() => { setEditCat({ name: "" }); setIsNew(true); }}
+              className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              title={t("common.new")}
+            >
+              <PlusIcon className="h-4 w-4" />
+            </button>
+          </div>
+        ) : null}
       </div>
 
-      {editCat && isNew ? (
+      {canWriteCategories && editCat && isNew ? (
         <div className="overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-900/5 dark:bg-gray-800/50 dark:outline-white/10">
           <div className="border-b border-gray-200 px-4 py-4 sm:px-6 dark:border-white/10">
             <h3 className="font-semibold text-gray-900 dark:text-white">{t("common.new")}</h3>
@@ -216,12 +228,16 @@ export default function CategoriesPage() {
                 }}
                 onDelete={() => deleteCat(cat.id)}
                 onShowItems={() => router.push(`/items?category=${cat.id}`)}
+                canReorder={canWriteCategories}
+                canEdit={canWriteCategories}
+                canDelete={canDeleteCategories}
+                canShowItems={canReadItems}
                 fmtDateTime={fmtDateTime}
                 t={t}
               >
                 {(editCat?.id === cat.id && !isNew) || expanded === cat.id ? (
                   <div>
-                    {editCat?.id === cat.id && !isNew ? (
+                    {canWriteCategories && editCat?.id === cat.id && !isNew ? (
                       <div className="border-t border-gray-100 px-4 py-4 sm:px-6 dark:border-white/10">
                         <CategoryInlineForm
                           category={editCat}
@@ -237,16 +253,18 @@ export default function CategoriesPage() {
                       <div className="border-t border-gray-100 px-4 py-4 sm:px-6 dark:border-white/10 space-y-2">
                         <div className="mb-2 flex items-center justify-between">
                           <h4 className="text-sm/6 font-medium text-gray-900 dark:text-white">{t("categories.properties")}</h4>
-                          <button
-                            onClick={() => { setEditProp({ name: "", property_type: "text", show_in_list: false }); setIsNewProp(true); }}
-                            className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"
-                            title={t("categories.addProperty")}
-                          >
-                            <PlusIcon className="h-4 w-4 text-gray-400" />
-                          </button>
+                          {canWriteCategories ? (
+                            <button
+                              onClick={() => { setEditProp({ name: "", property_type: "text", show_in_list: false }); setIsNewProp(true); }}
+                              className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"
+                              title={t("categories.addProperty")}
+                            >
+                              <PlusIcon className="h-4 w-4 text-gray-400" />
+                            </button>
+                          ) : null}
                         </div>
 
-                        {editProp && isNewProp ? (
+                        {canWriteCategories && editProp && isNewProp ? (
                           <div className="mb-3 border-t border-gray-100 px-4 py-4 dark:border-white/10">
                             <PropertyInlineForm
                               property={editProp}
@@ -278,9 +296,13 @@ export default function CategoriesPage() {
                                 }}
                                 onDelete={() => deleteProp(prop.id)}
                                 onToggleVisibility={() => toggleShowInList(prop)}
+                                canReorder={canWriteCategories}
+                                canEdit={canWriteCategories}
+                                canDelete={canDeleteCategories}
+                                canToggleVisibility={canWriteCategories}
                                 t={t}
                               >
-                                {editProp?.id === prop.id && !isNewProp ? (
+                                {canWriteCategories && editProp?.id === prop.id && !isNewProp ? (
                                   <div className="border-t border-gray-100 px-3 py-4 dark:border-white/10">
                                     <PropertyInlineForm
                                       property={editProp}
@@ -309,7 +331,7 @@ export default function CategoriesPage() {
       {categories.length === 0 && <p className="text-center text-gray-500 py-10">{t("categories.none")}</p>}
 
       {/* Confirm Delete */}
-      {deleteFlow.confirm && (
+      {canDeleteCategories && deleteFlow.confirm && (
         <ConfirmDelete
           name={deleteFlow.confirm.name}
           t={t}

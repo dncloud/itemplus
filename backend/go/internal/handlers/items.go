@@ -1374,6 +1374,7 @@ func loadListItemCheckouts(checkoutTable string, itemIDs []interface{}) map[inte
 				"checkout_id": cr["id"],
 				"since":       cr["created_at"],
 			}
+			attachCheckoutDueState(entry, cr["due_date"])
 			if existing, ok := checkoutByItem[itemID]; ok {
 				users, _ := existing["users"].([]map[string]interface{})
 				existing["users"] = append(users, entry)
@@ -1386,6 +1387,8 @@ func loadListItemCheckouts(checkoutTable string, itemIDs []interface{}) map[inte
 				"due_date":       cr["due_date"],
 				"checkout_id":    cr["id"],
 				"since":          cr["created_at"],
+				"is_overdue":     entry["is_overdue"],
+				"overdue_days":   entry["overdue_days"],
 				"users":          []map[string]interface{}{entry},
 				"checkout_count": 1,
 			}
@@ -1510,6 +1513,7 @@ func loadItemCheckoutInfo(realm, checkoutTable, itemID string) interface{} {
 				"checkout_id": entry["id"],
 				"since":       entry["created_at"],
 			}
+			attachCheckoutDueState(userEntry, entry["due_date"])
 			if first == nil {
 				first = userEntry
 			}
@@ -1527,11 +1531,23 @@ func loadItemCheckoutInfo(realm, checkoutTable, itemID string) interface{} {
 		"due_date":        first["due_date"],
 		"checkout_id":     first["checkout_id"],
 		"since":           first["since"],
+		"is_overdue":      first["is_overdue"],
+		"overdue_days":    first["overdue_days"],
 		"users":           users,
 		"checkout_count":  len(users),
 		"component_ids":   componentIDs,
 		"component_names": componentNames,
 	}
+}
+
+func attachCheckoutDueState(target map[string]interface{}, dueValue interface{}) {
+	due := parseTime(dueValue)
+	if due.IsZero() {
+		return
+	}
+	now := time.Now().In(time.Local)
+	target["is_overdue"] = isCheckoutOverdue(now, due)
+	target["overdue_days"] = calculateOverdueDays(now, due)
 }
 
 func loadActiveCheckoutComponents(realm, checkoutTable, itemID string) ([]int, []string) {

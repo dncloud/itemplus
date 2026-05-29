@@ -149,11 +149,11 @@ func loadAISettingsWithSecret() services.AISettings {
 	var apiKey sql.NullString
 	var enabled sql.NullString
 
-	_ = database.DB.Get(&provider, "SELECT value FROM app_settings WHERE key = ?", "ai.provider")
-	_ = database.DB.Get(&model, "SELECT value FROM app_settings WHERE key = ?", "ai.model")
-	_ = database.DB.Get(&baseURL, "SELECT value FROM app_settings WHERE key = ?", "ai.base_url")
-	_ = database.DB.Get(&apiKey, "SELECT value FROM app_settings WHERE key = ?", "ai.api_key")
-	_ = database.DB.Get(&enabled, "SELECT value FROM app_settings WHERE key = ?", "ai.enabled")
+	_ = database.DB.Get(&provider, "SELECT value FROM app_settings WHERE `key` = ?", "ai.provider")
+	_ = database.DB.Get(&model, "SELECT value FROM app_settings WHERE `key` = ?", "ai.model")
+	_ = database.DB.Get(&baseURL, "SELECT value FROM app_settings WHERE `key` = ?", "ai.base_url")
+	_ = database.DB.Get(&apiKey, "SELECT value FROM app_settings WHERE `key` = ?", "ai.api_key")
+	_ = database.DB.Get(&enabled, "SELECT value FROM app_settings WHERE `key` = ?", "ai.enabled")
 
 	settings := services.AISettings{
 		Provider: "openai",
@@ -174,10 +174,7 @@ func loadAISettingsWithSecret() services.AISettings {
 		settings.APIKey = strings.TrimSpace(apiKey.String)
 	}
 	if enabled.Valid {
-		parsed, err := strconv.ParseBool(strings.TrimSpace(enabled.String))
-		if err == nil {
-			settings.Enabled = parsed
-		}
+		settings.Enabled = parseFlexibleBool(enabled.String, settings.Enabled)
 	}
 	return settings
 }
@@ -198,7 +195,7 @@ func saveAISettings(settings services.AISettings) error {
 	}
 
 	if strings.TrimSpace(settings.APIKey) == "" {
-		_, err := database.DB.Exec("DELETE FROM app_settings WHERE key = ?", "ai.api_key")
+		_, err := database.DB.Exec("DELETE FROM app_settings WHERE `key` = ?", "ai.api_key")
 		return err
 	}
 
@@ -207,6 +204,26 @@ func saveAISettings(settings services.AISettings) error {
 
 func errBadRequest(message string) error {
 	return &badRequestError{message: message}
+}
+
+func parseFlexibleBool(raw string, fallback bool) bool {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	if value == "" {
+		return fallback
+	}
+
+	if parsed, err := strconv.ParseBool(value); err == nil {
+		return parsed
+	}
+
+	switch value {
+	case "on", "yes", "y", "enabled", "active":
+		return true
+	case "off", "no", "n", "disabled", "inactive":
+		return false
+	default:
+		return fallback
+	}
 }
 
 type badRequestError struct {

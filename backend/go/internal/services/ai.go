@@ -37,6 +37,7 @@ type ParseItemIntentRequest struct {
 	Barcode            string           `json:"barcode,omitempty"`
 	TempImageID        string           `json:"temp_image_id,omitempty"`
 	AllowWebSearch     bool             `json:"allow_web_search,omitempty"`
+	IdentifyOnly       bool             `json:"identify_only,omitempty"`
 	SelectedCategoryID *int64           `json:"selected_category_id,omitempty"`
 	Categories         []map[string]any `json:"categories,omitempty"`
 	Properties         []map[string]any `json:"properties,omitempty"`
@@ -103,7 +104,11 @@ type categoryInferenceResult struct {
 
 type openAIResponse struct {
 	ID         string `json:"id"`
+	Status     string `json:"status"`
 	OutputText string `json:"output_text"`
+	IncompleteDetails *struct {
+		Reason string `json:"reason"`
+	} `json:"incomplete_details"`
 	Output     []struct {
 		Type    string `json:"type"`
 		Content []struct {
@@ -115,6 +120,12 @@ type openAIResponse struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
+
+const (
+	aiResponsesMaxOutputTokens       = 6000
+	aiChatCompletionsMaxTokens       = 4000
+	aiConnectionTestMaxOutputTokens  = 32
+)
 
 type chatCompletionResponse struct {
 	ID      string `json:"id"`
@@ -181,6 +192,27 @@ func resolveAIConfig(settings AISettings, timeout time.Duration) (*resolvedAICon
 }
 
 func prepareParseContext(req ParseItemIntentRequest) (*preparedParseContext, error) {
+	if req.IdentifyOnly {
+		contextPayload := map[string]any{
+			"realm":   req.Realm,
+			"prompt":  req.Prompt,
+			"barcode": req.Barcode,
+			"locale":  req.Locale,
+		}
+		if strings.TrimSpace(req.TempImageID) != "" {
+			contextPayload["has_image"] = true
+		}
+		contextJSON, err := json.Marshal(contextPayload)
+		if err != nil {
+			return nil, err
+		}
+		imageInput, _ := loadAIImageInput(req.TempImageID)
+		return &preparedParseContext{
+			ContextJSON: string(contextJSON),
+			ImageInput:  imageInput,
+		}, nil
+	}
+
 	selectedCategoryID := req.SelectedCategoryID
 	if selectedCategoryID == nil {
 		if inferred := inferCategoryLocally(req); inferred != nil {
@@ -256,7 +288,7 @@ func ParseItemIntent(settings AISettings, req ParseItemIntentRequest) (*ParseIte
 		return nil, err
 	}
 
-	outputText, transport, err := generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput)
+	outputText, transport, err := generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +310,9 @@ func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit
 
 	if emit != nil {
 		categoryMessage := "Ermittle Kategorie..."
-		if parseCtx.SelectedCategoryName != "" {
+		if req.IdentifyOnly {
+			categoryMessage = "Identifiziere Produkt..."
+		} else if parseCtx.SelectedCategoryName != "" {
 			categoryMessage = fmt.Sprintf("Kategorie: %s", parseCtx.SelectedCategoryName)
 		}
 		if err := emit(AIStreamEvent{Type: "note", Message: categoryMessage}); err != nil {
@@ -313,7 +347,7 @@ func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit
 
 	if cfg.Provider != "openai" && parseCtx.ImageInput == nil {
 		var builder strings.Builder
-		streamErr := generateViaChatCompletionsStream(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch), parseCtx.ContextJSON, func(delta string) error {
+		streamErr := generateViaChatCompletionsStream(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, func(delta string) error {
 			hadStreamDelta = true
 			builder.WriteString(delta)
 			if emit != nil {
@@ -328,7 +362,7 @@ func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit
 	}
 
 	if strings.TrimSpace(outputText) == "" {
-		outputText, transport, err = generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput)
+		outputText, transport, err = generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput)
 		if err != nil {
 			return nil, err
 		}
@@ -441,71 +475,119 @@ func uniqueNormalizedTokens(value string) []string {
 	return tokens
 }
 
-func buildParseInstructions(allowWebSearch bool) string {
-	instructions := `You are the item ingestion assistant.
-
-Create one structured item draft from:
-- the user prompt
-- the selected category
-- the provided property schema
-
-Main goal:
-- find as many correct details as possible about this exact item
-- map them into the provided properties
-
-Rules:
-- use only the provided properties
-- prefer property IDs as keys when IDs are available
-- if a category is already selected, keep that category
-- evaluate every provided property
-- first use user-provided information
-- then use reliable general knowledge`
-
-	if allowWebSearch {
-		instructions += `
-- use web search to find missing details and improve property coverage`
+func buildParseInstructions(allowWebSearch bool, locale string, identifyOnly bool) string {
+	languageInstruction := "Write all human-readable output in English."
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
+		languageInstruction = "Write all human-readable output in German."
 	}
 
-	instructions += `
-- prefer filling a property with a likely correct value over leaving it empty
-- but do not guess rare, variant-specific, or unclear details
-- if multiple variants are plausible, omit the value and ask a short question
-- for number properties, return only the number and use the unit from the schema
-- never output empty strings in properties
-- if a property is unknown, omit that property key entirely
+	if identifyOnly {
+		return `You identify products from a barcode, prompt, and optional image.
 
-Fields:
-- always fill name
-- always fill quantity (default 1)
-- fill description as a factual 1-3 sentence summary when enough information is available
+Goal:
+- determine the most likely product or title
+- return a short factual description
+- do not do category mapping or property enrichment yet
 
-Questions:
-- ask only when it resolves real ambiguity or missing important ownership/variant details
-- keep questions short
-- maximum 5 questions
+Rules:
+- prefer a correct product name over a broad guess
+- use web search only when it helps confirm the exact product
+- if identification is uncertain, lower confidence and ask a short question
+- do not invent technical details, pricing, categories, or properties
+- keep quantity at 1 unless the prompt clearly says otherwise
+- keep purchase_price null and purchase_currency empty
+- keep suggested_category_id null
+- keep suggested_category_name empty
+- keep category_proposal null
+- keep properties as an empty object
+- keep missing_required as an empty array
+- keep notes short and factual
+- keep official product titles unchanged when appropriate
 
-Notes:
-- briefly mention inferred or web-supported values when helpful
+` + languageInstruction + `
 
-Output:
-- return exactly one JSON object and no markdown
+Return exactly one JSON object and no markdown.
 
-The JSON object must use this shape:
+Use this shape:
 {
   "intent": "create_item",
   "confidence": 0.0,
   "needs_confirmation": true,
   "suggested_realm": "archive",
-  "suggested_category_id": 0,
+  "suggested_category_id": null,
   "suggested_category_name": "",
-  "category_proposal": {
-    "reason": "",
+  "category_proposal": null,
+  "fields": {
     "name": "",
     "description": "",
-    "color": "",
-    "manufacturer_name": "",
-    "properties": []
+    "quantity": 1,
+    "purchase_price": null,
+    "purchase_currency": ""
   },
+  "properties": {},
+  "missing_required": [],
+  "questions": [],
+  "notes": []
+}`
+	}
+
+	instructions := `You enrich one item draft from:
+- the user prompt
+- the selected category, if one is already chosen
+- the provided property schema
+
+Goal:
+- identify the item correctly
+- fill the matching fields and properties with reliable details
+
+Rules:
+- first use user-provided information
+- then use reliable general knowledge
+- if web search is available, use it only when it helps confirm missing details
+- if a category is already selected, keep that category
+- if no category is selected, choose the best available category only when it is reasonably clear
+- use only the provided properties
+- prefer property IDs as keys when IDs are available
+- leave unclear or variant-specific values out
+- do not invent values just to fill every field
+- for number properties, return only the number and use the schema unit
+- keep quantity at 1 unless the prompt clearly says otherwise`
+
+	if allowWebSearch {
+		instructions += `
+- web search is allowed`
+	}
+
+	instructions += `
+- if multiple variants are plausible, ask a short question instead of guessing
+- omit unknown properties instead of returning empty strings
+
+` + languageInstruction + `
+
+Fields:
+- always fill name
+- always fill quantity (default 1)
+- fill description as a short factual summary when enough information is available
+
+Questions:
+- ask only when it resolves real ambiguity
+- keep questions short
+- maximum 5 questions
+
+Notes:
+- briefly mention helpful inferred or web-supported details when useful
+
+Return exactly one JSON object and no markdown.
+
+Use this shape:
+{
+  "intent": "create_item",
+  "confidence": 0.0,
+  "needs_confirmation": true,
+  "suggested_realm": "archive",
+  "suggested_category_id": null,
+  "suggested_category_name": "",
+  "category_proposal": null,
   "fields": {
     "name": "",
     "description": "",
@@ -523,7 +605,7 @@ ADDITIONAL RULES:
 - If the user asks to create an item, the intent should be "create_item".
 - Confidence must be between 0 and 1.
 - If a selected category is provided, suggested_category_id must match it.
-- If no selected category is provided, choose the single best category from the available categories.`
+- If no category is clear, keep suggested_category_id null and suggested_category_name empty.`
 
 	return instructions
 }
@@ -559,6 +641,13 @@ func finalizeParseItemIntentResult(outputText, transport, model, provider string
 	}
 	if result.Notes == nil {
 		result.Notes = []string{}
+	}
+	if req.IdentifyOnly {
+		result.SuggestedCategoryID = nil
+		result.SuggestedCategoryName = ""
+		result.CategoryProposal = nil
+		result.Properties = map[string]any{}
+		result.MissingRequired = []string{}
 	}
 	if result.CategoryProposal != nil && strings.TrimSpace(result.CategoryProposal.Name) == "" {
 		result.CategoryProposal = nil
@@ -786,7 +875,7 @@ func testResponsesAPI(client *http.Client, baseURL, provider, model, apiKey stri
 		"model":             model,
 		"input":             "Please reply with exactly: item+ connection ok",
 		"instructions":      "You are validating an API connection for item+. Respond with the exact confirmation text only.",
-		"max_output_tokens": 32,
+		"max_output_tokens": aiConnectionTestMaxOutputTokens,
 		"store":             false,
 	}
 
@@ -890,7 +979,7 @@ func generateViaResponses(client *http.Client, baseURL, provider, model, apiKey,
 		"model":             model,
 		"input":             inputPayload,
 		"instructions":      instructions,
-		"max_output_tokens": 2400,
+		"max_output_tokens": aiResponsesMaxOutputTokens,
 		"store":             false,
 	}
 	if provider == "openai" && !allowWebSearch {
@@ -904,7 +993,7 @@ func generateViaResponses(client *http.Client, baseURL, provider, model, apiKey,
 		payload["tools"] = []map[string]any{
 			{"type": "web_search"},
 		}
-		payload["tool_choice"] = "required"
+		payload["tool_choice"] = "auto"
 	}
 
 	body, err := json.Marshal(payload)
@@ -958,6 +1047,9 @@ func generateViaResponses(client *http.Client, baseURL, provider, model, apiKey,
 		outputText = extractAITextFromRawJSON(raw)
 	}
 	if outputText == "" {
+		if parsed.IncompleteDetails != nil && strings.TrimSpace(parsed.IncompleteDetails.Reason) == "max_output_tokens" {
+			return "", resp.StatusCode, fmt.Errorf("AI response hit the output limit before a readable result was returned")
+		}
 		return "", resp.StatusCode, fmt.Errorf("Provider returned no readable output text. Raw response: %s", partialAIOutputPreview(string(raw)))
 	}
 	return outputText, resp.StatusCode, nil
@@ -971,7 +1063,7 @@ func generateViaChatCompletions(client *http.Client, baseURL, provider, model, a
 			{"role": "user", "content": input},
 		},
 		"stream":      false,
-		"max_tokens":  2400,
+		"max_tokens":  aiChatCompletionsMaxTokens,
 		"temperature": 0.1,
 	}
 	if provider == "ollama" {
@@ -1031,7 +1123,7 @@ func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, mo
 			{"role": "user", "content": input},
 		},
 		"stream":      true,
-		"max_tokens":  2400,
+		"max_tokens":  aiChatCompletionsMaxTokens,
 		"temperature": 0.1,
 	}
 	if provider == "ollama" {

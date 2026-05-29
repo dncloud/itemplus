@@ -32,7 +32,7 @@ import {
 } from "./locations-page-utils";
 
 export default function LocationsPage() {
-  const { realm, can, fmtDateTime, printLocationQR, t } = useApp();
+  const { realm, can, fmtDateTime, printLocationQR, printerBridgeStatus, showPrintFeatures, t } = useApp();
   const router = useRouter();
   const [locations, setLocations] = useState<Location[]>([]);
   const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
@@ -148,6 +148,7 @@ export default function LocationsPage() {
 
   const roots = getRootLocations(locations);
   const childrenOf = (parentId: number) => getChildLocations(locations, parentId);
+  const canPrintActions = can("print") && showPrintFeatures && printerBridgeStatus === "connected";
 
   const startEditLocation = (loc: Location) => {
     if (editLoc?.id === loc.id && !isNew) {
@@ -185,7 +186,7 @@ export default function LocationsPage() {
             }}
             canWrite={can("locations.write")}
             canDelete={can("locations.delete")}
-            canPrint={can("print")}
+            canPrint={canPrintActions}
             fmtDateTime={fmtDateTime}
             t={t}
           >
@@ -225,7 +226,7 @@ export default function LocationsPage() {
                             }}
                             canWrite={can("locations.write")}
                             canDelete={can("locations.delete")}
-                            canPrint={can("print")}
+                            canPrint={canPrintActions}
                             fmtDateTime={fmtDateTime}
                             t={t}
                           >
@@ -264,7 +265,7 @@ export default function LocationsPage() {
                                         }}
                                         canWrite={can("locations.write")}
                                         canDelete={can("locations.delete")}
-                                        canPrint={can("print")}
+                                        canPrint={canPrintActions}
                                         fmtDateTime={fmtDateTime}
                                         editLoc={editLoc}
                                         setEditLoc={setEditLoc}

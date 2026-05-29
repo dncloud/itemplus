@@ -105,14 +105,12 @@ export function registerAppShellEvents({
   realm,
   setRealm,
   refreshBadges,
-  refreshIOSBridge,
 }: {
   routerPush: (href: string) => void;
   routerReplace: (href: string) => void;
   realm: "archive" | "collection";
   setRealm: (realm: "archive" | "collection") => void;
   refreshBadges: () => void;
-  refreshIOSBridge: () => void;
 }) {
   const unsub1 = wsClient.on("browser.open_item", (data) => {
     const itemId = Number(data.item_id);
@@ -148,10 +146,18 @@ export function registerAppShellEvents({
   const unsub7 = wsClient.on("checkout.rejected", refreshBadges);
   const unsub8 = wsClient.on("user.activated", refreshBadges);
   const unsub9 = wsClient.on("delete.done", refreshBadges);
-  const unsub10 = wsClient.on("device.connected", refreshIOSBridge);
-  const unsub11 = wsClient.on("device.disconnected", refreshIOSBridge);
-  const unsub12 = wsClient.on("devices.list", refreshIOSBridge);
-
+  const unsub10 = wsClient.on("barcode.scanned", (data) => {
+    const code = typeof data.code === "string" ? data.code.trim() : "";
+    const symbology = typeof data.symbology === "string" ? data.symbology.trim() : "";
+    const nextRealm = typeof data.realm === "string" ? data.realm : realm;
+    if ((nextRealm === "archive" || nextRealm === "collection") && nextRealm !== realm) {
+      setRealm(nextRealm);
+    }
+    if (!code) return;
+    const params = new URLSearchParams({ barcode: code });
+    if (symbology) params.set("symbology", symbology);
+    routerPush(`/items/new?${params.toString()}`);
+  });
   return () => {
     unsub1();
     unsub2();
@@ -163,8 +169,6 @@ export function registerAppShellEvents({
     unsub8();
     unsub9();
     unsub10();
-    unsub11();
-    unsub12();
   };
 }
 

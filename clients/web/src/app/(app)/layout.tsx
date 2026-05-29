@@ -9,7 +9,6 @@ import { AppSidebar } from "@/app/(app)/app-sidebar";
 import {
   connectAppWebSocket,
   loadAppBadges,
-  loadIOSBridgeStatus,
   logoutAppSession,
   registerAppShellEvents,
   sendAppPresence,
@@ -19,19 +18,14 @@ import {
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { realm, setRealm, serverURL, theme, setTheme, ready, isAdmin, can, t } = useApp();
+  const { realm, setRealm, serverURL, theme, setTheme, ready, isAdmin, can, t, iosBridgeStatus, printerBridgeStatus, showPrintFeatures } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [badges, setBadges] = useState<Record<string, number>>({});
-  const [iosBridgeStatus, setIOSBridgeStatus] = useState<"connected" | "offline" | "none">("none");
 
   const loadBadges = useCallback(async () => {
     setBadges(await loadAppBadges(can));
   }, [can]);
-
-  const loadIOSBridge = useCallback(async () => {
-    setIOSBridgeStatus(await loadIOSBridgeStatus());
-  }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -54,11 +48,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       refreshBadges: () => {
         void loadBadges();
       },
-      refreshIOSBridge: () => {
-        void loadIOSBridge();
-      },
     });
-  }, [router, ready, loadBadges, loadIOSBridge, realm, serverURL, setRealm]);
+  }, [router, ready, loadBadges, realm, serverURL, setRealm]);
 
   useEffect(() => {
     if (!ready) return;
@@ -67,20 +58,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!ready) return;
-    void Promise.resolve().then(loadIOSBridge);
-  }, [ready, loadIOSBridge]);
-
-  useEffect(() => {
-    if (!ready) return;
     const interval = setInterval(loadBadges, 30000);
     return () => clearInterval(interval);
   }, [ready, loadBadges]);
-
-  useEffect(() => {
-    if (!ready) return;
-    const interval = setInterval(loadIOSBridge, 30000);
-    return () => clearInterval(interval);
-  }, [ready, loadIOSBridge]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -121,6 +101,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <AppShellHeader
         t={t}
         iosBridgeStatus={iosBridgeStatus}
+        printerBridgeStatus={printerBridgeStatus}
+        showPrinterStatus={showPrintFeatures && (isAdmin || can("print"))}
         onOpenSidebar={() => setSidebarOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
       />

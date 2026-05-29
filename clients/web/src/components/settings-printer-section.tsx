@@ -3,13 +3,15 @@
 import type { LabelTemplate, LabelTemplateMeta, PrinterStatus } from "@/lib/api";
 import { PrinterIcon } from "@heroicons/react/24/outline";
 import type { LabelTemplateDraft } from "@/components/settings-drafts";
-import { ChoiceTile, SettingsCard, StatusMessage } from "@/components/settings-ui";
+import { ChoiceTile, SettingsCard, StatusMessage, ToggleRow } from "@/components/settings-ui";
 
 export function SettingsPrinterSection({
   t,
   isAdmin,
   printMode,
   setPrintMode,
+  showPrintFeatures,
+  setShowPrintFeatures,
   printer,
   setPrinter,
   printerStatus,
@@ -40,6 +42,8 @@ export function SettingsPrinterSection({
   isAdmin: boolean;
   printMode: "server" | "ios";
   setPrintMode: (value: "server" | "ios") => void;
+  showPrintFeatures: boolean;
+  setShowPrintFeatures: (value: boolean) => void;
   printer: PrinterStatus | null;
   setPrinter: (value: PrinterStatus) => void;
   printerStatus: string | null;
@@ -95,6 +99,13 @@ export function SettingsPrinterSection({
           />
         </div>
       </div>
+
+      <ToggleRow
+        title={t("settings.showPrintFeatures")}
+        description={t("settings.showPrintFeaturesHint")}
+        checked={showPrintFeatures}
+        onToggle={() => setShowPrintFeatures(!showPrintFeatures)}
+      />
 
       {printMode === "ios" ? (
         <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900">

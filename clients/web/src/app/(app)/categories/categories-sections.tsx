@@ -49,6 +49,10 @@ export function SortableProperty({
   onEdit,
   onDelete,
   onToggleVisibility,
+  canReorder = true,
+  canEdit = true,
+  canDelete = true,
+  canToggleVisibility = true,
   t,
   children,
 }: {
@@ -58,6 +62,10 @@ export function SortableProperty({
   onEdit: () => void;
   onDelete: () => void;
   onToggleVisibility: () => void;
+  canReorder?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  canToggleVisibility?: boolean;
   t: (k: string) => string;
   children?: React.ReactNode;
 }) {
@@ -67,9 +75,11 @@ export function SortableProperty({
   return (
     <div ref={setNodeRef} style={style} className="rounded-lg">
       <div className="flex items-center gap-2 px-3 py-2">
-        <button {...attributes} {...listeners} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10 cursor-grab active:cursor-grabbing">
-          <Bars3Icon className="h-3.5 w-3.5 text-gray-400" />
-        </button>
+        {canReorder ? (
+          <button {...attributes} {...listeners} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10 cursor-grab active:cursor-grabbing">
+            <Bars3Icon className="h-3.5 w-3.5 text-gray-400" />
+          </button>
+        ) : null}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-medium">{prop.name}</span>
@@ -89,15 +99,21 @@ export function SortableProperty({
             </p>
           ) : null}
         </div>
-        <button onClick={onToggleVisibility} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10" title={prop.show_in_list ? "👁" : "👁‍🗨"}>
-          {prop.show_in_list ? <EyeIcon className="h-3.5 w-3.5 text-blue-500" /> : <EyeSlashIcon className="h-3.5 w-3.5 text-gray-300" />}
-        </button>
-        <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10">
-          <PencilIcon className="h-3.5 w-3.5 text-gray-400" />
-        </button>
-        <button onClick={onDelete} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20">
-          <TrashIcon className="h-3.5 w-3.5 text-red-400" />
-        </button>
+        {canToggleVisibility ? (
+          <button onClick={onToggleVisibility} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10" title={prop.show_in_list ? "👁" : "👁‍🗨"}>
+            {prop.show_in_list ? <EyeIcon className="h-3.5 w-3.5 text-blue-500" /> : <EyeSlashIcon className="h-3.5 w-3.5 text-gray-300" />}
+          </button>
+        ) : null}
+        {canEdit ? (
+          <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10">
+            <PencilIcon className="h-3.5 w-3.5 text-gray-400" />
+          </button>
+        ) : null}
+        {canDelete ? (
+          <button onClick={onDelete} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20">
+            <TrashIcon className="h-3.5 w-3.5 text-red-400" />
+          </button>
+        ) : null}
       </div>
       {children}
     </div>
@@ -111,6 +127,10 @@ export function SortableCategory({
   onEdit,
   onDelete,
   onShowItems,
+  canReorder = true,
+  canEdit = true,
+  canDelete = true,
+  canShowItems = true,
   fmtDateTime,
   t,
   children,
@@ -121,6 +141,10 @@ export function SortableCategory({
   onEdit: () => void;
   onDelete: () => void;
   onShowItems: () => void;
+  canReorder?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  canShowItems?: boolean;
   fmtDateTime: (v: string) => string;
   t: (k: string) => string;
   children?: React.ReactNode;
@@ -131,9 +155,11 @@ export function SortableCategory({
   return (
     <div ref={setNodeRef} style={style} className="overflow-hidden">
       <div className="relative flex items-center gap-y-4 px-4 py-5 hover:bg-gray-50 sm:px-6 dark:hover:bg-white/2.5">
-        <button {...attributes} {...listeners} className="mr-2 inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10 cursor-grab active:cursor-grabbing">
-          <Bars3Icon className="h-4 w-4 text-gray-400" />
-        </button>
+        {canReorder ? (
+          <button {...attributes} {...listeners} className="mr-2 inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10 cursor-grab active:cursor-grabbing">
+            <Bars3Icon className="h-4 w-4 text-gray-400" />
+          </button>
+        ) : null}
         <button onClick={onToggle} className="flex-1 flex items-center gap-2 text-left min-w-0">
           <div className="min-w-0">
             <span className="text-sm/6 font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
@@ -149,11 +175,19 @@ export function SortableCategory({
           </div>
           <ChevronDownIcon className={`h-4 w-4 text-gray-400 transition shrink-0 ${isExpanded ? "rotate-180" : ""}`} />
         </button>
-        <div className="flex gap-1">
-          <button onClick={onShowItems} title="Items" className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><CubeIcon className="h-4 w-4 text-gray-400" /></button>
-          <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><PencilIcon className="h-4 w-4 text-gray-400" /></button>
-          <button onClick={onDelete} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20"><TrashIcon className="h-4 w-4 text-red-400" /></button>
-        </div>
+        {canShowItems || canEdit || canDelete ? (
+          <div className="flex gap-1">
+            {canShowItems ? (
+              <button onClick={onShowItems} title="Items" className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><CubeIcon className="h-4 w-4 text-gray-400" /></button>
+            ) : null}
+            {canEdit ? (
+              <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><PencilIcon className="h-4 w-4 text-gray-400" /></button>
+            ) : null}
+            {canDelete ? (
+              <button onClick={onDelete} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20"><TrashIcon className="h-4 w-4 text-red-400" /></button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {children}
     </div>

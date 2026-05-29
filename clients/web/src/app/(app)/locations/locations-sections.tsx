@@ -4,7 +4,7 @@ import type React from "react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bars3Icon, ChevronDownIcon, CubeIcon, PencilIcon, QrCodeIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { Bars3Icon, ChevronDownIcon, CubeIcon, PencilIcon, PrinterIcon, TrashIcon } from "@heroicons/react/24/outline";
 import SelectPicker from "@/components/select-picker";
 import type { Location } from "@/lib/api";
 
@@ -70,7 +70,7 @@ export function SortableLocation({
         </button>
         {managerName ? <span className="mr-2 hidden rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 dark:bg-white/5 dark:text-gray-300 sm:inline">{managerName}</span> : null}
         <div className="flex items-center gap-1 shrink-0">
-          {canPrint ? <button onClick={onPrintQR} title="QR drucken" className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><QrCodeIcon className="h-4 w-4 text-gray-400" /></button> : null}
+          {canPrint ? <button onClick={onPrintQR} title={t("common.print")} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><PrinterIcon className="h-4 w-4 text-gray-400" /></button> : null}
           <button onClick={onShowItems} title="Items" className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><CubeIcon className="h-4 w-4 text-gray-400" /></button>
           {canWrite ? <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><PencilIcon className="h-4 w-4 text-gray-400" /></button> : null}
           {canDelete ? <button onClick={onDelete} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20"><TrashIcon className="h-4 w-4 text-red-400" /></button> : null}
@@ -136,7 +136,7 @@ export function SortableNestedLocation({
               </span>
             ) : null}
           </button>
-          {canPrint ? <button onClick={onPrintQR} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10" title="QR drucken"><QrCodeIcon className="h-3.5 w-3.5 text-gray-400" /></button> : null}
+          {canPrint ? <button onClick={onPrintQR} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10" title={t("common.print")}><PrinterIcon className="h-3.5 w-3.5 text-gray-400" /></button> : null}
           {canWrite ? <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10"><PencilIcon className="h-3.5 w-3.5 text-gray-400" /></button> : null}
           {canDelete ? <button onClick={onDelete} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20"><TrashIcon className="h-3.5 w-3.5 text-red-400" /></button> : null}
         </div>

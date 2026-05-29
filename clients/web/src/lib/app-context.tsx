@@ -14,6 +14,7 @@ import {
   getStoredPercent,
   getStoredPrintMode,
   getStoredRealm,
+  getStoredShowPrintFeatures,
   getStoredShowItemImages,
   getStoredShowItemPlaceholders,
   getStoredTheme,
@@ -29,6 +30,8 @@ import {
 import { formatAppDate, formatAppDateTime } from "./app-context-format";
 
 interface AppContextValue {
+  iosBridgeStatus: "connected" | "disconnected";
+  printerBridgeStatus: "connected" | "disconnected";
   realm: Realm;
   setRealm: (r: Realm) => void;
   serverURL: string;
@@ -46,6 +49,8 @@ interface AppContextValue {
   setDateFormat: (f: DateFormat) => void;
   printMode: PrintMode;
   setPrintMode: (mode: PrintMode) => void;
+  showPrintFeatures: boolean;
+  setShowPrintFeatures: (v: boolean) => void;
   showItemImages: boolean;
   setShowItemImages: (v: boolean) => void;
   showItemPlaceholders: boolean;
@@ -88,9 +93,18 @@ interface AppContextValue {
   t: (key: string, vars?: Record<string, string | number>) => string;
 }
 
+type BridgeSession = {
+  device_type?: string;
+  is_online?: boolean | number;
+  printer_bridge_configured?: boolean | number;
+  printer_bridge_reachable?: boolean | number;
+};
+
 const AppContext = createContext<AppContextValue>(null!);
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const [iosBridgeStatus, setIosBridgeStatus] = useState<"connected" | "disconnected">("disconnected");
+  const [printerBridgeStatus, setPrinterBridgeStatus] = useState<"connected" | "disconnected">("disconnected");
   const [realm, _setRealm] = useState<Realm>(getStoredRealm);
   const [serverURL] = useState(getServerURL);
   const [theme, _setTheme] = useState<Theme>(getStoredTheme);
@@ -99,6 +113,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [dateFormat, _setDateFormat] = useState<DateFormat>(getStoredDateFormat);
   const [iosDeleteConfirm, _setIosDeleteConfirm] = useState(getStoredIosDeleteConfirm);
   const [printMode, _setPrintMode] = useState<PrintMode>(getStoredPrintMode);
+  const [showPrintFeatures, _setShowPrintFeatures] = useState(getStoredShowPrintFeatures);
   const [showItemImages, _setShowItemImages] = useState(getStoredShowItemImages);
   const [showItemPlaceholders, _setShowItemPlaceholders] = useState(getStoredShowItemPlaceholders);
   const [showItemCategory, _setShowItemCategory] = useState(() => getStoredFlag("itemplus_show_item_category", true));
@@ -123,6 +138,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<string[]>([]);
 
   const can = useCallback((perm: string) => isAdmin || permissions.includes(perm), [isAdmin, permissions]);
+
+  const fetchDeviceSessions = useCallback(async (): Promise<BridgeSession[]> => {
+    try {
+      const response = await fetch("/api/devices/sessions", { credentials: "include" });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data)
+        ? data
+        : Array.isArray(data.sessions)
+          ? data.sessions
+          : [];
+    } catch {
+      return [];
+    }
+  }, []);
 
   const applyBrandingState = useCallback((branding?: { logo?: string | null; subtitle?: string; footerText?: string; width?: number }) => {
     setBrandingLogo(branding?.logo || null);
@@ -214,6 +244,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setStoredString(_setPrintMode, "itemplus_print_mode", mode);
   };
 
+  const setShowPrintFeatures = (v: boolean) => {
+    setStoredBoolean(_setShowPrintFeatures, "itemplus_show_print_features", v);
+  };
+
   const setShowItemImages = (v: boolean) => {
     setStoredBoolean(_setShowItemImages, "itemplus_show_item_images", v);
   };
@@ -275,6 +309,84 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setItemsPerPage = (v: number) => {
     setStoredNumber(_setItemsPerPage, "itemplus_items_per_page", v);
   };
+
+  const resolveIOSBridgeStatus = useCallback((sessions: BridgeSession[]): "connected" | "disconnected" => {
+    const iosSessions = sessions.filter((session) => session.device_type === "ios");
+    return iosSessions.some((session) => session.is_online === true || session.is_online === 1) ? "connected" : "disconnected";
+  }, []);
+
+  const refreshIOSBridgeStatus = useCallback(async (): Promise<"connected" | "disconnected"> => {
+    const nextStatus = resolveIOSBridgeStatus(await fetchDeviceSessions());
+    setIosBridgeStatus(nextStatus);
+    return nextStatus;
+  }, [fetchDeviceSessions, resolveIOSBridgeStatus]);
+
+  const refreshPrinterBridgeStatus = useCallback(async (
+    iosStatus?: "connected" | "disconnected",
+    sessions?: Array<Record<string, unknown>>,
+  ) => {
+    if (!showPrintFeatures || !(isAdmin || permissions.includes("print"))) {
+      setPrinterBridgeStatus("disconnected");
+      return;
+    }
+
+    if (printMode === "ios") {
+      const deviceSessions = sessions ?? await fetchDeviceSessions();
+      const nextIOSStatus = iosStatus ?? resolveIOSBridgeStatus(deviceSessions);
+      if (nextIOSStatus !== "connected") {
+        setPrinterBridgeStatus("disconnected");
+        return;
+      }
+
+      const iosSessions = deviceSessions.filter((session: BridgeSession) => session.device_type === "ios" && (session.is_online === true || session.is_online === 1));
+      const hasReachablePrinter = iosSessions.some(
+        (session: BridgeSession) =>
+          (session.printer_bridge_configured === true || session.printer_bridge_configured === 1) &&
+          (session.printer_bridge_reachable === true || session.printer_bridge_reachable === 1),
+      );
+      setPrinterBridgeStatus(hasReachablePrinter ? "connected" : "disconnected");
+      return;
+    }
+
+    try {
+      const printer = await api.getPrinterStatus();
+      setPrinterBridgeStatus(printer.reachable ? "connected" : "disconnected");
+    } catch {
+      setPrinterBridgeStatus("disconnected");
+    }
+  }, [fetchDeviceSessions, isAdmin, permissions, printMode, resolveIOSBridgeStatus, showPrintFeatures]);
+
+  useEffect(() => {
+    if (!ready) return;
+
+    const refreshBridgeStatus = async () => {
+      const sessions = await fetchDeviceSessions();
+      const nextIOSStatus = resolveIOSBridgeStatus(sessions);
+      setIosBridgeStatus(nextIOSStatus);
+      await refreshPrinterBridgeStatus(nextIOSStatus, sessions);
+    };
+
+    void refreshBridgeStatus();
+
+    const interval = window.setInterval(() => {
+      void refreshBridgeStatus();
+    }, 30000);
+
+    const handleBridgeUpdate = () => {
+      void refreshBridgeStatus();
+    };
+
+    const unsubDeviceConnected = wsClient.on("device.connected", handleBridgeUpdate);
+    const unsubDeviceDisconnected = wsClient.on("device.disconnected", handleBridgeUpdate);
+    const unsubDevicesList = wsClient.on("devices.list", handleBridgeUpdate);
+
+    return () => {
+      window.clearInterval(interval);
+      unsubDeviceConnected();
+      unsubDeviceDisconnected();
+      unsubDevicesList();
+    };
+  }, [fetchDeviceSessions, ready, refreshPrinterBridgeStatus, resolveIOSBridgeStatus]);
 
   const printViaIOSBridge = useCallback((entityType: "item" | "location", entityId: number, copies = 1) => {
     return new Promise<void>((resolve, reject) => {
@@ -339,7 +451,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AppContext.Provider value={{ realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, printItemQR, printLocationQR, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, fmtDate, fmtDateTime, t }}>
+    <AppContext.Provider value={{ iosBridgeStatus, printerBridgeStatus, realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showPrintFeatures, setShowPrintFeatures, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, printItemQR, printLocationQR, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, fmtDate, fmtDateTime, t }}>
       {children}
     </AppContext.Provider>
   );

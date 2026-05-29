@@ -74,7 +74,8 @@ export function ItemDetailHeader({
   showCheckout,
   setShowCheckout,
   canWriteItems,
-  canWriteAttachments,
+  canPrintActions,
+  canRequestPhoto,
   printing,
   printDone,
   printQR,
@@ -93,7 +94,8 @@ export function ItemDetailHeader({
   showCheckout: boolean;
   setShowCheckout: (value: boolean) => void;
   canWriteItems: boolean;
-  canWriteAttachments: boolean;
+  canPrintActions: boolean;
+  canRequestPhoto: boolean;
   printing: boolean;
   printDone: boolean;
   printQR: () => void;
@@ -154,7 +156,7 @@ export function ItemDetailHeader({
         >
           {checkoutSent ? <CheckIcon className="h-4 w-4" /> : <ArrowsRightLeftIcon className="h-4 w-4" />}
         </button>
-        {canWriteItems ? (
+        {canPrintActions ? (
           <button
             type="button"
             onClick={printQR}
@@ -171,7 +173,7 @@ export function ItemDetailHeader({
             )}
           </button>
         ) : null}
-      {canWriteAttachments ? (
+        {canRequestPhoto ? (
           <button
             type="button"
             onClick={requestPhotoFromPhone}
@@ -182,7 +184,7 @@ export function ItemDetailHeader({
             <DevicePhoneMobileIcon className="h-4 w-4" />
           </button>
         ) : null}
-        {(canWriteItems || canDeleteItems) ? (
+        {(canPrintActions || canRequestPhoto || canWriteItems || canDeleteItems) ? (
           <span className="hidden h-5 w-px bg-gray-200 dark:bg-white/10 sm:inline-block" />
         ) : null}
         {canWriteItems ? (
@@ -396,6 +398,8 @@ export function ItemCheckoutActiveBanner({
   const includedComponents = (item.components || []).filter((component) => includedComponentIDs.has(component.id));
   const relativeDueState = formatCheckoutRelativeState({
     dueDate: item.checked_out_to.due_date,
+    isOverdue: item.checked_out_to.is_overdue,
+    overdueDays: item.checked_out_to.overdue_days,
     t,
     compact: true,
   });

@@ -27,6 +27,7 @@ func parseItemIntent(c *gin.Context) {
 		Barcode            string `json:"barcode"`
 		TempImageID        string `json:"temp_image_id"`
 		AllowWebSearch     bool   `json:"allow_web_search"`
+		IdentifyOnly       bool   `json:"identify_only"`
 		Locale             string `json:"locale"`
 		SelectedCategoryID *int64 `json:"selected_category_id"`
 	}
@@ -63,6 +64,7 @@ func parseItemIntent(c *gin.Context) {
 		Barcode:            body.Barcode,
 		TempImageID:        body.TempImageID,
 		AllowWebSearch:     body.AllowWebSearch,
+		IdentifyOnly:       body.IdentifyOnly,
 		Locale:             body.Locale,
 		SelectedCategoryID: body.SelectedCategoryID,
 		Categories:         categories,
@@ -85,6 +87,7 @@ func parseItemIntentStream(c *gin.Context) {
 		Barcode            string `json:"barcode"`
 		TempImageID        string `json:"temp_image_id"`
 		AllowWebSearch     bool   `json:"allow_web_search"`
+		IdentifyOnly       bool   `json:"identify_only"`
 		Locale             string `json:"locale"`
 		SelectedCategoryID *int64 `json:"selected_category_id"`
 	}
@@ -146,6 +149,7 @@ func parseItemIntentStream(c *gin.Context) {
 		Barcode:            body.Barcode,
 		TempImageID:        body.TempImageID,
 		AllowWebSearch:     body.AllowWebSearch,
+		IdentifyOnly:       body.IdentifyOnly,
 		Locale:             body.Locale,
 		SelectedCategoryID: body.SelectedCategoryID,
 		Categories:         categories,

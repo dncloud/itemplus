@@ -248,6 +248,8 @@ func schemaStatementsBase() []string {
 			device_name TEXT,
 			ip_address TEXT,
 			is_online BOOLEAN DEFAULT 0,
+			printer_bridge_configured BOOLEAN DEFAULT 0,
+			printer_bridge_reachable BOOLEAN DEFAULT 0,
 			current_path TEXT,
 			current_label TEXT,
 			current_realm TEXT,

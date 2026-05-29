@@ -34,10 +34,14 @@ function ColorBadge({
 export function WarningGrid({
   inventoryWarnings,
   locationWarnings,
+  canOpenItems = true,
+  canOpenLocations = true,
   t,
 }: {
   inventoryWarnings: InventoryWarning[];
   locationWarnings: LocationWarning[];
+  canOpenItems?: boolean;
+  canOpenLocations?: boolean;
   t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   const locationLabelMap: Record<string, string> = {
@@ -54,9 +58,13 @@ export function WarningGrid({
         <SignalCard title={t("dashboard.inventoryWarnings")} tone="red">
           {inventoryWarnings.map((warning) => (
             <li key={warning.item_id}>
-              <Link prefetch={enableDashboardPrefetch} href={`/items/${warning.item_id}`} className="hover:text-rose-700 dark:hover:text-rose-300">
-                {warning.name}
-              </Link>{" "}
+              {canOpenItems ? (
+                <Link prefetch={enableDashboardPrefetch} href={`/items/${warning.item_id}`} className="hover:text-rose-700 dark:hover:text-rose-300">
+                  {warning.name}
+                </Link>
+              ) : (
+                <span>{warning.name}</span>
+              )}{" "}
               <span className="text-rose-700 dark:text-rose-300">
                 {warning.level === "out_of_stock" ? t("dashboard.outOfStock") : `${warning.quantity}/${warning.minimum}`}
               </span>
@@ -69,9 +77,13 @@ export function WarningGrid({
         <SignalCard title={t("dashboard.locationCapacity")} tone="red">
           {locationWarnings.map((warning) => (
             <li key={warning.location_id}>
-              <Link prefetch={enableDashboardPrefetch} href={`/items?location=${warning.location_id}`} className="hover:text-rose-700 dark:hover:text-rose-300">
-                {warning.name}
-              </Link>{" "}
+              {canOpenLocations ? (
+                <Link prefetch={enableDashboardPrefetch} href={`/items?location=${warning.location_id}`} className="hover:text-rose-700 dark:hover:text-rose-300">
+                  {warning.name}
+                </Link>
+              ) : (
+                <span>{warning.name}</span>
+              )}{" "}
               <span className="text-rose-700 dark:text-rose-300">
                 {locationLabelMap[warning.level]} · {warning.used}/{warning.capacity}
               </span>
@@ -86,11 +98,13 @@ export function WarningGrid({
 export function OverduePanel({
   checkouts,
   fmtDate,
+  canOpenItems = true,
   t,
   onOpenCheckout,
 }: {
   checkouts: ActiveCheckout[];
   fmtDate: (value: string) => string;
+  canOpenItems?: boolean;
   t: (key: string, vars?: Record<string, string | number>) => string;
   onOpenCheckout: (checkout: ActiveCheckout) => void;
 }) {
@@ -109,11 +123,20 @@ export function OverduePanel({
             <li key={checkout.id} className="relative px-4 py-3 hover:bg-gray-50 sm:px-6 dark:hover:bg-white/2.5">
               <div className="min-w-0">
                 <p className="text-sm/6 font-semibold text-gray-900 dark:text-white">
-                  <Link prefetch={enableDashboardPrefetch} href={`/items/${checkout.item_id}`} onClick={() => onOpenCheckout(checkout)}>
-                    <span className="absolute inset-x-0 inset-y-0" aria-hidden="true" />
-                    {checkout.item_name}
-                  </Link>
+                  {canOpenItems ? (
+                    <Link prefetch={enableDashboardPrefetch} href={`/items/${checkout.item_id}`} onClick={() => onOpenCheckout(checkout)}>
+                      <span className="absolute inset-x-0 inset-y-0" aria-hidden="true" />
+                      {checkout.item_name}
+                    </Link>
+                  ) : (
+                    <span>{checkout.item_name}</span>
+                  )}
                 </p>
+                {checkout.user_name ? (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {t("checkouts.checkedOutToUser", { user: checkout.user_name })}
+                  </p>
+                ) : null}
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   {checkout.created_at ? fmtDate(checkout.created_at) : "—"}
                 </p>
@@ -144,10 +167,12 @@ export function OverduePanel({
 
 export function RecentlyAddedPanel({
   items,
+  canOpenItems = true,
   fmtDate,
   t,
 }: {
   items: Record<string, unknown>[];
+  canOpenItems?: boolean;
   fmtDate: (value: string) => string;
   t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
@@ -170,10 +195,14 @@ export function RecentlyAddedPanel({
             >
               <div className="min-w-0">
                 <h4 className="text-sm/6 font-bold text-gray-900 dark:text-white">
-                  <Link prefetch={enableDashboardPrefetch} href={`/items/${item.id}`}>
-                    <span className="absolute inset-x-0 inset-y-0" />
+                  {canOpenItems ? (
+                    <Link prefetch={enableDashboardPrefetch} href={`/items/${item.id}`}>
+                      <span className="absolute inset-x-0 inset-y-0" />
+                      <span className="truncate">{item.name as string}</span>
+                    </Link>
+                  ) : (
                     <span className="truncate">{item.name as string}</span>
-                  </Link>
+                  )}
                 </h4>
                 <div className="mt-1 flex flex-wrap gap-2">
                   {item.category_name ? (
@@ -202,6 +231,7 @@ export function TopItemsPanel({
   onToggleMenu,
   onSelectSort,
   formatCurrency,
+  canOpenItems = true,
   t,
 }: {
   items: Record<string, unknown>[];
@@ -210,6 +240,7 @@ export function TopItemsPanel({
   onToggleMenu: () => void;
   onSelectSort: (value: "value" | "quantity") => void;
   formatCurrency: (value: number) => string;
+  canOpenItems?: boolean;
   t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   if (!items.length) return null;
@@ -274,10 +305,14 @@ export function TopItemsPanel({
           >
             <div className="min-w-0">
               <h4 className="text-sm/6 font-bold text-gray-900 dark:text-white">
-                <Link prefetch={enableDashboardPrefetch} href={`/items/${item.id}`}>
-                  <span className="absolute inset-x-0 inset-y-0" />
+                {canOpenItems ? (
+                  <Link prefetch={enableDashboardPrefetch} href={`/items/${item.id}`}>
+                    <span className="absolute inset-x-0 inset-y-0" />
+                    <span className="truncate">{item.name as string}</span>
+                  </Link>
+                ) : (
                   <span className="truncate">{item.name as string}</span>
-                </Link>
+                )}
               </h4>
               <div className="mt-1 flex flex-wrap gap-2">
                 {item.category_name ? (

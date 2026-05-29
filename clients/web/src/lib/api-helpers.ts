@@ -43,6 +43,21 @@ export async function readEventStream(
   const decoder = new TextDecoder();
   let buffer = "";
 
+  const flushFrame = (rawFrame: string) => {
+    const normalizedFrame = rawFrame.replace(/\r\n/g, "\n");
+    for (const line of normalizedFrame.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (!payload) continue;
+      try {
+        onEvent(JSON.parse(payload) as AIParseStreamEvent);
+      } catch {
+        // ignore malformed chunks
+      }
+    }
+  };
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -53,18 +68,12 @@ export async function readEventStream(
       if (idx < 0) break;
       const frame = buffer.slice(0, idx);
       buffer = buffer.slice(idx + 2);
-
-      for (const line of frame.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const payload = trimmed.slice(5).trim();
-        if (!payload) continue;
-        try {
-          onEvent(JSON.parse(payload) as AIParseStreamEvent);
-        } catch {
-          // ignore malformed chunks
-        }
-      }
+      flushFrame(frame);
     }
+  }
+
+  const trailingFrame = buffer.trim();
+  if (trailingFrame) {
+    flushFrame(trailingFrame);
   }
 }

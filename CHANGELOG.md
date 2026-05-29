@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.3 - 2026-05-30
+
+### Backend and web app
+- Added app-wide barcode handoff from the iPhone bridge so barcode scans can open the web app directly in the new-item flow.
+- Fixed AI settings loading on MariaDB/MySQL by quoting `app_settings.key`, so enabled AI state now survives reloads correctly.
+- Refined AI request handling with a lighter barcode-first identification mode, locale-aware response language, simpler enrichment prompts, and safer output token handling.
+- Improved streaming robustness for AI suggestions by processing the final SSE buffer correctly when the model returns the result at stream end.
+
+### iPhone bridge
+- Upgraded the default scanner flow to handle QR codes and linear barcodes together, forwarding regular product barcodes into the existing web app item-creation path.
+- Updated scan labels and messaging so the bridge now presents barcode-aware code scanning more clearly.
+
 ## 1.2.2 - 2026-05-23
 
 ### Backend and web app

@@ -23,7 +23,7 @@ import {
 } from "./vendors-page-utils";
 
 export default function VendorsPage() {
-  const { realm, fmtDateTime, t } = useApp();
+  const { realm, fmtDateTime, t, can } = useApp();
   const [tab, setTab] = useState<EntityType>("manufacturers");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -75,8 +75,11 @@ export default function VendorsPage() {
   );
 
   const [validationError, setValidationError] = useState<string | null>(null);
+  const canWriteVendors = can("vendors.write");
+  const canDeleteVendors = can("vendors.delete");
 
   const save = async () => {
+    if (!canWriteVendors) return;
     if (!editItem?.name) return;
     const error = validateVendorDraft(editItem, t);
     if (error) {
@@ -92,6 +95,7 @@ export default function VendorsPage() {
   };
 
   const remove = (id: number) => {
+    if (!canDeleteVendors) return;
     const item = allItems.find((i) => i.id === id);
     deleteFlow.requestDelete(id, item?.name || `#${id}`, tab === "sales-platforms" ? "sales_platform" : tab.slice(0, -1));
   };
@@ -127,9 +131,15 @@ export default function VendorsPage() {
       {/* Tabs */}
       <VendorTabs tab={tab} onSelect={(nextTab) => { setTab(nextTab); setSearch(""); }} t={t} />
 
-      <VendorSearchBar search={search} onSearchChange={setSearch} onCreate={() => { setEditItem({ name: "" }); setIsNew(true); }} t={t} />
+      <VendorSearchBar
+        search={search}
+        onSearchChange={setSearch}
+        onCreate={() => { setEditItem({ name: "" }); setIsNew(true); }}
+        canCreate={canWriteVendors}
+        t={t}
+      />
 
-      {editItem && isNew ? (
+      {canWriteVendors && editItem && isNew ? (
         <div className="overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-900/5 dark:bg-gray-800/50 dark:outline-white/10">
           <div className="border-b border-gray-200 px-4 py-4 sm:px-6 dark:border-white/10">
             <h3 className="font-semibold text-gray-900 dark:text-white">{t("common.new")} {tabLabel}</h3>
@@ -164,6 +174,7 @@ export default function VendorsPage() {
           currentTabIcon={currentTab.icon}
           fmtDateTime={fmtDateTime}
           onEdit={(item) => {
+            if (!canWriteVendors) return;
             if (editItem?.id === item.id && !isNew) {
               setEditItem(null);
               setValidationError(null);
@@ -174,7 +185,9 @@ export default function VendorsPage() {
             setValidationError(null);
           }}
           onDelete={remove}
-          renderEditor={(item) => editItem?.id === item.id && !isNew ? (
+          canEdit={canWriteVendors}
+          canDelete={canDeleteVendors}
+          renderEditor={(item) => canWriteVendors && editItem?.id === item.id && !isNew ? (
             <div className="border-t border-gray-100 px-4 py-4 sm:px-6 dark:border-white/10">
               <VendorInlineForm
                 editItem={editItem}
@@ -195,7 +208,7 @@ export default function VendorsPage() {
       )}
 
       {/* Confirm Delete */}
-      {deleteFlow.confirm && (
+      {canDeleteVendors && deleteFlow.confirm && (
         <ConfirmDelete
           name={deleteFlow.confirm.name}
           t={t}

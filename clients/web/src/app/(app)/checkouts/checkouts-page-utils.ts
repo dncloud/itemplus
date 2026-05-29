@@ -52,7 +52,7 @@ export function filterCheckoutRequests(
   realm: string,
 ) {
   const filtered = filter === "all"
-    ? requests
+    ? requests.filter((request) => request.status === "active" || request.status === "pending")
     : requests.filter((request) => request.status === filter);
   return filtered.filter((request) => request.realm === realm);
 }

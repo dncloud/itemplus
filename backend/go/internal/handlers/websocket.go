@@ -243,6 +243,25 @@ func handlePresenceUpdate(data map[string]interface{}, userID, sessionID int, de
 	ws.M.SendToUserIOS(userID, "devices.list", map[string]interface{}{"devices": ws.M.GetUserDevices(userID)})
 }
 
+func handlePrinterBridgeStatus(data map[string]interface{}, userID, sessionID int, deviceType string) {
+	if deviceType != "ios" {
+		return
+	}
+
+	configured := jsonBool(data, "configured")
+	reachable := jsonBool(data, "reachable")
+	now := database.TimestampNow()
+	if _, err := database.DB.Exec(
+		"UPDATE device_sessions SET printer_bridge_configured = ?, printer_bridge_reachable = ?, last_seen = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+		configured, reachable, now, now, sessionID, userID,
+	); err != nil {
+		log.Printf("DB printer bridge status update error: %v", err)
+		return
+	}
+
+	ws.M.SendToUser(userID, "devices.list", map[string]interface{}{"devices": ws.M.GetUserDevices(userID)})
+}
+
 func hasEntityDeletePermission(userID int, entityType string) bool {
 	perms := permissionsForEntityType(entityType, "delete")
 	return checkUserPermissions(userID, perms...)
@@ -354,6 +373,9 @@ func handleWSMessage(data map[string]interface{}, userID, sessionID int, deviceT
 
 	case "presence.update":
 		handlePresenceUpdate(data, userID, sessionID, deviceType)
+
+	case "printer.bridge_status":
+		handlePrinterBridgeStatus(data, userID, sessionID, deviceType)
 
 	case "qr.scan":
 		itemID := jsonInt(data, "item_id")
@@ -569,6 +591,22 @@ func jsonInt(data map[string]interface{}, key string) int {
 		return int(v)
 	}
 	return 0
+}
+
+func jsonBool(data map[string]interface{}, key string) bool {
+	if v, ok := data[key].(bool); ok {
+		return v
+	}
+	if v, ok := data[key].(float64); ok {
+		return v != 0
+	}
+	if v, ok := data[key].(string); ok {
+		switch strings.TrimSpace(strings.ToLower(v)) {
+		case "1", "true", "yes", "on":
+			return true
+		}
+	}
+	return false
 }
 
 // jsonIntAlt tries key first, then falls back to altKey.

@@ -29,6 +29,12 @@ func runMigrations(db *sqlx.DB, driver string) error {
 	if err := addColumnIfMissing(db, "ALTER TABLE device_sessions ADD COLUMN current_realm TEXT"); err != nil {
 		return err
 	}
+	if err := addColumnIfMissing(db, "ALTER TABLE device_sessions ADD COLUMN printer_bridge_configured BOOLEAN DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "ALTER TABLE device_sessions ADD COLUMN printer_bridge_reachable BOOLEAN DEFAULT 0"); err != nil {
+		return err
+	}
 
 	for _, realm := range []string{"archive", "collection"} {
 		itemsTable := realm + "_items"

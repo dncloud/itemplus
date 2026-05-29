@@ -1,7 +1,8 @@
 "use client";
 
+import type { ComponentType } from "react";
 import clsx from "clsx";
-import { Bars3Icon, DevicePhoneMobileIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { Bars3Icon, DevicePhoneMobileIcon, MagnifyingGlassIcon, PrinterIcon } from "@heroicons/react/24/outline";
 import { useApp } from "@/lib/app-context";
 
 export function AppShellLoading() {
@@ -24,11 +25,15 @@ export function AppShellLoading() {
 export function AppShellHeader({
   t,
   iosBridgeStatus,
+  printerBridgeStatus,
+  showPrinterStatus,
   onOpenSidebar,
   onOpenSearch,
 }: {
   t: (key: string) => string;
-  iosBridgeStatus: "connected" | "offline" | "none";
+  iosBridgeStatus: "connected" | "disconnected";
+  printerBridgeStatus: "connected" | "disconnected";
+  showPrinterStatus: boolean;
   onOpenSidebar: () => void;
   onOpenSearch: () => void;
 }) {
@@ -65,26 +70,53 @@ export function AppShellHeader({
           </button>
 
           <div className="flex items-center gap-2">
-            {iosBridgeStatus !== "none" ? (
-              <div
-                className={clsx(
-                  "inline-flex items-center gap-x-2 rounded-full px-3 py-1.5 text-xs font-medium border",
-                  iosBridgeStatus === "connected"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-                    : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
-                )}
-              >
-                <DevicePhoneMobileIcon className="size-4 shrink-0" />
-                <span className="hidden sm:inline">
-                  {iosBridgeStatus === "connected" ? t("settings.iphoneConnected") : t("settings.iphoneOffline")}
-                </span>
-                <span className="sm:hidden">iPhone</span>
-              </div>
+            <ConnectionPill
+              label="iPhone"
+              status={iosBridgeStatus}
+              icon={DevicePhoneMobileIcon}
+              t={t}
+            />
+            {showPrinterStatus ? (
+              <ConnectionPill
+                label={t("settings.printerTitle")}
+                status={printerBridgeStatus}
+                icon={PrinterIcon}
+                t={t}
+              />
             ) : null}
           </div>
         </div>
       </div>
     </header>
+  );
+}
+
+function ConnectionPill({
+  label,
+  status,
+  icon: Icon,
+  t,
+}: {
+  label: string;
+  status: "connected" | "disconnected";
+  icon: ComponentType<{ className?: string }>;
+  t: (key: string) => string;
+}) {
+  return (
+    <div
+      className={clsx(
+        "inline-flex items-center gap-x-2 rounded-full border px-3 py-1.5 text-xs font-medium",
+        status === "connected"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+          : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
+      )}
+    >
+      <Icon className="size-4 shrink-0" />
+      <span className="hidden sm:inline">
+        {label} {status === "connected" ? t("settings.connected") : t("settings.disconnected")}
+      </span>
+      <span className="sm:hidden">{label}</span>
+    </div>
   );
 }
 

@@ -26,7 +26,19 @@ import {
 export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { realm, serverURL, can, fmtDate, fmtDateTime, printItemQR, showAttachmentUploadOnItemDetail, t } = useApp();
+  const {
+    realm,
+    serverURL,
+    can,
+    fmtDate,
+    fmtDateTime,
+    iosBridgeStatus,
+    printerBridgeStatus,
+    printItemQR,
+    showAttachmentUploadOnItemDetail,
+    showPrintFeatures,
+    t,
+  } = useApp();
   const [item, setItem] = useState<Item | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -219,6 +231,8 @@ export default function ItemDetailPage() {
   }
 
   const canUploadAttachmentsOnDetail = can("attachments.write") && showAttachmentUploadOnItemDetail;
+  const canPrintActions = can("print") && showPrintFeatures && printerBridgeStatus === "connected";
+  const canRequestPhoto = can("attachments.write") && iosBridgeStatus === "connected";
 
   return (
     <div className="w-full space-y-6">
@@ -235,7 +249,8 @@ export default function ItemDetailPage() {
         showCheckout={showCheckout}
         setShowCheckout={setShowCheckout}
         canWriteItems={can("items.write")}
-        canWriteAttachments={can("attachments.write")}
+        canPrintActions={canPrintActions}
+        canRequestPhoto={canRequestPhoto}
         printing={printing}
         printDone={printDone}
         printQR={printQR}

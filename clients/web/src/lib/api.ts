@@ -309,9 +309,9 @@ class Api {
   getAISettings = () => this.get<AISettings>("/admin/ai-settings");
   updateAISettings = (data: AISettingsPayload) => this.put<AISettings>("/admin/ai-settings", data);
   testAISettings = (data: AISettingsPayload) => this.post<AIConnectionTestResult>("/admin/ai-settings/test", data);
-  parseItemIntent = (data: { realm: "archive" | "collection"; prompt: string; barcode?: string; temp_image_id?: string; locale?: string; selected_category_id?: number; allow_web_search?: boolean }) => this.post<AIParseItemIntentResult>("/ai/parse-item-intent", data);
+  parseItemIntent = (data: { realm: "archive" | "collection"; prompt: string; barcode?: string; temp_image_id?: string; locale?: string; selected_category_id?: number; allow_web_search?: boolean; identify_only?: boolean }) => this.post<AIParseItemIntentResult>("/ai/parse-item-intent", data);
   parseItemIntentStream = async (
-    data: { realm: "archive" | "collection"; prompt: string; barcode?: string; temp_image_id?: string; locale?: string; selected_category_id?: number; allow_web_search?: boolean },
+    data: { realm: "archive" | "collection"; prompt: string; barcode?: string; temp_image_id?: string; locale?: string; selected_category_id?: number; allow_web_search?: boolean; identify_only?: boolean },
     onEvent: (event: AIParseStreamEvent) => void,
   ) => this.handleStream("/ai/parse-item-intent/stream", data, onEvent);
 
@@ -432,6 +432,7 @@ class Api {
   getActiveCheckouts = () => this.get<ActiveCheckout[]>(`/checkouts/${this.realm}/active`);
   getCheckoutHistory = () => this.get<ActiveCheckout[]>(`/checkouts/${this.realm}/history`);
   getMyOverdueCheckouts = () => this.get<ActiveCheckout[]>("/checkouts/my/overdue");
+  getOverdueCheckouts = () => this.get<ActiveCheckout[]>("/checkouts/overdue");
   checkoutItem = (itemId: number, data?: { user_id?: number; notes?: string; due_date?: string; component_item_ids?: number[] }) =>
     this.post<ActiveCheckout>(`/checkout/${this.realm}/${itemId}`, data || {});
   checkinItem = (itemId: number, data?: { checkout_id?: number }) =>
@@ -528,10 +529,14 @@ export interface Item {
       due_date?: string;
       checkout_id: number;
       since?: string;
+      is_overdue?: boolean;
+      overdue_days?: number;
     }>;
     checkout_count?: number;
     component_ids?: number[];
     component_names?: string[];
+    is_overdue?: boolean;
+    overdue_days?: number;
   };
   attachments?: Attachment[];
   created_at?: string;
@@ -724,8 +729,10 @@ export interface CheckoutRequest {
   created_at?: string;
   checkout_created_at?: string;
   due_date?: string;
+  returned_at?: string;
   duration_days?: number;
   is_overdue?: boolean;
+  was_overdue?: boolean;
   overdue_days?: number;
 }
 

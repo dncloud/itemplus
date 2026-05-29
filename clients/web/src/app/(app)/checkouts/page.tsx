@@ -56,11 +56,21 @@ export default function CheckoutsPage() {
   }, [realm]);
 
   const approve = async (id: number) => {
-    try { await api.approveRequest(id); load(); } catch {}
+    try {
+      await api.approveRequest(id);
+      setRequests((current) => current.filter((entry) => !(entry.entryType === "request" && entry.id === id)));
+      await load();
+    } catch {}
   };
 
   const reject = async (id: number) => {
-    try { await api.rejectRequest(id); load(); } catch {}
+    try {
+      await api.rejectRequest(id);
+      setRequests((current) => current.map((entry) => (
+        entry.entryType === "request" && entry.id === id ? { ...entry, status: "rejected" } : entry
+      )));
+      await load();
+    } catch {}
   };
 
   const openItem = (request: CheckoutListEntry) => {

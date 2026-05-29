@@ -71,6 +71,11 @@ export const getStoredShowItemPlaceholders = (): boolean => {
   return saved === null ? true : saved === "true";
 };
 
+export const getStoredShowPrintFeatures = (): boolean => {
+  const saved = readStoredValue("itemplus_show_print_features");
+  return saved === null ? true : saved === "true";
+};
+
 export const getStoredItemsPerPage = (): number => {
   const stored = readStoredValue("itemplus_items_per_page");
   if (stored === null) return 24;

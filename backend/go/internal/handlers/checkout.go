@@ -30,6 +30,7 @@ func RegisterCheckoutRoutes(api *gin.RouterGroup) {
 	api.GET("/checkouts/:realm/active", middleware.Auth(), listActiveCheckouts)
 	api.GET("/checkouts/:realm/history", middleware.Auth(), listCheckoutHistory)
 	api.GET("/checkouts/my/overdue", middleware.Auth(), listMyOverdueCheckouts)
+	api.GET("/checkouts/overdue", middleware.Auth(), middleware.RequirePermission("checkout.manage"), listOverdueCheckouts)
 
 	// Checkout requests
 	api.POST("/checkout/request", middleware.Auth(), createCheckoutRequest)
@@ -127,6 +128,11 @@ func parseTime(v interface{}) time.Time {
 }
 
 func parseTimeStr(s string) time.Time {
+	if len(s) == len("2006-01-02") {
+		if t, err := time.ParseInLocation("2006-01-02", s, time.Local); err == nil {
+			return t
+		}
+	}
 	for _, layout := range []string{
 		time.RFC3339,
 		time.RFC3339Nano,
@@ -792,20 +798,37 @@ func listCheckoutHistory(c *gin.Context) {
 
 func listMyOverdueCheckouts(c *gin.Context) {
 	user := middleware.GetUser(c)
+	allOverdue := collectOverdueCheckouts(&user.ID)
+	c.JSON(http.StatusOK, allOverdue)
+}
 
+func listOverdueCheckouts(c *gin.Context) {
+	allOverdue := collectOverdueCheckouts(nil)
+	c.JSON(http.StatusOK, allOverdue)
+}
+
+func collectOverdueCheckouts(userID *int) []map[string]interface{} {
 	var allOverdue []map[string]interface{}
 	for _, realm := range []string{"archive", "collection"} {
 		table := realm + "_checkouts"
 		itemsTable := realm + "_items"
 
+		userFilter := ""
+		args := []interface{}{}
+		if userID != nil {
+			userFilter = "AND co.user_id = ?"
+			args = append(args, *userID)
+		}
+
 		query := fmt.Sprintf(
-			`SELECT co.*, i.name AS item_name, '%s' AS realm
+			`SELECT co.*, i.name AS item_name, COALESCE(u.display_name, u.email) AS user_name, '%s' AS realm
 			FROM %s co
 			LEFT JOIN %s i ON co.item_id = i.id
-			WHERE co.user_id = ? AND co.status = 'active' AND co.due_date IS NOT NULL AND co.bundle_parent_item_id IS NULL
-			ORDER BY co.due_date`, realm, table, itemsTable)
+			LEFT JOIN users u ON co.user_id = u.id
+			WHERE co.status = 'active' AND co.due_date IS NOT NULL AND co.bundle_parent_item_id IS NULL %s
+			ORDER BY co.due_date`, realm, table, itemsTable, userFilter)
 
-		rows, err := loadCheckoutRows(query, realm, user.ID)
+		rows, err := loadCheckoutRows(query, realm, args...)
 		if err != nil {
 			continue
 		}
@@ -822,7 +845,7 @@ func listMyOverdueCheckouts(c *gin.Context) {
 	sort.SliceStable(allOverdue, func(i, j int) bool {
 		return parseTime(allOverdue[i]["due_date"]).Before(parseTime(allOverdue[j]["due_date"]))
 	})
-	c.JSON(http.StatusOK, allOverdue)
+	return allOverdue
 }
 
 func createCheckoutRequest(c *gin.Context) {
@@ -1027,15 +1050,15 @@ func enrichCheckoutRequest(row map[string]interface{}) {
 		}
 	}
 
-	// For approved requests, attach the current active checkout so the UI can
-	// show the real loan window and overdue state.
+	// Attach the concrete checkout row for approved/completed requests so the UI
+	// can show the real loan window, overdue state, and return timestamp.
 	statusVal, _ := row["status"].(string)
 	if statusVal == "" {
 		if b, ok := row["status"].([]byte); ok {
 			statusVal = string(b)
 		}
 	}
-	if statusVal != "approved" {
+	if statusVal != "approved" && statusVal != "completed" {
 		return
 	}
 
@@ -1057,35 +1080,50 @@ func enrichCheckoutRequest(row map[string]interface{}) {
 	}
 
 	checkoutsTable := realmStr + "_checkouts"
-	activeRow, err := loadCheckoutRow(
+	checkoutStatus := "active"
+	orderBy := "created_at DESC"
+	if statusVal == "completed" {
+		checkoutStatus = "returned"
+		orderBy = "returned_at DESC, updated_at DESC"
+	}
+
+	checkoutRow, err := loadCheckoutRow(
 		fmt.Sprintf(
 			`SELECT *
 			FROM %s
-			WHERE item_id = ? AND user_id = ? AND status = 'active'
-			ORDER BY created_at DESC
+			WHERE item_id = ? AND user_id = ? AND status = ?
+			ORDER BY %s
 			LIMIT 1`, checkoutsTable,
+			orderBy,
 		),
 		realmStr,
 		itemID,
 		userID,
+		checkoutStatus,
 	)
-	if err != nil || activeRow == nil {
+	if err != nil || checkoutRow == nil {
 		return
 	}
 
-	if dueDate, ok := activeRow["due_date"]; ok && dueDate != nil {
+	if dueDate, ok := checkoutRow["due_date"]; ok && dueDate != nil {
 		row["due_date"] = dueDate
 	}
-	if checkoutCreatedAt, ok := activeRow["created_at"]; ok && checkoutCreatedAt != nil {
+	if checkoutCreatedAt, ok := checkoutRow["created_at"]; ok && checkoutCreatedAt != nil {
 		row["checkout_created_at"] = checkoutCreatedAt
 	}
-	if durationDays, ok := activeRow["duration_days"]; ok && durationDays != nil {
+	if returnedAt, ok := checkoutRow["returned_at"]; ok && returnedAt != nil {
+		row["returned_at"] = returnedAt
+	}
+	if durationDays, ok := checkoutRow["duration_days"]; ok && durationDays != nil {
 		row["duration_days"] = durationDays
 	}
-	if isOverdue, ok := activeRow["is_overdue"]; ok && isOverdue != nil {
+	if isOverdue, ok := checkoutRow["is_overdue"]; ok && isOverdue != nil {
 		row["is_overdue"] = isOverdue
 	}
-	if overdueDays, ok := activeRow["overdue_days"]; ok && overdueDays != nil {
+	if wasOverdue, ok := checkoutRow["was_overdue"]; ok && wasOverdue != nil {
+		row["was_overdue"] = wasOverdue
+	}
+	if overdueDays, ok := checkoutRow["overdue_days"]; ok && overdueDays != nil {
 		row["overdue_days"] = overdueDays
 	}
 }

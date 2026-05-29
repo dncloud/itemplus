@@ -2,10 +2,11 @@
 
 import clsx from "clsx";
 import Link from "next/link";
-import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, FunnelIcon, MagnifyingGlassIcon, PlusIcon, QrCodeIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, FunnelIcon, MagnifyingGlassIcon, PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { FunnelIcon as FunnelSolid } from "@heroicons/react/24/solid";
 import { type Category, type Location } from "@/lib/api";
 import { ItemsFilterPicker as FilterPicker } from "@/app/(app)/items/items-filter-picker";
+import { BarcodeIcon } from "@/components/barcode-icon";
 
 type Translator = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -13,6 +14,7 @@ export function ItemsPageHeader({
   realm,
   t,
   canWrite,
+  showBarcodeCapture,
   barcodeCapturePending,
   onRequestBarcodeCapture,
   onOpenNew,
@@ -20,6 +22,7 @@ export function ItemsPageHeader({
   realm: "archive" | "collection";
   t: Translator;
   canWrite: boolean;
+  showBarcodeCapture: boolean;
   barcodeCapturePending: boolean;
   onRequestBarcodeCapture: () => void;
   onOpenNew: () => void;
@@ -48,7 +51,7 @@ export function ItemsPageHeader({
       </div>
 
       <div className="flex items-center justify-center gap-2 rounded-sm px-2 py-3 sm:justify-end sm:bg-transparent sm:px-0">
-        {canWrite && (
+        {canWrite && showBarcodeCapture && (
           <button
             onClick={onRequestBarcodeCapture}
             disabled={barcodeCapturePending}
@@ -60,7 +63,7 @@ export function ItemsPageHeader({
             )}
             title={barcodeCapturePending ? t("items.barcodeWaiting") : t("items.scanBarcode")}
           >
-            <QrCodeIcon className="h-4 w-4" />
+            <BarcodeIcon className="h-4 w-4" />
           </button>
         )}
         {canWrite && (

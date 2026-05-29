@@ -70,7 +70,7 @@ import {
 } from "./settings-page-actions";
 
 export default function SettingsPage() {
-  const { locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, isAdmin, can, t } = useApp();
+  const { locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showPrintFeatures, setShowPrintFeatures, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, isAdmin, can, t } = useApp();
   const [me, setMe] = useState<User | null>(null);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [emailDraft, setEmailDraft] = useState("");
@@ -105,8 +105,14 @@ export default function SettingsPage() {
   const [footerTextDraft, setFooterTextDraft] = useState("");
   const [logoDraft, setLogoDraft] = useState<string | null>(null);
   const [widthDraft, setWidthDraft] = useState<number>(180);
+  const aiDraftTouchedRef = useRef(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const recoverInputRef = useRef<HTMLInputElement | null>(null);
+
+  const updateAiDraft: typeof setAiDraft = (value) => {
+    aiDraftTouchedRef.current = true;
+    setAiDraft(value);
+  };
 
   useEffect(() => {
     void fetchInitialSettingsData()
@@ -125,7 +131,7 @@ export default function SettingsPage() {
           setExternalSources(data.externalSources);
           setSelectedExternalSourceId((prev) => prev ?? (data.externalSources[0]?.id ?? null));
         }
-        if (data.aiDraft) {
+        if (data.aiDraft && !aiDraftTouchedRef.current) {
           setAiDraft(data.aiDraft);
         }
       })
@@ -356,6 +362,7 @@ export default function SettingsPage() {
     setAiStatus(null);
     try {
       const saved = await saveAISettingsDraft(aiDraft);
+      aiDraftTouchedRef.current = false;
       setAiDraft(draftFromAISettings(saved));
       flashStatus(setAiStatus, t("settings.aiSaved"));
     } catch (err) {
@@ -561,6 +568,8 @@ export default function SettingsPage() {
                   isAdmin={isAdmin}
                   printMode={printMode}
                   setPrintMode={setPrintMode}
+                  showPrintFeatures={showPrintFeatures}
+                  setShowPrintFeatures={setShowPrintFeatures}
                   printer={printer}
                   setPrinter={setPrinter}
                   printerStatus={printerStatus}
@@ -667,7 +676,7 @@ export default function SettingsPage() {
             <SettingsAISection
               t={t}
               aiDraft={aiDraft}
-              setAiDraft={setAiDraft}
+              setAiDraft={updateAiDraft}
               aiTesting={aiTesting}
               aiStatus={aiStatus}
               saveAISettings={saveAISettings}
