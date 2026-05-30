@@ -1,0 +1,3 @@
+/import.de.sql linguist-detectable=false
+/import.en.sql linguist-detectable=false
+/cleardb.sql linguist-detectable=false
