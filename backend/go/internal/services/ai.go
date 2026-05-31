@@ -2,11 +2,13 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -90,7 +92,54 @@ type AIPropertyProposal struct {
 	PropertyType string   `json:"property_type"`
 	Unit         string   `json:"unit,omitempty"`
 	Required     bool     `json:"required,omitempty"`
+	ShowInList   bool     `json:"show_in_list,omitempty"`
+	DisplayWidth string   `json:"display_width,omitempty"`
 	Options      []string `json:"options,omitempty"`
+}
+
+type SuggestCategoryPropertiesRequest struct {
+	Realm              string           `json:"realm"`
+	Prompt             string           `json:"prompt"`
+	AllowWebSearch     bool             `json:"allow_web_search,omitempty"`
+	Locale             string           `json:"locale,omitempty"`
+	Category           map[string]any   `json:"category,omitempty"`
+	ExistingProperties []map[string]any `json:"existing_properties,omitempty"`
+}
+
+type SuggestCategoryPropertiesResult struct {
+	Confidence        float64              `json:"confidence"`
+	NeedsConfirmation bool                 `json:"needs_confirmation"`
+	Questions         []string             `json:"questions"`
+	Notes             []string             `json:"notes"`
+	Properties        []AIPropertyProposal `json:"properties"`
+	RawPrompt         string               `json:"raw_prompt,omitempty"`
+	Transport         string               `json:"transport,omitempty"`
+	Model             string               `json:"model,omitempty"`
+	Provider          string               `json:"provider,omitempty"`
+	Context           map[string]any       `json:"context,omitempty"`
+}
+
+type SuggestPropertyEnhancementRequest struct {
+	Realm              string           `json:"realm"`
+	Prompt             string           `json:"prompt"`
+	AllowWebSearch     bool             `json:"allow_web_search,omitempty"`
+	Locale             string           `json:"locale,omitempty"`
+	Category           map[string]any   `json:"category,omitempty"`
+	Property           map[string]any   `json:"property,omitempty"`
+	ExistingProperties []map[string]any `json:"existing_properties,omitempty"`
+}
+
+type SuggestPropertyEnhancementResult struct {
+	Confidence        float64            `json:"confidence"`
+	NeedsConfirmation bool               `json:"needs_confirmation"`
+	Questions         []string           `json:"questions"`
+	Notes             []string           `json:"notes"`
+	Property          AIPropertyProposal `json:"property"`
+	RawPrompt         string             `json:"raw_prompt,omitempty"`
+	Transport         string             `json:"transport,omitempty"`
+	Model             string             `json:"model,omitempty"`
+	Provider          string             `json:"provider,omitempty"`
+	Context           map[string]any     `json:"context,omitempty"`
 }
 
 type categoryInferenceResult struct {
@@ -125,6 +174,8 @@ const (
 	aiResponsesMaxOutputTokens       = 6000
 	aiChatCompletionsMaxTokens       = 4000
 	aiConnectionTestMaxOutputTokens  = 32
+	aiConnectionTestTimeout          = 20 * time.Second
+	aiGenerateTimeout                = 180 * time.Second
 )
 
 type chatCompletionResponse struct {
@@ -258,7 +309,7 @@ func prepareParseContext(req ParseItemIntentRequest) (*preparedParseContext, err
 }
 
 func TestAIConnection(settings AISettings) (*AIConnectionTestResult, error) {
-	cfg, err := resolveAIConfig(settings, 20*time.Second)
+	cfg, err := resolveAIConfig(settings, aiConnectionTestTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +330,7 @@ func ParseItemIntent(settings AISettings, req ParseItemIntentRequest) (*ParseIte
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, fmt.Errorf("Prompt is required")
 	}
-	cfg, err := resolveAIConfig(settings, 60*time.Second)
+	cfg, err := resolveAIConfig(settings, aiGenerateTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +339,7 @@ func ParseItemIntent(settings AISettings, req ParseItemIntentRequest) (*ParseIte
 		return nil, err
 	}
 
-	outputText, transport, err := generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput)
+	outputText, transport, err := generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput, buildParseJSONSchema())
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +350,7 @@ func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, fmt.Errorf("Prompt is required")
 	}
-	cfg, err := resolveAIConfig(settings, 60*time.Second)
+	cfg, err := resolveAIConfig(settings, aiGenerateTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +398,7 @@ func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit
 
 	if cfg.Provider != "openai" && parseCtx.ImageInput == nil {
 		var builder strings.Builder
-		streamErr := generateViaChatCompletionsStream(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, func(delta string) error {
+		streamErr := generateViaChatCompletionsStream(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, buildParseJSONSchema(), func(delta string) error {
 			hadStreamDelta = true
 			builder.WriteString(delta)
 			if emit != nil {
@@ -362,7 +413,7 @@ func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit
 	}
 
 	if strings.TrimSpace(outputText) == "" {
-		outputText, transport, err = generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput)
+		outputText, transport, err = generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput, buildParseJSONSchema())
 		if err != nil {
 			return nil, err
 		}
@@ -437,6 +488,87 @@ func inferCategoryLocally(req ParseItemIntentRequest) *categoryInferenceResult {
 		SuggestedCategoryName: strings.TrimSpace(name),
 		Reason:                "matched category name or description locally",
 	}
+}
+
+func SuggestCategoryProperties(settings AISettings, req SuggestCategoryPropertiesRequest) (*SuggestCategoryPropertiesResult, error) {
+	if strings.TrimSpace(req.Prompt) == "" {
+		return nil, fmt.Errorf("Prompt is required")
+	}
+	cfg, err := resolveAIConfig(settings, aiGenerateTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	contextPayload := map[string]any{
+		"realm":               req.Realm,
+		"prompt":              req.Prompt,
+		"locale":              req.Locale,
+		"category":            buildAISingleCategorySummary(req.Category),
+		"existing_properties": buildAIPropertySummary(req.ExistingProperties),
+	}
+	contextJSON, err := json.Marshal(contextPayload)
+	if err != nil {
+		return nil, err
+	}
+
+	outputText, transport, err := generateAIText(
+		cfg.Client,
+		cfg.BaseURL,
+		cfg.Provider,
+		cfg.Model,
+		settings.APIKey,
+		buildCategoryPropertyInstructions(req.AllowWebSearch, req.Locale),
+		string(contextJSON),
+		req.AllowWebSearch,
+		nil,
+		buildCategoryPropertyJSONSchema(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return finalizeCategoryPropertySuggestions(outputText, transport, cfg.Model, cfg.Provider, req)
+}
+
+func SuggestPropertyEnhancement(settings AISettings, req SuggestPropertyEnhancementRequest) (*SuggestPropertyEnhancementResult, error) {
+	if strings.TrimSpace(req.Prompt) == "" {
+		return nil, fmt.Errorf("Prompt is required")
+	}
+	cfg, err := resolveAIConfig(settings, aiGenerateTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	contextPayload := map[string]any{
+		"realm":               req.Realm,
+		"prompt":              req.Prompt,
+		"locale":              req.Locale,
+		"category":            buildAISingleCategorySummary(req.Category),
+		"property":            buildAISinglePropertySummary(req.Property),
+		"existing_properties": buildAIPropertySummary(req.ExistingProperties),
+	}
+	contextJSON, err := json.Marshal(contextPayload)
+	if err != nil {
+		return nil, err
+	}
+
+	outputText, transport, err := generateAIText(
+		cfg.Client,
+		cfg.BaseURL,
+		cfg.Provider,
+		cfg.Model,
+		settings.APIKey,
+		buildPropertyEnhancementInstructions(req.AllowWebSearch, req.Locale),
+		string(contextJSON),
+		req.AllowWebSearch,
+		nil,
+		buildPropertyEnhancementJSONSchema(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return finalizePropertyEnhancement(outputText, transport, cfg.Model, cfg.Provider, req)
 }
 
 func loadAIImageInput(tempImageID string) (*AIImageInput, bool) {
@@ -940,19 +1072,36 @@ func testResponsesAPI(client *http.Client, baseURL, provider, model, apiKey stri
 	}, resp.StatusCode, nil
 }
 
-func generateAIText(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, allowWebSearch bool, imageInput *AIImageInput) (string, string, error) {
+func generateAIText(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, allowWebSearch bool, imageInput *AIImageInput, responseSchema map[string]any) (string, string, error) {
 	text, statusCode, err := generateViaResponses(client, baseURL, provider, model, apiKey, instructions, input, allowWebSearch, imageInput)
 	if err == nil {
 		return text, "responses", nil
 	}
 	if provider != "openai" && statusCode == http.StatusNotFound && imageInput == nil {
-		text, err = generateViaChatCompletions(client, baseURL, provider, model, apiKey, instructions, input)
+		text, err = generateViaChatCompletions(client, baseURL, provider, model, apiKey, instructions, input, responseSchema)
 		if err == nil {
 			return text, "chat.completions", nil
 		}
 		return "", "", err
 	}
-	return "", "", err
+	return "", "", normalizeAIRequestError(err)
+}
+
+func normalizeAIRequestError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("Die KI-Antwort hat zu lange gedauert. Bitte versuche es erneut oder reduziere die Anfrage etwas.")
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return fmt.Errorf("Die KI-Antwort hat zu lange gedauert. Bitte versuche es erneut oder reduziere die Anfrage etwas.")
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "client.timeout exceeded while awaiting headers") {
+		return fmt.Errorf("Die KI-Antwort hat zu lange gedauert. Bitte versuche es erneut oder reduziere die Anfrage etwas.")
+	}
+	return err
 }
 
 func generateViaResponses(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, allowWebSearch bool, imageInput *AIImageInput) (string, int, error) {
@@ -1055,7 +1204,7 @@ func generateViaResponses(client *http.Client, baseURL, provider, model, apiKey,
 	return outputText, resp.StatusCode, nil
 }
 
-func generateViaChatCompletions(client *http.Client, baseURL, provider, model, apiKey, instructions, input string) (string, error) {
+func generateViaChatCompletions(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, responseSchema map[string]any) (string, error) {
 	payload := map[string]any{
 		"model": model,
 		"messages": []map[string]string{
@@ -1066,12 +1215,12 @@ func generateViaChatCompletions(client *http.Client, baseURL, provider, model, a
 		"max_tokens":  aiChatCompletionsMaxTokens,
 		"temperature": 0.1,
 	}
-	if provider == "ollama" {
+	if provider == "ollama" && responseSchema != nil {
 		payload["response_format"] = map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
 				"name":   "itemplus_item_draft",
-				"schema": buildParseJSONSchema(),
+				"schema": responseSchema,
 			},
 		}
 	}
@@ -1115,7 +1264,7 @@ func generateViaChatCompletions(client *http.Client, baseURL, provider, model, a
 	return strings.TrimSpace(parsed.Choices[0].Message.Content), nil
 }
 
-func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, onDelta func(string) error) error {
+func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, responseSchema map[string]any, onDelta func(string) error) error {
 	payload := map[string]any{
 		"model": model,
 		"messages": []map[string]string{
@@ -1126,12 +1275,12 @@ func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, mo
 		"max_tokens":  aiChatCompletionsMaxTokens,
 		"temperature": 0.1,
 	}
-	if provider == "ollama" {
+	if provider == "ollama" && responseSchema != nil {
 		payload["response_format"] = map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
 				"name":   "itemplus_item_draft",
-				"schema": buildParseJSONSchema(),
+				"schema": responseSchema,
 			},
 		}
 	}
@@ -1364,8 +1513,14 @@ func buildAIPropertySummary(properties []map[string]any) []map[string]any {
 		if required, ok := property["required"].(bool); ok {
 			entry["required"] = required
 		}
+		if showInList, ok := property["show_in_list"].(bool); ok {
+			entry["show_in_list"] = showInList
+		}
 		if unit, ok := property["unit"].(string); ok && strings.TrimSpace(unit) != "" {
 			entry["unit"] = strings.TrimSpace(unit)
+		}
+		if displayWidth, ok := property["display_width"].(string); ok && strings.TrimSpace(displayWidth) != "" {
+			entry["display_width"] = strings.TrimSpace(displayWidth)
 		}
 		if options := normalizeAIPropertyOptions(property["options"]); len(options) > 0 {
 			entry["options"] = options
@@ -1373,6 +1528,17 @@ func buildAIPropertySummary(properties []map[string]any) []map[string]any {
 		summary = append(summary, entry)
 	}
 	return summary
+}
+
+func buildAISinglePropertySummary(property map[string]any) map[string]any {
+	if len(property) == 0 {
+		return map[string]any{}
+	}
+	summary := buildAIPropertySummary([]map[string]any{property})
+	if len(summary) == 0 {
+		return map[string]any{}
+	}
+	return summary[0]
 }
 
 func normalizeAIPropertyOptions(value any) []string {
@@ -1435,6 +1601,424 @@ func buildParseJSONSchema() map[string]any {
 		},
 		"additionalProperties": false,
 	}
+}
+
+func buildCategoryPropertyJSONSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"confidence":         map[string]any{"type": "number"},
+			"needs_confirmation": map[string]any{"type": "boolean"},
+			"questions":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"notes":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"properties": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"name":          map[string]any{"type": "string"},
+						"property_type": map[string]any{"type": "string"},
+						"unit":          map[string]any{"type": "string"},
+						"required":      map[string]any{"type": "boolean"},
+						"show_in_list":  map[string]any{"type": "boolean"},
+						"display_width": map[string]any{"type": "string"},
+						"options":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					},
+					"required":             []string{"name", "property_type"},
+					"additionalProperties": false,
+				},
+			},
+		},
+		"required":             []string{"confidence", "needs_confirmation", "questions", "notes", "properties"},
+		"additionalProperties": false,
+	}
+}
+
+func buildPropertyEnhancementJSONSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"confidence":         map[string]any{"type": "number"},
+			"needs_confirmation": map[string]any{"type": "boolean"},
+			"questions":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"notes":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"property": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name":          map[string]any{"type": "string"},
+					"property_type": map[string]any{"type": "string"},
+					"unit":          map[string]any{"type": "string"},
+					"required":      map[string]any{"type": "boolean"},
+					"show_in_list":  map[string]any{"type": "boolean"},
+					"display_width": map[string]any{"type": "string"},
+					"options":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				},
+				"required":             []string{"name", "property_type"},
+				"additionalProperties": false,
+			},
+		},
+		"required":             []string{"confidence", "needs_confirmation", "questions", "notes", "property"},
+		"additionalProperties": false,
+	}
+}
+
+func buildCategoryPropertyInstructions(allowWebSearch bool, locale string) string {
+	languageInstruction := "Write all human-readable output in English."
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
+		languageInstruction = "Write all human-readable output in German."
+	}
+
+	instructions := `You suggest useful category properties for an inventory category.
+
+Goal:
+- create practical property suggestions for this category
+- avoid duplicates of properties that already exist
+- prefer concise, reusable property names
+
+Rules:
+- propose only properties that fit this category well
+- usually suggest between 4 and 10 properties
+- use only these property types:
+  text, textblock, number, boolean, date, time, select, multiselect, rating, dimensions, age_rating, condition, priority, weight
+- if a property naturally has a fixed list of known options, prefer select or multiselect and include the options
+- prefer multiselect when multiple options can apply at once
+- prefer select when exactly one option is typically chosen
+- examples:
+  - USB versions or connector families can be multiselect with concrete choices
+  - sound card standards like Gravis, AdLib, SB16 can be select or multiselect when that fits the property meaning
+- use number with unit for measurable values
+- use weight only for physical weight
+- use condition and priority only when they genuinely help for this category
+- set show_in_list true for the most useful scannable properties
+- display_width should be one of: third, half, full
+- do not repeat existing properties with only tiny wording changes
+- keep notes short and factual`
+
+	if allowWebSearch {
+		instructions += `
+- web search is allowed when it helps confirm common standards or option sets`
+	}
+
+	instructions += `
+
+` + languageInstruction + `
+
+Return exactly one JSON object and no markdown.
+
+Use this shape:
+{
+  "confidence": 0.0,
+  "needs_confirmation": false,
+  "questions": [],
+  "notes": [],
+  "properties": [
+    {
+      "name": "",
+      "property_type": "text",
+      "unit": "",
+      "required": false,
+      "show_in_list": true,
+      "display_width": "third",
+      "options": []
+    }
+  ]
+}`
+
+	return instructions
+}
+
+func buildPropertyEnhancementInstructions(allowWebSearch bool, locale string) string {
+	languageInstruction := "Write all human-readable output in English."
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
+		languageInstruction = "Write all human-readable output in German."
+	}
+
+	instructions := `You improve one existing category property for an inventory system.
+
+Goal:
+- refine the existing property so it fits the category better
+- keep the property practical and easy to use in a form
+
+Rules:
+- this is about one existing property, not a full property list
+- you may keep the current property unchanged when it already fits well
+- improve the property type when that clearly helps
+- if known standards, versions, or families make sense here, prefer select or multiselect and include concrete options
+- examples:
+  - USB-related properties can become multiselect with concrete versions or connector families
+  - sound card standards like Gravis, AdLib, SB16 can become select or multiselect when that is a better fit
+- prefer multiselect when multiple values can apply at the same time
+- prefer select when only one value is usually chosen
+- keep names concise and reusable
+- do not turn this property into a duplicate of another existing property
+- use number with unit for measurable values
+- display_width should be one of: third, half, full
+- keep notes short and factual`
+
+	if allowWebSearch {
+		instructions += `
+- web search is allowed when it helps confirm common standards or option sets`
+	}
+
+	instructions += `
+
+` + languageInstruction + `
+
+Return exactly one JSON object and no markdown.
+
+Use this shape:
+{
+  "confidence": 0.0,
+  "needs_confirmation": false,
+  "questions": [],
+  "notes": [],
+  "property": {
+    "name": "",
+    "property_type": "text",
+    "unit": "",
+    "required": false,
+    "show_in_list": true,
+    "display_width": "third",
+    "options": []
+  }
+}`
+
+	return instructions
+}
+
+func buildAISingleCategorySummary(category map[string]any) map[string]any {
+	if len(category) == 0 {
+		return map[string]any{}
+	}
+	entry := map[string]any{}
+	if id, ok := mapInt64(category["id"]); ok {
+		entry["id"] = id
+	}
+	if name, ok := category["name"].(string); ok && strings.TrimSpace(name) != "" {
+		entry["name"] = strings.TrimSpace(name)
+	}
+	if description, ok := category["description"].(string); ok && strings.TrimSpace(description) != "" {
+		entry["description"] = strings.TrimSpace(description)
+	}
+	return entry
+}
+
+func finalizeCategoryPropertySuggestions(outputText, transport, model, provider string, req SuggestCategoryPropertiesRequest) (*SuggestCategoryPropertiesResult, error) {
+	jsonText := extractFirstJSONObject(outputText)
+	if strings.TrimSpace(jsonText) == "" {
+		preview := partialAIOutputPreview(outputText)
+		if preview != "" {
+			return nil, fmt.Errorf("Model did not return a complete JSON object. Partial output: %s", preview)
+		}
+		return nil, fmt.Errorf("Model did not return valid JSON")
+	}
+
+	var result SuggestCategoryPropertiesResult
+	if err := json.Unmarshal([]byte(jsonText), &result); err != nil {
+		preview := partialAIOutputPreview(jsonText)
+		return nil, fmt.Errorf("Could not parse model JSON: %v. Partial JSON: %s", err, preview)
+	}
+
+	if result.Questions == nil {
+		result.Questions = []string{}
+	}
+	if result.Notes == nil {
+		result.Notes = []string{}
+	}
+	if result.Properties == nil {
+		result.Properties = []AIPropertyProposal{}
+	}
+
+	existingNames := make(map[string]struct{}, len(req.ExistingProperties))
+	for _, property := range req.ExistingProperties {
+		if name, ok := property["name"].(string); ok {
+			normalized := normalizeAIText(name)
+			if normalized != "" {
+				existingNames[normalized] = struct{}{}
+			}
+		}
+	}
+
+	seenNames := make(map[string]struct{})
+	cleaned := make([]AIPropertyProposal, 0, len(result.Properties))
+	for _, proposal := range result.Properties {
+		proposal.Name = strings.TrimSpace(proposal.Name)
+		proposal.PropertyType = normalizeSuggestedPropertyType(proposal.PropertyType)
+		proposal.Unit = strings.TrimSpace(proposal.Unit)
+		proposal.DisplayWidth = normalizeSuggestedDisplayWidth(proposal.DisplayWidth)
+		proposal.Options = sanitizeSuggestedOptions(proposal.Options)
+		if proposal.Name == "" || proposal.PropertyType == "" {
+			continue
+		}
+		normalized := normalizeAIText(proposal.Name)
+		if normalized == "" {
+			continue
+		}
+		if _, exists := existingNames[normalized]; exists {
+			continue
+		}
+		if _, exists := seenNames[normalized]; exists {
+			continue
+		}
+		if proposal.PropertyType != "select" && proposal.PropertyType != "multiselect" {
+			proposal.Options = nil
+		}
+		seenNames[normalized] = struct{}{}
+		cleaned = append(cleaned, proposal)
+	}
+
+	result.Properties = cleaned
+	result.Transport = transport
+	result.Model = model
+	result.Provider = provider
+	result.RawPrompt = req.Prompt
+	result.Context = map[string]any{
+		"realm":                   req.Realm,
+		"category_name":           req.Category["name"],
+		"existing_property_count": len(req.ExistingProperties),
+	}
+
+	return &result, nil
+}
+
+func finalizePropertyEnhancement(outputText, transport, model, provider string, req SuggestPropertyEnhancementRequest) (*SuggestPropertyEnhancementResult, error) {
+	jsonText := extractFirstJSONObject(outputText)
+	if strings.TrimSpace(jsonText) == "" {
+		preview := partialAIOutputPreview(outputText)
+		if preview != "" {
+			return nil, fmt.Errorf("Model did not return a complete JSON object. Partial output: %s", preview)
+		}
+		return nil, fmt.Errorf("Model did not return valid JSON")
+	}
+
+	var result SuggestPropertyEnhancementResult
+	if err := json.Unmarshal([]byte(jsonText), &result); err != nil {
+		preview := partialAIOutputPreview(jsonText)
+		return nil, fmt.Errorf("Could not parse model JSON: %v. Partial JSON: %s", err, preview)
+	}
+
+	if result.Questions == nil {
+		result.Questions = []string{}
+	}
+	if result.Notes == nil {
+		result.Notes = []string{}
+	}
+
+	current := buildAISinglePropertySummary(req.Property)
+	currentID, _ := mapInt64(req.Property["id"])
+	currentName, _ := current["name"].(string)
+	currentType, _ := current["type"].(string)
+	currentUnit, _ := current["unit"].(string)
+	currentRequired, _ := current["required"].(bool)
+	currentShowInList, currentShowInListOK := current["show_in_list"].(bool)
+	currentDisplayWidth, _ := current["display_width"].(string)
+	currentOptions := normalizeAIPropertyOptions(current["options"])
+
+	result.Property.Name = strings.TrimSpace(result.Property.Name)
+	if result.Property.Name == "" {
+		result.Property.Name = strings.TrimSpace(currentName)
+	}
+	if strings.TrimSpace(result.Property.PropertyType) == "" {
+		result.Property.PropertyType = normalizeSuggestedPropertyType(currentType)
+	} else {
+		result.Property.PropertyType = normalizeSuggestedPropertyType(result.Property.PropertyType)
+	}
+	result.Property.Unit = strings.TrimSpace(result.Property.Unit)
+	if result.Property.Unit == "" {
+		result.Property.Unit = strings.TrimSpace(currentUnit)
+	}
+	if strings.TrimSpace(result.Property.DisplayWidth) == "" {
+		result.Property.DisplayWidth = normalizeSuggestedDisplayWidth(currentDisplayWidth)
+	} else {
+		result.Property.DisplayWidth = normalizeSuggestedDisplayWidth(result.Property.DisplayWidth)
+	}
+	result.Property.Options = sanitizeSuggestedOptions(result.Property.Options)
+	if len(result.Property.Options) == 0 && (result.Property.PropertyType == "select" || result.Property.PropertyType == "multiselect") {
+		result.Property.Options = sanitizeSuggestedOptions(currentOptions)
+	}
+	if result.Property.PropertyType != "select" && result.Property.PropertyType != "multiselect" {
+		result.Property.Options = nil
+	}
+	if !result.Property.Required && currentRequired {
+		result.Property.Required = true
+	}
+	if !result.Property.ShowInList && currentShowInListOK && currentShowInList {
+		result.Property.ShowInList = true
+	}
+
+	existingNames := make(map[string]struct{}, len(req.ExistingProperties))
+	for _, property := range req.ExistingProperties {
+		propertyID, _ := mapInt64(property["id"])
+		if propertyID == currentID {
+			continue
+		}
+		if name, ok := property["name"].(string); ok {
+			normalized := normalizeAIText(name)
+			if normalized != "" {
+				existingNames[normalized] = struct{}{}
+			}
+		}
+	}
+	if normalizedName := normalizeAIText(result.Property.Name); normalizedName != "" {
+		if _, exists := existingNames[normalizedName]; exists {
+			result.Property.Name = strings.TrimSpace(currentName)
+		}
+	}
+
+	result.Transport = transport
+	result.Model = model
+	result.Provider = provider
+	result.RawPrompt = req.Prompt
+	result.Context = map[string]any{
+		"realm":                   req.Realm,
+		"category_name":           req.Category["name"],
+		"property_name":           currentName,
+		"existing_property_count": len(req.ExistingProperties),
+	}
+
+	return &result, nil
+}
+
+func normalizeSuggestedPropertyType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "text", "textblock", "number", "boolean", "date", "time", "select", "multiselect", "rating", "dimensions", "age_rating", "condition", "priority", "weight":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "text"
+	}
+}
+
+func normalizeSuggestedDisplayWidth(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "half", "full":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "third"
+	}
+}
+
+func sanitizeSuggestedOptions(options []string) []string {
+	if len(options) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	cleaned := make([]string, 0, len(options))
+	for _, option := range options {
+		option = strings.TrimSpace(option)
+		if option == "" {
+			continue
+		}
+		key := strings.ToLower(option)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		cleaned = append(cleaned, option)
+	}
+	if len(cleaned) == 0 {
+		return nil
+	}
+	return cleaned
 }
 
 func findCategoryByID(categories []map[string]any, categoryID *int64) map[string]any {

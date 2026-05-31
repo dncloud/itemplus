@@ -11,12 +11,14 @@ import {
   CubeIcon,
   EyeIcon,
   EyeSlashIcon,
+  InformationCircleIcon,
   PencilIcon,
+  SparklesIcon,
   TrashIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import SelectPicker from "@/components/select-picker";
-import type { Category, Property } from "@/lib/api";
+import type { AIPropertyProposal, Category, Property } from "@/lib/api";
 
 const categoryInputClass = "w-full h-[38px] rounded-md bg-white px-3 py-1.5 text-sm text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500";
 
@@ -215,12 +217,22 @@ export function CategoryInlineForm({
   onChange,
   onCancel,
   onSave,
+  showAIButton = false,
+  aiBusy = false,
+  hasAIInfo = false,
+  onOpenAIInfo,
+  onRunAI,
   t,
 }: {
   category: Partial<Category>;
   onChange: (next: Partial<Category>) => void;
   onCancel: () => void;
   onSave: () => void;
+  showAIButton?: boolean;
+  aiBusy?: boolean;
+  hasAIInfo?: boolean;
+  onOpenAIInfo?: () => void;
+  onRunAI?: () => void;
   t: (k: string) => string;
 }) {
   return (
@@ -243,8 +255,158 @@ export function CategoryInlineForm({
         </div>
       </div>
       <div className="flex justify-end gap-2 pt-2">
+        {showAIButton && onRunAI ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onRunAI}
+              disabled={aiBusy}
+              className="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 p-2 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
+              title={aiBusy ? t("categories.aiRunning") : t("categories.aiSuggestProperties")}
+            >
+              <SparklesIcon className="h-4 w-4" />
+            </button>
+            {onOpenAIInfo ? (
+              <button
+                type="button"
+                onClick={onOpenAIInfo}
+                className={`inline-flex items-center justify-center rounded-lg border p-2 transition ${
+                  hasAIInfo
+                    ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
+                    : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/10"
+                }`}
+                title={t("categories.aiInfoButton")}
+              >
+                <InformationCircleIcon className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700">{t("common.cancel")}</button>
         <button onClick={onSave} className="px-4 py-2 text-sm rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600">{t("common.save")}</button>
+      </div>
+    </div>
+  );
+}
+
+export function CategoryAIProposalPanel({
+  proposals,
+  busy,
+  status,
+  notes,
+  questions,
+  propertyTypes,
+  onApplyOne,
+  onApplyAll,
+  t,
+}: {
+  proposals: AIPropertyProposal[];
+  busy: boolean;
+  status: string | null;
+  notes: string[];
+  questions: string[];
+  propertyTypes: { value: string; label: string }[];
+  onApplyOne: (proposal: AIPropertyProposal) => void;
+  onApplyAll: () => void;
+  t: (k: string) => string;
+}) {
+  const showPanel = busy || !!status || notes.length > 0 || questions.length > 0 || proposals.length > 0;
+  if (!showPanel) return null;
+
+  const typeLabel = (value: string) => propertyTypes.find((entry) => entry.value === value)?.label || value;
+
+  return (
+    <div className="border-t border-gray-100 px-4 py-4 sm:px-6 dark:border-white/10">
+      <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-500/20 dark:bg-blue-500/10">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">{t("categories.aiTitle")}</p>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{t("categories.aiHint")}</p>
+          </div>
+          {proposals.length > 1 ? (
+            <button
+              type="button"
+              onClick={onApplyAll}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
+            >
+              {t("categories.aiApplyAll")}
+            </button>
+          ) : null}
+        </div>
+
+        {busy ? <p className="mt-3 text-sm text-blue-700 dark:text-blue-200">{t("categories.aiRunning")}</p> : null}
+        {status ? <p className="mt-3 text-sm text-blue-700 dark:text-blue-200">{status}</p> : null}
+
+        {questions.length > 0 ? (
+          <div className="mt-4">
+            <p className="text-sm font-medium text-gray-900 dark:text-white">{t("categories.aiQuestions")}</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-600 dark:text-gray-300">
+              {questions.map((question, index) => (
+                <li key={`${question}-${index}`}>{question}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {notes.length > 0 ? (
+          <div className="mt-4">
+            <p className="text-sm font-medium text-gray-900 dark:text-white">{t("categories.aiNotes")}</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-600 dark:text-gray-300">
+              {notes.map((note, index) => (
+                <li key={`${note}-${index}`}>{note}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {proposals.length > 0 ? (
+          <div className="mt-4 space-y-3">
+            {proposals.map((proposal, index) => (
+              <div key={`${proposal.name}-${index}`} className="rounded-xl border border-gray-200 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/40">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{proposal.name}</p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-700 dark:bg-white/10 dark:text-gray-200">
+                        {typeLabel(proposal.property_type)}
+                      </span>
+                      {proposal.unit ? (
+                        <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-700 dark:bg-white/10 dark:text-gray-200">
+                          {t("categories.unit")}: {proposal.unit}
+                        </span>
+                      ) : null}
+                      <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-700 dark:bg-white/10 dark:text-gray-200">
+                        {t("categories.displayWidth")}: {proposal.display_width || "third"}
+                      </span>
+                      {proposal.required ? (
+                        <span className="rounded-md bg-red-50 px-2 py-1 text-red-700 dark:bg-red-500/10 dark:text-red-200">
+                          {t("categories.requiredField")}
+                        </span>
+                      ) : null}
+                      {proposal.show_in_list ? (
+                        <span className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
+                          {t("categories.showInList")}
+                        </span>
+                      ) : null}
+                    </div>
+                    {proposal.options?.length ? (
+                      <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+                        {proposal.options.join(", ")}
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onApplyOne(proposal)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
+                  >
+                    {t("common.apply")}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -307,6 +469,11 @@ export function PropertyInlineForm({
   onCancel,
   onSave,
   propertyTypes,
+  showAIButton = false,
+  aiBusy = false,
+  hasAIInfo = false,
+  onOpenAIInfo,
+  onRunAI,
   t,
 }: {
   property: Partial<Property>;
@@ -314,6 +481,11 @@ export function PropertyInlineForm({
   onCancel: () => void;
   onSave: () => void;
   propertyTypes: { value: string; label: string }[];
+  showAIButton?: boolean;
+  aiBusy?: boolean;
+  hasAIInfo?: boolean;
+  onOpenAIInfo?: () => void;
+  onRunAI?: () => void;
   t: (k: string) => string;
 }) {
   return (
@@ -375,6 +547,33 @@ export function PropertyInlineForm({
         </div>
       </div>
       <div className="flex justify-end gap-2 pt-2">
+        {showAIButton && onRunAI ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onRunAI}
+              disabled={aiBusy}
+              className="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 p-2 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
+              title={aiBusy ? t("categories.aiRunning") : t("categories.aiImproveProperty")}
+            >
+              <SparklesIcon className="h-4 w-4" />
+            </button>
+            {onOpenAIInfo ? (
+              <button
+                type="button"
+                onClick={onOpenAIInfo}
+                className={`inline-flex items-center justify-center rounded-lg border p-2 transition ${
+                  hasAIInfo
+                    ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
+                    : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/10"
+                }`}
+                title={t("categories.aiInfoButton")}
+              >
+                <InformationCircleIcon className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700">{t("common.cancel")}</button>
         <button onClick={onSave} className="px-4 py-2 text-sm rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600">{t("common.save")}</button>
       </div>

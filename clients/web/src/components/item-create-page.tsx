@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -20,7 +20,7 @@ import {
   formatItemSuggestionValue as formatSuggestionValue,
   resolvePhotoLookupPrompt,
 } from "@/components/item-create-helpers";
-import { extractPartialAIOutput } from "@/components/item-create-ai-utils";
+import { extractPartialAIOutput, type AIPropertyReviewHint } from "@/components/item-create-ai-utils";
 import { buildAIViewState, deriveAISuggestions } from "@/components/item-create-ai-state";
 import { InventorySection, PropertiesSection } from "@/components/item-create-form-sections";
 import { ItemCreateBasicsSection } from "@/components/item-create-basics-section";
@@ -44,6 +44,7 @@ import {
 import { ModalSection } from "@/components/item-create-ui";
 import { ItemCreateErrorView, ItemCreateLoadingView } from "@/components/item-create-view";
 import AttachmentManager from "@/components/attachment-manager";
+import { FloatingNotification, type FloatingNotificationState } from "@/components/floating-notification";
 
 type ItemCreatePageProps = {
   mode?: "create" | "edit";
@@ -70,6 +71,9 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   const [aiAssistResult, setAiAssistResult] = useState<AIParseItemIntentResult | null>(null);
   const [aiSuggestedItem, setAiSuggestedItem] = useState<Partial<Item>>({});
   const [aiSuggestedPropValues, setAiSuggestedPropValues] = useState<Record<string, unknown>>({});
+  const [aiPropertyReviewHints, setAiPropertyReviewHints] = useState<AIPropertyReviewHint[]>([]);
+  const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
+  const [notification, setNotification] = useState<FloatingNotificationState>(null);
   const [aiLastRequest, setAiLastRequest] = useState("");
   const [aiLiveText, setAiLiveText] = useState("");
   const [aiProgressMessages, setAiProgressMessages] = useState<string[]>([]);
@@ -77,6 +81,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   const [barcodeCapturePending, setBarcodeCapturePending] = useState(false);
   const [lastBarcodeLookupCode, setLastBarcodeLookupCode] = useState<string | null>(null);
   const [photoLookupPending, setPhotoLookupPending] = useState(false);
+  const consumedInitialBarcodeRef = useRef(false);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -127,6 +132,24 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     };
   }, [isEditMode, itemId, loadSourceItem]);
 
+  useEffect(() => {
+    if (isEditMode || consumedInitialBarcodeRef.current) return;
+    if (!initialBarcode && !initialSymbology) return;
+    consumedInitialBarcodeRef.current = true;
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("barcode");
+    params.delete("symbology");
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `/items/new?${nextQuery}` : "/items/new");
+  }, [consumedInitialBarcodeRef, initialBarcode, initialSymbology, isEditMode, router, searchParams]);
+
+  useEffect(() => {
+    if (!notification) return;
+    const timeout = window.setTimeout(() => setNotification(null), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [notification]);
+
   const selectedCategoryId = editItem.category_id;
   useEffect(() => {
     if (!selectedCategoryId) {
@@ -154,6 +177,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
       });
       setAiSuggestedItem(nextState.suggestedItem);
       setAiSuggestedPropValues(nextState.suggestedPropValues);
+      setAiPropertyReviewHints(nextState.reviewHints || []);
       setAiAssistStatus(nextState.status);
     },
     [allProperties, barcodeDraft?.code, categories, editItem.category_id, editItem.name, realm, t],
@@ -207,12 +231,18 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
       return;
     }
     const identifyOnly = options?.identifyOnly === true;
+    setNotification({
+      tone: "info",
+      title: t("items.aiStartingTitle"),
+      message: t("items.aiStartingMessage"),
+    });
     setAiLastRequest(promptText);
     setAiAssistBusy(true);
     setAiAssistStatus(null);
     setAiAssistResult(null);
     setAiSuggestedItem({});
     setAiSuggestedPropValues({});
+    setAiPropertyReviewHints([]);
     setAiLiveText("");
     setAiProgressMessages([]);
     setAiThinkingMessages([]);
@@ -283,6 +313,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     setPropValues(result.nextPropValues);
     setAiSuggestedItem({});
     setAiSuggestedPropValues({});
+    setAiPropertyReviewHints([]);
     setAiAssistStatus(t("items.aiApplied"));
   };
 
@@ -382,6 +413,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
 
   return (
     <div className="space-y-8">
+      <FloatingNotification notification={notification} onClose={() => setNotification(null)} t={t} />
       <ItemCreateHeader
         t={t}
         realm={realm}
@@ -394,6 +426,17 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
         runAIAssist={() => {
           void runAIAssist();
         }}
+        openAIInfo={() => setAiDrawerOpen(true)}
+        hasAIInfo={
+          !!aiAssistStatus ||
+          !!aiLastRequest ||
+          !!aiLiveText ||
+          aiProgressMessages.length > 0 ||
+          aiThinkingMessages.length > 0 ||
+          (aiAssistResult?.notes?.length || 0) > 0 ||
+          (aiAssistResult?.questions?.length || 0) > 0 ||
+          aiPropertyReviewHints.length > 0
+        }
       />
 
       <ItemCreateAIPanel
@@ -408,12 +451,15 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
         aiErrorInsights={aiErrorInsights}
         aiAssistResultQuestions={aiAssistResult?.questions || []}
         aiAssistResultNotes={aiAssistResult?.notes || []}
+        aiPropertyReviewHints={aiPropertyReviewHints}
         aiLastRequest={aiLastRequest}
         aiLiveText={aiLiveText}
         aiProgressMessages={aiProgressMessages}
         aiThinkingMessages={aiThinkingMessages}
         photoLookupPending={photoLookupPending}
         requestPhotoLookup={requestPhotoLookup}
+        aiDrawerOpen={aiDrawerOpen}
+        closeAIDrawer={() => setAiDrawerOpen(false)}
       />
 
       {isEditMode && itemId && sourceItem ? (
@@ -439,10 +485,6 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
         categories={categories}
         locations={locations}
         clearPropValues={() => setPropValues({})}
-        aiAssistBusy={aiAssistBusy}
-        runAIAssist={() => {
-          void runAIAssist();
-        }}
       />
 
       <VendorsSection

@@ -3,7 +3,6 @@
 import type { Category, Item, Location } from "@/lib/api";
 import { MarkdownEditor } from "@/components/markdown";
 import { Field, ModalSection, SuggestionRow, TWPSelect } from "@/components/item-create-ui";
-import { InlineAIHint } from "@/components/item-create-ai-panel";
 
 export function ItemCreateBasicsSection({
   t,
@@ -16,8 +15,6 @@ export function ItemCreateBasicsSection({
   categories,
   locations,
   clearPropValues,
-  aiAssistBusy,
-  runAIAssist,
 }: {
   t: (key: string) => string;
   editItem: Partial<Item>;
@@ -29,8 +26,6 @@ export function ItemCreateBasicsSection({
   categories: Category[];
   locations: Location[];
   clearPropValues: () => void;
-  aiAssistBusy: boolean;
-  runAIAssist: () => void;
 }) {
   return (
     <ModalSection
@@ -102,13 +97,6 @@ export function ItemCreateBasicsSection({
             options={locations.map((l) => ({ id: l.id, name: l.name }))}
           />
         </div>
-        {editItem.name?.trim() && typeof editItem.category_id === "number" ? (
-          <InlineAIHint
-            t={t}
-            aiAssistBusy={aiAssistBusy}
-            runAIAssist={runAIAssist}
-          />
-        ) : null}
       </div>
     </ModalSection>
   );

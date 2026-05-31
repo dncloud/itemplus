@@ -7,10 +7,10 @@ import { formatCheckoutRelativeState } from "@/lib/checkout-relative-time";
 import { CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
 
 export const STATUS_STYLES: Record<string, { bg: string; text: string; labelKey: string }> = {
-  active: { bg: "bg-sky-100 dark:bg-sky-900/30", text: "text-sky-700 dark:text-sky-300", labelKey: "checkouts.active" },
-  pending: { bg: "bg-amber-100 dark:bg-amber-900/30", text: "text-amber-700 dark:text-amber-400", labelKey: "checkouts.pending" },
-  approved: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400", labelKey: "checkouts.approved" },
-  rejected: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400", labelKey: "checkouts.rejected" },
+  active: { bg: "bg-sky-50 dark:bg-sky-900/30", text: "text-sky-800 dark:text-sky-300", labelKey: "checkouts.active" },
+  pending: { bg: "bg-amber-50 dark:bg-amber-900/30", text: "text-amber-800 dark:text-amber-400", labelKey: "checkouts.pending" },
+  approved: { bg: "bg-emerald-50 dark:bg-emerald-900/30", text: "text-emerald-800 dark:text-emerald-400", labelKey: "checkouts.approved" },
+  rejected: { bg: "bg-red-50 dark:bg-red-900/30", text: "text-red-800 dark:text-red-400", labelKey: "checkouts.rejected" },
   completed: { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-600 dark:text-gray-400", labelKey: "checkouts.completed" },
   expired: { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-500", labelKey: "checkouts.expired" },
 };
@@ -196,7 +196,7 @@ export function CheckoutRequestsList({
                     {t(style.labelKey)}
                   </span>
                   {req.is_overdue ? (
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-400">
                       {t("checkouts.overdue")}
                     </span>
                   ) : null}
@@ -248,7 +248,7 @@ export function CheckoutRequestsList({
                             <span
                               className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
                                 included
-                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                  ? "bg-blue-50 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
                                   : "bg-gray-100 text-gray-600 dark:bg-gray-700/60 dark:text-gray-300"
                               }`}
                             >
@@ -270,10 +270,10 @@ export function CheckoutRequestsList({
 
               {req.status === "pending" && canManage ? (
                 <div className="flex gap-2 shrink-0">
-                  <button onClick={() => onApprove(req.id)} className="inline-flex items-center gap-1 rounded-lg border border-green-300 px-3 py-1.5 text-sm text-green-700 transition hover:bg-green-50 dark:border-green-700 dark:text-green-400 dark:hover:bg-green-900/20">
+                  <button onClick={() => onApprove(req.id)} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-800 transition hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20">
                     <CheckCircleIcon className="h-4 w-4" /> {t("checkouts.approve")}
                   </button>
-                  <button onClick={() => onReject(req.id)} className="inline-flex items-center gap-1 rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 transition hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20">
+                  <button onClick={() => onReject(req.id)} className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-700 transition hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20">
                     <XCircleIcon className="h-4 w-4" /> {t("checkouts.reject")}
                   </button>
                 </div>

@@ -1,6 +1,7 @@
 "use client";
 
-import { SparklesIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import type { ReactNode } from "react";
+import { XMarkIcon } from "@heroicons/react/24/outline";
 import { BarcodePreview } from "@/components/item-create-ui";
 
 export type AIStatusDetails = {
@@ -155,6 +156,7 @@ export function AIStatusNotice({
 
 export function AIDebugPanel({
   t,
+  title,
   aiLastRequest,
   aiLiveText,
   aiProgressMessages,
@@ -163,6 +165,7 @@ export function AIDebugPanel({
   aiAssistBusy,
 }: {
   t: (key: string) => string;
+  title?: string;
   aiLastRequest: string;
   aiLiveText: string;
   aiProgressMessages: string[];
@@ -174,7 +177,7 @@ export function AIDebugPanel({
 
   return (
     <details className="rounded-md border border-gray-200 bg-white dark:border-white/10 dark:bg-white/5">
-      <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">KI-Debug</summary>
+      <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">{title || "KI-Debug"}</summary>
       <div className="space-y-3 border-t border-gray-200 px-3 py-3 dark:border-white/10">
         {aiLastRequest ? (
           <div>
@@ -225,30 +228,47 @@ export function AIDebugPanel({
   );
 }
 
-export function InlineAIHint({
-  t,
-  aiAssistBusy,
-  runAIAssist,
+export function AIInfoDrawer({
+  open,
+  onClose,
+  title,
+  subtitle,
+  children,
 }: {
-  t: (key: string) => string;
-  aiAssistBusy: boolean;
-  runAIAssist: () => void;
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
 }) {
+  if (!open) return null;
+
   return (
-    <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-3 dark:border-white/10 dark:bg-white/5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-2">
-          <SparklesIcon className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
-          <p className="text-sm text-gray-600 dark:text-gray-300">{t("items.aiInlineHint")}</p>
+    <div className="fixed inset-0 z-50 overflow-hidden">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 pl-10 focus:outline-none sm:pl-16">
+        <div className="ml-auto flex h-full w-full max-w-2xl">
+          <div className="relative flex h-full w-full flex-col overflow-y-auto bg-gray-800 py-6 shadow-2xl ring-1 ring-white/10">
+            <div className="px-4 sm:px-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-semibold text-white">{title}</h2>
+                  {subtitle ? <p className="mt-1 text-sm text-gray-400">{subtitle}</p> : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="relative rounded-md text-gray-400 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+                >
+                  <span className="absolute -inset-2.5" />
+                  <span className="sr-only">Close panel</span>
+                  <XMarkIcon className="size-6" />
+                </button>
+              </div>
+            </div>
+            <div className="relative mt-6 flex-1 space-y-6 px-4 sm:px-6">{children}</div>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={runAIAssist}
-          disabled={aiAssistBusy}
-          className="inline-flex items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-xs ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/10 dark:text-white dark:ring-white/10 dark:hover:bg-white/20"
-        >
-          {aiAssistBusy ? t("items.aiAssistRunning") : t("items.aiCompleteAction")}
-        </button>
       </div>
     </div>
   );

@@ -363,12 +363,12 @@ export function ItemCheckoutRequestPanel({
 
 export function ItemCheckoutPendingBanner({ t }: { t: (key: string) => string }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-blue-400/20 bg-blue-400/10">
+    <section className="overflow-hidden rounded-lg border border-blue-200 bg-blue-50/70 dark:border-blue-400/20 dark:bg-blue-400/10">
       <div className="flex items-start gap-3 px-4 py-4 sm:px-6">
-        <InformationCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
+        <InformationCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-blue-300">{t("itemDetail.requested")}</p>
-          <p className="mt-1 text-sm text-blue-200/80">{t("itemDetail.requestTitle")}</p>
+          <p className="text-sm font-medium text-blue-900 dark:text-blue-300">{t("itemDetail.requested")}</p>
+          <p className="mt-1 text-sm text-blue-800/80 dark:text-blue-200/80">{t("itemDetail.requestTitle")}</p>
         </div>
       </div>
     </section>
@@ -405,16 +405,16 @@ export function ItemCheckoutActiveBanner({
   });
 
   return (
-    <section className="overflow-hidden rounded-lg border border-emerald-400/20 bg-emerald-400/10">
+    <section className="overflow-hidden rounded-lg border border-emerald-200 bg-emerald-50/70 dark:border-emerald-400/20 dark:bg-emerald-400/10">
       <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6">
         <div className="flex min-w-0 items-start gap-3">
-          <CheckCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+          <CheckCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <div className="min-w-0">
-            <p className="text-sm font-medium text-emerald-300">
+            <p className="text-sm font-medium text-emerald-900 dark:text-emerald-300">
               {t("itemDetail.checkedOutTo")} {checkoutLabel}
             </p>
             {(item.checked_out_to.since || item.checked_out_to.due_date) ? (
-              <p className="mt-1 text-sm text-emerald-200/80">
+              <p className="mt-1 text-sm text-emerald-800/80 dark:text-emerald-200/80">
                 {item.checked_out_to.since ? `${t("itemDetail.since")} ${fmtDate(item.checked_out_to.since)}.` : ""}
                 {item.checked_out_to.since && item.checked_out_to.due_date ? " " : ""}
                 {item.checked_out_to.due_date ? `${t("itemDetail.dueDate")} ${fmtDate(item.checked_out_to.due_date)}` : ""}
@@ -422,20 +422,20 @@ export function ItemCheckoutActiveBanner({
               </p>
             ) : null}
             {checkoutUsers.length > 1 ? (
-              <div className="mt-2 space-y-2 text-sm text-emerald-200/80">
+              <div className="mt-2 space-y-2 text-sm text-emerald-800/80 dark:text-emerald-200/80">
                 <p>{t("itemDetail.loanedUsers")}:</p>
                 <div className="space-y-2">
                   {checkoutUsers.map((entry) => (
                     <div
                       key={entry.checkout_id}
-                      className="flex flex-col gap-2 rounded-lg border border-emerald-300/20 bg-emerald-500/10 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex flex-col gap-2 rounded-lg border border-emerald-200 bg-white/75 px-3 py-2 sm:flex-row sm:items-center sm:justify-between dark:border-emerald-300/20 dark:bg-emerald-500/10"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-emerald-100">
+                        <p className="truncate text-sm font-medium text-emerald-950 dark:text-emerald-100">
                           {entry.user_name || `User #${entry.user_id}`}
                         </p>
                         {entry.due_date ? (
-                          <p className="mt-1 text-xs text-emerald-200/80">
+                          <p className="mt-1 text-xs text-emerald-800/80 dark:text-emerald-200/80">
                             {t("itemDetail.dueDate")} {fmtDate(entry.due_date)}
                           </p>
                         ) : null}
@@ -445,7 +445,7 @@ export function ItemCheckoutActiveBanner({
                           type="button"
                           onClick={() => checkinItem(entry.checkout_id)}
                           disabled={returningCheckoutID !== null}
-                          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-emerald-300/20 bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-300/20 dark:bg-emerald-500/20 dark:text-emerald-50 dark:hover:bg-emerald-500/30"
                         >
                           {returningCheckoutID === entry.checkout_id ? (
                             <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -461,14 +461,14 @@ export function ItemCheckoutActiveBanner({
               </div>
             ) : null}
             {includedComponents.length > 0 ? (
-              <div className="mt-2 space-y-1 text-sm text-emerald-200/80">
+              <div className="mt-2 space-y-1 text-sm text-emerald-800/80 dark:text-emerald-200/80">
                 <p>{t("itemDetail.includedComponents")}:</p>
                 <div className="flex flex-wrap gap-2">
                   {includedComponents.map((component) => (
                     <Link
                       key={component.id}
                       href={`/items/${component.id}`}
-                      className="rounded-full border border-emerald-300/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-100 hover:bg-emerald-500/20"
+                      className="rounded-full border border-emerald-200 bg-emerald-100/80 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-200 dark:border-emerald-300/20 dark:bg-emerald-500/10 dark:text-emerald-100 dark:hover:bg-emerald-500/20"
                     >
                       {component.name}
                     </Link>
@@ -482,7 +482,7 @@ export function ItemCheckoutActiveBanner({
           <button
             onClick={() => checkinItem(checkoutUsers[0]?.checkout_id)}
             disabled={returningCheckoutID !== null}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:focus-visible:outline-emerald-500"
           >
             {returningCheckoutID !== null ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />

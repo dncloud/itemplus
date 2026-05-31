@@ -1,4 +1,10 @@
 import type { AIParseItemIntentResult, Category, Property } from "@/lib/api";
+import { getPropertyOptionConfig } from "@/lib/property-options";
+
+export type AIPropertyReviewHint = {
+  propertyName: string;
+  foundValues: string[];
+};
 
 export function extractPartialAIOutput(message: string) {
   const markers = ["Partial output:", "Partial JSON:"];
@@ -13,25 +19,41 @@ export function normalizeChoiceText(value: string) {
   return value.toLowerCase().trim().replace(/[^\p{L}\p{N}]+/gu, " ");
 }
 
-export function getPropertyChoices(property: Property): string[] {
-  const raw = property.options as unknown;
-  if (!raw) return [];
-  if (typeof raw === "object" && raw && "choices" in (raw as Record<string, unknown>)) {
-    const choices = (raw as Record<string, unknown>).choices;
-    return Array.isArray(choices)
-      ? choices.filter((choice): choice is string => typeof choice === "string")
-      : [];
+function compactChoiceText(value: string) {
+  return normalizeChoiceText(value).replace(/\s+/g, "");
+}
+
+function expandChoiceTokens(value: string) {
+  const tokens = normalizeChoiceText(value).split(/\s+/).filter(Boolean);
+  const expanded = new Set<string>();
+  for (const token of tokens) {
+    expanded.add(token);
+    if (/^80\d{3,}$/.test(token)) {
+      expanded.add(token.slice(2));
+    }
+    if (/^\d+$/.test(token)) {
+      const trimmed = token.replace(/^0+/, "");
+      if (trimmed) expanded.add(trimmed);
+    }
   }
-  return [];
+  return [...expanded];
+}
+
+export function getPropertyChoices(property: Property): string[] {
+  return getPropertyOptionConfig(property.options).choices;
 }
 
 export function normalizeToChoice(property: Property, rawValue: string) {
-  const choices = getPropertyChoices(property);
+  const optionConfig = getPropertyOptionConfig(property.options);
+  const choices = optionConfig.choices;
   if (choices.length === 0) return rawValue;
 
   const normalized = normalizeChoiceText(rawValue);
+  const compact = compactChoiceText(rawValue);
   const exact = choices.find((choice) => normalizeChoiceText(choice) === normalized);
   if (exact) return exact;
+  const compactExact = choices.find((choice) => compactChoiceText(choice) === compact);
+  if (compactExact) return compactExact;
 
   const aliases: Record<string, string> = {
     "echtzeit strategie": "Strategy",
@@ -50,11 +72,48 @@ export function normalizeToChoice(property: Property, rawValue: string) {
   const aliasTarget = aliases[normalized];
   if (aliasTarget && choices.includes(aliasTarget)) return aliasTarget;
 
-  const partial = choices.find((choice) => {
-    const normalizedChoice = normalizeChoiceText(choice);
-    return normalizedChoice.includes(normalized) || normalized.includes(normalizedChoice);
+  if (optionConfig.allowCustom) {
+    return rawValue.trim() || null;
+  }
+
+  const compactPartial = choices.find((choice) => {
+    const compactChoice = compactChoiceText(choice);
+    return compactChoice.includes(compact) || compact.includes(compactChoice);
   });
-  return partial || rawValue;
+  if (compactPartial) return compactPartial;
+
+  const rawTokens = new Set(expandChoiceTokens(rawValue));
+  let bestChoice: string | null = null;
+  let bestScore = 0;
+  let secondBestScore = 0;
+
+  for (const choice of choices) {
+    let score = 0;
+    for (const token of expandChoiceTokens(choice)) {
+      if (!rawTokens.has(token)) continue;
+      if (/^\d+$/.test(token) && token.length >= 3) {
+        score += 3;
+      } else if (token.length >= 4) {
+        score += 2;
+      } else if (token.length >= 2) {
+        score += 1;
+      }
+    }
+
+    if (score > bestScore) {
+      secondBestScore = bestScore;
+      bestScore = score;
+      bestChoice = choice;
+    } else if (score > secondBestScore) {
+      secondBestScore = score;
+    }
+  }
+
+  if (bestChoice && bestScore >= 3 && bestScore >= secondBestScore+2) {
+    return bestChoice;
+  }
+
+  return null;
 }
 
 export function normalizeAIPropertyValue(property: Property, rawValue: unknown) {
@@ -95,7 +154,8 @@ export function normalizeAIPropertyValue(property: Property, rawValue: unknown) 
       const values = Array.isArray(rawValue) ? rawValue : [rawValue];
       return values
         .filter((value): value is string => typeof value === "string" && value.trim() !== "")
-        .map((value) => normalizeToChoice(property, value));
+        .map((value) => normalizeToChoice(property, value))
+        .filter((value): value is string => typeof value === "string" && value.trim() !== "");
     }
     case "age_rating":
       if (typeof rawValue === "string") {
@@ -203,16 +263,34 @@ export function collectAISuggestedProperties(
   nextCategoryId: number | undefined,
 ) {
   const nextSuggestedProps: Record<string, unknown> = {};
+  const reviewHints: AIPropertyReviewHint[] = [];
   if (result.properties && Object.keys(result.properties).length > 0) {
     const relevantProperties = allProperties.filter((property) => !nextCategoryId || property.category_id === nextCategoryId);
     for (const [key, value] of Object.entries(result.properties)) {
       const byId = relevantProperties.find((property) => String(property.id) === key);
       const byName = relevantProperties.find((property) => property.name.trim().toLowerCase() === key.trim().toLowerCase());
       const match = byId || byName;
-      if (match) nextSuggestedProps[String(match.id)] = normalizeAIPropertyValue(match, value);
+      if (!match) continue;
+      const normalizedValue = normalizeAIPropertyValue(match, value);
+      if (normalizedValue == null || (Array.isArray(normalizedValue) && normalizedValue.length === 0)) {
+        if (match.property_type === "select" || match.property_type === "multiselect") {
+          const rawValues = Array.isArray(value) ? value : [value];
+          const originalValues = rawValues
+            .filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "")
+            .map((entry) => entry.trim());
+          if (originalValues.length > 0) {
+            reviewHints.push({
+              propertyName: match.name,
+              foundValues: originalValues,
+            });
+          }
+        }
+        continue;
+      }
+      nextSuggestedProps[String(match.id)] = normalizedValue;
     }
   }
-  return nextSuggestedProps;
+  return { suggestedPropValues: nextSuggestedProps, reviewHints };
 }
 
 export function resolveSuggestedCategoryId(

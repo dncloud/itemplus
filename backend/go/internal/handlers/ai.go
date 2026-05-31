@@ -14,10 +14,12 @@ import (
 )
 
 func RegisterAIRoutes(g *gin.RouterGroup) {
-	g.Use(middleware.Auth(), middleware.RequirePermission("items.write"))
-	g.POST("/parse-item-intent", parseItemIntent)
-	g.POST("/parse-item-intent/stream", parseItemIntentStream)
-	g.POST("/temp-image", uploadAITempImage)
+	g.Use(middleware.Auth())
+	g.POST("/parse-item-intent", middleware.RequirePermission("items.write"), parseItemIntent)
+	g.POST("/parse-item-intent/stream", middleware.RequirePermission("items.write"), parseItemIntentStream)
+	g.POST("/suggest-category-properties", middleware.RequirePermission("categories.write"), suggestCategoryProperties)
+	g.POST("/suggest-property-enhancement", middleware.RequirePermission("categories.write"), suggestPropertyEnhancement)
+	g.POST("/temp-image", middleware.RequirePermission("items.write"), uploadAITempImage)
 }
 
 func parseItemIntent(c *gin.Context) {
@@ -165,6 +167,148 @@ func parseItemIntentStream(c *gin.Context) {
 	_ = emit(services.AIStreamEvent{Type: "done", Result: result})
 }
 
+func suggestCategoryProperties(c *gin.Context) {
+	var body struct {
+		Realm          string `json:"realm"`
+		Prompt         string `json:"prompt"`
+		AllowWebSearch bool   `json:"allow_web_search"`
+		Locale         string `json:"locale"`
+		CategoryID     int64  `json:"category_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
+		return
+	}
+
+	realm := strings.ToLower(strings.TrimSpace(body.Realm))
+	if realm != "archive" && realm != "collection" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid realm"})
+		return
+	}
+	if body.CategoryID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Category is required"})
+		return
+	}
+	if strings.TrimSpace(body.Prompt) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Prompt is required"})
+		return
+	}
+
+	category, err := loadAICategoryByID(realm, body.CategoryID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not load category"})
+		return
+	}
+	if len(category) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Category not found"})
+		return
+	}
+	properties, err := loadAIPropertiesForCategory(realm, body.CategoryID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not load category properties"})
+		return
+	}
+
+	settings := loadAISettingsWithSecret()
+	result, err := services.SuggestCategoryProperties(settings, services.SuggestCategoryPropertiesRequest{
+		Realm:              realm,
+		Prompt:             body.Prompt,
+		AllowWebSearch:     body.AllowWebSearch,
+		Locale:             body.Locale,
+		Category:           category,
+		ExistingProperties: properties,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"detail": err.Error()})
+		return
+	}
+
+	user := middleware.GetUser(c)
+	audit(user.ID, "ai.suggest_category_properties", fmt.Sprintf("realm=%s category_id=%d", realm, body.CategoryID))
+	c.JSON(http.StatusOK, result)
+}
+
+func suggestPropertyEnhancement(c *gin.Context) {
+	var body struct {
+		Realm          string `json:"realm"`
+		Prompt         string `json:"prompt"`
+		AllowWebSearch bool   `json:"allow_web_search"`
+		Locale         string `json:"locale"`
+		CategoryID     int64  `json:"category_id"`
+		PropertyID     int64  `json:"property_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
+		return
+	}
+
+	realm := strings.ToLower(strings.TrimSpace(body.Realm))
+	if realm != "archive" && realm != "collection" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid realm"})
+		return
+	}
+	if body.CategoryID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Category is required"})
+		return
+	}
+	if body.PropertyID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Property is required"})
+		return
+	}
+	if strings.TrimSpace(body.Prompt) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Prompt is required"})
+		return
+	}
+
+	category, err := loadAICategoryByID(realm, body.CategoryID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not load category"})
+		return
+	}
+	if len(category) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Category not found"})
+		return
+	}
+	property, err := loadAIPropertyByID(realm, body.PropertyID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not load property"})
+		return
+	}
+	if len(property) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Property not found"})
+		return
+	}
+	propertyCategoryID, _ := aiMapInt64(property["category_id"])
+	if propertyCategoryID != body.CategoryID {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Property does not belong to category"})
+		return
+	}
+	properties, err := loadAIPropertiesForCategory(realm, body.CategoryID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not load category properties"})
+		return
+	}
+
+	settings := loadAISettingsWithSecret()
+	result, err := services.SuggestPropertyEnhancement(settings, services.SuggestPropertyEnhancementRequest{
+		Realm:              realm,
+		Prompt:             body.Prompt,
+		AllowWebSearch:     body.AllowWebSearch,
+		Locale:             body.Locale,
+		Category:           category,
+		Property:           property,
+		ExistingProperties: properties,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"detail": err.Error()})
+		return
+	}
+
+	user := middleware.GetUser(c)
+	audit(user.ID, "ai.suggest_property_enhancement", fmt.Sprintf("realm=%s category_id=%d property_id=%d", realm, body.CategoryID, body.PropertyID))
+	c.JSON(http.StatusOK, result)
+}
+
 func loadAIContextCategories(realm string) ([]map[string]any, error) {
 	rows, err := database.DB.Queryx(fmt.Sprintf("SELECT id, name, description, color FROM %s_categories ORDER BY position, id", realm))
 	if err != nil {
@@ -205,6 +349,71 @@ func loadAIContextProperties(realm string) ([]map[string]any, error) {
 		result = []map[string]any{}
 	}
 	return result, nil
+}
+
+func loadAICategoryByID(realm string, categoryID int64) (map[string]any, error) {
+	row := map[string]any{}
+	sqlRow := database.DB.QueryRowx(
+		fmt.Sprintf("SELECT id, name, description, color FROM %s_categories WHERE id = ?", realm),
+		categoryID,
+	)
+	if err := sqlRow.MapScan(row); err != nil {
+		return nil, nil
+	}
+	cleanRow(row)
+	return row, nil
+}
+
+func loadAIPropertiesForCategory(realm string, categoryID int64) ([]map[string]any, error) {
+	rows, err := database.DB.Queryx(
+		fmt.Sprintf("SELECT id, category_id, name, property_type, unit, options, required, show_in_list, display_width FROM %s_properties WHERE category_id = ? ORDER BY position, id", realm),
+		categoryID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []map[string]any
+	for rows.Next() {
+		row := map[string]any{}
+		if rows.MapScan(row) == nil {
+			cleanRow(row)
+			result = append(result, row)
+		}
+	}
+	if result == nil {
+		result = []map[string]any{}
+	}
+	return result, nil
+}
+
+func loadAIPropertyByID(realm string, propertyID int64) (map[string]any, error) {
+	row := map[string]any{}
+	sqlRow := database.DB.QueryRowx(
+		fmt.Sprintf("SELECT id, category_id, name, property_type, unit, options, required, show_in_list, display_width FROM %s_properties WHERE id = ?", realm),
+		propertyID,
+	)
+	if err := sqlRow.MapScan(row); err != nil {
+		return nil, nil
+	}
+	cleanRow(row)
+	return row, nil
+}
+
+func aiMapInt64(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	default:
+		return 0, false
+	}
 }
 
 func uploadAITempImage(c *gin.Context) {

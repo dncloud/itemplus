@@ -46,7 +46,7 @@ export function deriveAISuggestions(params: {
   }
   if (typeof nextCategoryId === "number") suggestedItem.category_id = nextCategoryId;
 
-  const suggestedPropValues = collectAISuggestedProperties(result, allProperties, nextCategoryId);
+  const { suggestedPropValues, reviewHints } = collectAISuggestedProperties(result, allProperties, nextCategoryId);
   const status =
     result.suggested_realm && result.suggested_realm !== realm
       ? t("items.aiRealmMismatch", {
@@ -54,7 +54,7 @@ export function deriveAISuggestions(params: {
         })
       : t("items.aiSuggestionsReady");
 
-  return { suggestedItem, suggestedPropValues, status };
+  return { suggestedItem, suggestedPropValues, reviewHints, status };
 }
 
 export function buildAIViewState(params: {

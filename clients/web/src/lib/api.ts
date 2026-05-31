@@ -190,6 +190,8 @@ export interface AIPropertyProposal {
   property_type: string;
   unit?: string;
   required?: boolean;
+  show_in_list?: boolean;
+  display_width?: "third" | "half" | "full";
   options?: string[];
 }
 
@@ -200,6 +202,32 @@ export interface AICategoryProposal {
   color?: string;
   manufacturer_name?: string;
   properties?: AIPropertyProposal[];
+}
+
+export interface AICategoryPropertySuggestionResult {
+  confidence: number;
+  needs_confirmation: boolean;
+  questions: string[];
+  notes: string[];
+  properties: AIPropertyProposal[];
+  raw_prompt?: string;
+  transport?: string;
+  model?: string;
+  provider?: string;
+  context?: Record<string, unknown>;
+}
+
+export interface AIPropertyEnhancementSuggestionResult {
+  confidence: number;
+  needs_confirmation: boolean;
+  questions: string[];
+  notes: string[];
+  property: AIPropertyProposal;
+  raw_prompt?: string;
+  transport?: string;
+  model?: string;
+  provider?: string;
+  context?: Record<string, unknown>;
 }
 
 export interface AIParseStreamEvent {
@@ -314,6 +342,10 @@ class Api {
     data: { realm: "archive" | "collection"; prompt: string; barcode?: string; temp_image_id?: string; locale?: string; selected_category_id?: number; allow_web_search?: boolean; identify_only?: boolean },
     onEvent: (event: AIParseStreamEvent) => void,
   ) => this.handleStream("/ai/parse-item-intent/stream", data, onEvent);
+  suggestCategoryProperties = (data: { realm: "archive" | "collection"; prompt: string; locale?: string; category_id: number; allow_web_search?: boolean }) =>
+    this.post<AICategoryPropertySuggestionResult>("/ai/suggest-category-properties", data);
+  suggestPropertyEnhancement = (data: { realm: "archive" | "collection"; prompt: string; locale?: string; category_id: number; property_id: number; allow_web_search?: boolean }) =>
+    this.post<AIPropertyEnhancementSuggestionResult>("/ai/suggest-property-enhancement", data);
 
   // -- User --
   getMe = () => this.get<User>("/user");

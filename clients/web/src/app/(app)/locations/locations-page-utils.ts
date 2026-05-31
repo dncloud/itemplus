@@ -28,14 +28,8 @@ export function getSiblingLocations(locations: Location[], parentId: number | nu
   );
 }
 
-export async function persistLocationSiblingOrder(locations: Location[], parentId: number | null) {
-  const siblings = sortLocations(
-    locations.filter((location) => (location.parent_id ?? null) === parentId),
-  );
-
-  for (let index = 0; index < siblings.length; index += 1) {
-    if (siblings[index].position !== index) {
-      await api.updateLocation(siblings[index].id, { position: index });
-    }
+export async function persistLocationSiblingOrder(orderedSiblings: Location[]) {
+  for (let index = 0; index < orderedSiblings.length; index += 1) {
+    await api.updateLocation(orderedSiblings[index].id, { position: index });
   }
 }

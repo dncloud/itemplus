@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.2.4 - 2026-05-31
+
+### AI, categories, and item creation
+- Reworked the item-create AI flow into a quieter icon-first UI with a dedicated info drawer instead of large inline status and debug blocks.
+- Added shared floating AI start notifications so item drafts, category property suggestions, and property enhancements all show the same clear “starting” feedback.
+- Improved item-create AI matching so existing select and multiselect options are preferred first, while still preserving original specific values when a category allows free-text fallbacks.
+- Added AI review hints for properties whose current options are too coarse, including the exact original values the model found so category schemas can be refined later.
+- Added AI-assisted property suggestion for existing categories and AI-assisted improvement for existing properties, including additional-instructions fields for legacy, collector-focused, and standards-heavy datasets.
+- Added support for custom `Other (free text)` values in select and multiselect properties without changing the underlying property model.
+- Simplified barcode-first AI identification and improved timeout handling for slower OpenAI Responses requests, with clearer user-facing timeout messaging.
+
+### Web app polish
+- Fixed the new-item barcode handoff so scanned barcodes are consumed once and no longer reappear after leaving and reopening the item form.
+- Added a custom item+ 404 page and a hidden easter egg route mode with an `iddqd` god mode cheat for the 404 mini-game.
+- Improved light-mode contrast for item detail checkout banners and related status surfaces so TWP-inspired light styling stays readable.
+- Fixed category location ordering persistence for both top-level locations and nested child locations.
+- Added a reusable floating notification component for richer in-app feedback patterns.
+
+### iOS app
+- Switched the home screen browser activity area from horizontal scrolling pills to a clearer vertical session list.
+- Replaced the plain delete-confirm popup for remote web-triggered deletes with a custom-styled in-app confirmation overlay.
+- Fixed multiple Swift 6 concurrency issues in the printer bridge service around sendable closures, finish-state handling, and pointer access.
+
 ## 1.2.3 - 2026-05-30
 
 ### Backend and web app

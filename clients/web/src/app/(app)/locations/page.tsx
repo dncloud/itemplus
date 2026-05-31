@@ -138,11 +138,7 @@ export default function LocationsPage() {
     const oldIdx = siblings.findIndex((l) => l.id === active.id);
     const newIdx = siblings.findIndex((l) => l.id === over.id);
     const reordered = arrayMove(siblings, oldIdx, newIdx);
-    const otherLocations = locations.filter((location) => (location.parent_id ?? null) !== parentId);
-    await persistLocationSiblingOrder(
-      [...otherLocations, ...reordered.map((location, index) => ({ ...location, position: index }))],
-      parentId,
-    );
+    await persistLocationSiblingOrder(reordered);
     load();
   };
 

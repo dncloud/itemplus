@@ -7,6 +7,7 @@ import { MarkdownEditor } from "@/components/markdown";
 import { CalendarDaysIcon, ClockIcon } from "@heroicons/react/24/outline";
 import { AgeRatingField, ALL_AGE_RATINGS } from "@/components/property-field-age-rating";
 import { MultiSelectDropdown, SelectDropdown } from "@/components/property-field-selects";
+import { getPropertyOptionConfig } from "@/lib/property-options";
 import {
   CONDITION_BADGE_CLASS,
   CONDITIONS,
@@ -142,14 +143,17 @@ export default function PropertyField({ property: prop, value, onChange }: {
       return <div>{label}<MarkdownEditor value={strVal} onChange={(v) => onChange(v)} rows={3} /></div>;
 
     case "select": {
-      const options: string[] = (prop.options as Record<string, unknown>)?.choices as string[] || [];
+      const optionConfig = getPropertyOptionConfig(prop.options, locale);
       return (
         <div>
           {label}
           <SelectDropdown
             label={prop.name}
             value={strVal}
-            options={options}
+            options={optionConfig.choices}
+            allowCustom={optionConfig.allowCustom}
+            customLabel={optionConfig.customLabel}
+            customPlaceholder={t("categories.customValuePlaceholder")}
             onChange={(next) => onChange(next)}
           />
         </div>
@@ -157,7 +161,7 @@ export default function PropertyField({ property: prop, value, onChange }: {
     }
 
     case "multiselect": {
-      const options: string[] = (prop.options as Record<string, unknown>)?.choices as string[] || [];
+      const optionConfig = getPropertyOptionConfig(prop.options, locale);
       const selected: string[] = Array.isArray(value) ? value : [];
       return (
         <div>
@@ -165,7 +169,10 @@ export default function PropertyField({ property: prop, value, onChange }: {
           <MultiSelectDropdown
             label={prop.name}
             values={selected}
-            options={options}
+            options={optionConfig.choices}
+            allowCustom={optionConfig.allowCustom}
+            customLabel={optionConfig.customLabel}
+            customPlaceholder={t("categories.customValuePlaceholder")}
             onChange={(next) => onChange(next)}
           />
         </div>
