@@ -1,0 +1,127 @@
+---
+layout: default
+permalink: /imprint/
+title_tag: item+ - Imprint / Impressum
+description: Imprint and legal publisher details for itemplus.app and the item+ iOS app.
+---
+<main id="top">
+      <div class="overflow-hidden bg-gray-900 px-6 py-4 lg:px-8 pt-24 pb-24 sm:pt-32">
+        <div class="mx-auto max-w-3xl text-base/7 text-gray-300">
+          <section data-lang-panel="de">
+            <div class="space-y-8">
+              <div>
+                <h1 class="text-4xl font-semibold tracking-tight text-pretty text-white sm:text-5xl">
+                  <span data-copy="pageTitle">Imprint / Impressum</span>
+                  <span class="ml-3 align-middle text-sm font-medium text-gray-400 sm:text-base" data-copy="pageMeta">Stand: 2026-05-31</span>
+                </h1>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold text-white">Anbieter</h3>
+                <p class="mt-2">Oliver Cermann<br>Kantweg 13<br>29525 Uelzen</p>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold text-white">Projekt</h3>
+                <p class="mt-2"><strong>item+</strong> ist ein Open-Source-System für Inventory &amp; Collection Management.</p>
+                <p class="mt-3">Öffentliche Website: <a class="text-indigo-300 hover:text-white" href="https://itemplus.app">itemplus.app</a><br>
+                Quellcode: <a class="text-indigo-300 hover:text-white" href="https://github.com/dncloud/itemplus">github.com/dncloud/itemplus</a></p>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold text-white">Kontakt</h3>
+                <p class="mt-2">Telefon: <a class="text-indigo-300 hover:text-white" href="tel:+4958138946212">+49 (0) 581 38946212</a><br>
+                E-Mail: <a class="text-indigo-300 hover:text-white" href="mailto:hello@itemplus.app">hello@itemplus.app</a></p>
+                <p class="mt-3">Projekt-Issues und technischer Kontakt: <a class="text-indigo-300 hover:text-white" href="https://github.com/dncloud/itemplus/issues">github.com/dncloud/itemplus/issues</a></p>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold text-white">Verantwortlich für den Inhalt</h3>
+                <p class="mt-2">Oliver Cermann</p>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold text-white">Verbraucherstreitbeilegung / Universalschlichtungsstelle</h3>
+                <p class="mt-2">Ich bin nicht bereit oder verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="hidden" data-lang-panel="en">
+            <div class="space-y-8">
+              <div>
+                <h1 class="text-4xl font-semibold tracking-tight text-pretty text-white sm:text-5xl">
+                  <span data-copy="pageTitle">Imprint</span>
+                  <span class="ml-3 align-middle text-sm font-medium text-gray-400 sm:text-base" data-copy="pageMeta">Updated: 2026-05-31</span>
+                </h1>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold text-white">Publisher</h3>
+                <p class="mt-2">Oliver Cermann<br>Kantweg 13<br>29525 Uelzen<br>Germany</p>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold text-white">Project</h3>
+                <p class="mt-2"><strong>item+</strong> is an open-source inventory and collection management system.</p>
+                <p class="mt-3">Public website: <a class="text-indigo-300 hover:text-white" href="https://itemplus.app">itemplus.app</a><br>
+                Source code: <a class="text-indigo-300 hover:text-white" href="https://github.com/dncloud/itemplus">github.com/dncloud/itemplus</a></p>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold text-white">Contact</h3>
+                <p class="mt-2">Phone: <a class="text-indigo-300 hover:text-white" href="tel:+4958138946212">+49 (0) 581 38946212</a><br>
+                E-mail: <a class="text-indigo-300 hover:text-white" href="mailto:hello@itemplus.app">hello@itemplus.app</a></p>
+                <p class="mt-3">Project issues and technical contact: <a class="text-indigo-300 hover:text-white" href="https://github.com/dncloud/itemplus/issues">github.com/dncloud/itemplus/issues</a></p>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold text-white">Responsible for content</h3>
+                <p class="mt-2">Oliver Cermann</p>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold text-white">Consumer dispute resolution / universal arbitration board</h3>
+                <p class="mt-2">I am neither willing nor obliged to participate in dispute resolution proceedings before a consumer arbitration board.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+  </main>
+
+  <script>
+    const translations = {
+      de: {
+        pageTitle: "Impressum",
+        pageMeta: "Stand: 2026-05-31",
+        footerIssues: "Issue-Tracker",
+        footerBottom: "© 2025-2026 Oliver Cermann. item+ steht unter der MIT License.",
+        footerPrivacy: "Datenschutz",
+        footerImprint: "Impressum"
+      },
+      en: {
+        pageTitle: "Imprint",
+        pageMeta: "Updated: 2026-05-31",
+        footerIssues: "Issue tracker",
+        footerBottom: "© 2025-2026 Oliver Cermann. item+ is released under the MIT License.",
+        footerPrivacy: "Privacy",
+        footerImprint: "Imprint"
+      }
+    };
+
+    function setLang(lang) {
+      document.documentElement.lang = lang;
+      document.querySelectorAll("[data-copy]").forEach((node) => {
+        const key = node.getAttribute("data-copy");
+        const value = translations[lang]?.[key];
+        if (value) node.textContent = value;
+      });
+      document.querySelectorAll("[data-lang-panel]").forEach((panel) => {
+        panel.classList.toggle("hidden", panel.getAttribute("data-lang-panel") !== lang);
+      });
+      document.querySelectorAll("[data-lang-switch]").forEach((button) => {
+        const active = button.getAttribute("data-lang-switch") === lang;
+        button.classList.toggle("bg-white/10", active);
+        button.classList.toggle("text-white", active);
+        button.classList.toggle("text-gray-300", !active);
+      });
+      localStorage.setItem("itemplus-landing-lang", lang);
+    }
+
+    const initialLang = localStorage.getItem("itemplus-landing-lang") || "de";
+    document.querySelectorAll("[data-lang-switch]").forEach((button) => {
+      button.addEventListener("click", () => setLang(button.getAttribute("data-lang-switch")));
+    });
+    setLang(initialLang);
+  </script>

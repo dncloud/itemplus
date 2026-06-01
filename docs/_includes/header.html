@@ -1,0 +1,23 @@
+<header class="absolute inset-x-0 top-0 z-50">
+  <nav aria-label="Global" class="flex items-center justify-between p-6 lg:px-8">
+    <div class="flex lg:flex-1">
+      <a href="{{ '/' | relative_url }}" class="-m-1.5 flex items-center gap-x-3 p-1.5">
+        <span class="sr-only">item+</span>
+        <img src="{{ '/logo.svg' | relative_url }}" alt="item+ logo" class="h-9 w-9 rounded-lg shadow-lg" />
+        <span class="text-lg font-semibold text-white">item<span class="text-itemred">+</span></span>
+      </a>
+    </div>
+    <div class="hidden lg:flex lg:gap-x-10">
+      <a href="{{ '/#workflow' | relative_url }}" class="text-sm/6 font-semibold text-white" data-copy="navWorkflow">Workflow</a>
+      <a href="{{ '/#screenshots' | relative_url }}" class="text-sm/6 font-semibold text-white" data-copy="navScreenshots">Screenshots</a>
+      <a href="{{ '/#support' | relative_url }}" class="text-sm/6 font-semibold text-white" data-copy="navSupport">Support</a>
+    </div>
+    <div class="hidden lg:flex lg:flex-1 lg:justify-end lg:gap-x-4 lg:items-center">
+      <div class="inline-flex rounded-full bg-white/5 p-1 ring-1 ring-white/10">
+        <button type="button" class="rounded-full px-3 py-1.5 text-xs font-semibold text-white bg-white/10" data-lang-switch="de">DE</button>
+        <button type="button" class="rounded-full px-3 py-1.5 text-xs font-semibold text-gray-300" data-lang-switch="en">EN</button>
+      </div>
+      <a href="https://github.com/dncloud/itemplus" target="_blank" rel="noopener noreferrer" class="text-sm/6 font-semibold text-white">GitHub</a>
+    </div>
+  </nav>
+</header>

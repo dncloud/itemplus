@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page.title_tag | default: site.title }}</title>
+  <meta name="description" content="{{ page.description | escape }}">
+  <link rel="icon" type="image/svg+xml" href="{{ '/logo.svg' | relative_url }}">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            itembg: "#081524",
+            itemsurface: "#0f2137",
+            itemborder: "#374151",
+            itemtext: "#97adc7",
+            itemmuted: "#6b7280",
+            itemblue: "#3b82f6",
+            itemred: "#e63946"
+          },
+          boxShadow: {
+            itemxl: "0 28px 80px rgba(2, 8, 18, 0.35)"
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(59, 130, 246, 0.14), transparent 24%),
+        radial-gradient(circle at top right, rgba(230, 57, 70, 0.10), transparent 22%),
+        #081524;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+  </style>
+</head>
+<body class="bg-itembg text-itemtext">
+  <div class="bg-itembg">
+    {% include header.html %}
+    {{ content }}
+    {% include footer.html %}
+  </div>
+</body>
+</html>
