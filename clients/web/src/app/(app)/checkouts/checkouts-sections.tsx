@@ -82,7 +82,7 @@ export function CheckoutRequestsList({
   t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   const renderRequestSummary = (req: CheckoutListEntry) => {
-    const user = req.user_name || `User #${req.user_id}`;
+    const user = req.user_name || t("users.deletedUser");
     const date = req.created_at ? fmtDateTime(req.created_at) : null;
     const duration = req.requested_duration_days
       ? req.requested_duration_days === 1

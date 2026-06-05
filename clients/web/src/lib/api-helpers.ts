@@ -12,7 +12,13 @@ export function buildQueryString(values: Record<string, string | number | boolea
 
 export async function parseApiError(res: Response) {
   const err = await res.json().catch(() => ({}));
-  return new Error(err.detail || `HTTP ${res.status}`);
+  const error = new Error(err.detail || `HTTP ${res.status}`) as Error & {
+    code?: string;
+    active_checkouts?: number;
+  };
+  if (typeof err.code === "string") error.code = err.code;
+  if (typeof err.active_checkouts === "number") error.active_checkouts = err.active_checkouts;
+  return error;
 }
 
 export function buildSingleFileForm(file: File) {

@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.2.5 - 2026-06-05
+
+### Account deletion and review compliance
+- Added a real account-deletion flow to the iPhone app so users can remove their account directly from Settings instead of being sent to an external support path.
+- Added the same account-deletion flow to the web app Settings area, including an inline confirmation step and clean logout/redirect behavior after a successful delete.
+- Blocked account deletion while a user still has active checkouts, so lending state cannot be broken or silently orphaned by a self-delete.
+- Prevented admin accounts from deleting themselves through the regular account-deletion flow, avoiding accidental lockout of the installation owner or only administrator.
+- Released archive and collection location manager assignments automatically when a non-admin account is deleted, so locations never remain stuck behind a removed manager.
+- Localized account-deletion blockers and related review-facing messaging consistently across the web app and iPhone app.
+
+### Authentication and first-sign-in flow
+- Changed the iPhone Apple sign-in flow so a missing account no longer gets created implicitly on first login.
+- Added an explicit in-app registration confirmation step on iPhone when Apple sign-in succeeds but no item+ account exists yet, making account creation a deliberate user action.
+- Kept the configurable `AUTO_ACTIVATED` server behavior for new users while making the first-run and review flows easier to reason about operationally.
+
+### iPhone app polish
+- Replaced the remaining system-style account prompts in the iPhone app with item+-styled confirmation cards for registration, deletion, and deletion blockers.
+- Improved the scanner presentation with the darker masked preview and quieter cutout treatment refined during App Store review preparation.
+- Prepared the iPhone release track for `1.2.5` with build `12501`.
+
 ## 1.2.4 - 2026-05-31
 
 ### AI, categories, and item creation

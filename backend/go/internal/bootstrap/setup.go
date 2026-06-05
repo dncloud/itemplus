@@ -300,7 +300,7 @@ func openSetupDatabase(values config.SetupValues) (*sqlx.DB, bool, error) {
 	}
 
 	var count int
-	if err := db.Get(&count, "SELECT COUNT(*) FROM users"); err != nil {
+	if err := db.Get(&count, "SELECT COUNT(*) FROM users WHERE apple_sub NOT LIKE 'deleted_user_%'"); err != nil {
 		_ = db.Close()
 		return nil, false, fmt.Errorf("could not inspect the configured database: %w", err)
 	}

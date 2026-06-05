@@ -24,6 +24,8 @@ type User struct {
 	UpdatedAt   *string `db:"updated_at" json:"updated_at"`
 }
 
+const deletedUserPrefix = "deleted_user_"
+
 func (u *User) PermissionList() []string {
 	var perms []string
 	_ = json.Unmarshal([]byte(u.Permissions), &perms)
@@ -187,7 +189,7 @@ func extractUser(c *gin.Context) (*User, error) {
 	}
 
 	var user User
-	err = database.DB.Get(&user, "SELECT * FROM users WHERE id = ?", claims.UserID)
+	err = database.DB.Get(&user, "SELECT * FROM users WHERE id = ? AND apple_sub NOT LIKE ?", claims.UserID, deletedUserPrefix+"%")
 	if err != nil {
 		return nil, err
 	}

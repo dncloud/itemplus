@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,6 +13,123 @@ import (
 	"github.com/itemplus/backend/internal/middleware"
 	"github.com/itemplus/backend/internal/ws"
 )
+
+const deletedUserPrefix = "deleted_user_"
+
+type userDeletionBlockedError struct {
+	activeCheckouts int
+}
+
+type userDeletionAdminError struct{}
+
+func (e userDeletionBlockedError) Error() string {
+	if e.activeCheckouts > 0 {
+		return fmt.Sprintf("Account cannot be deleted while it still has %d active checkout(s). Please return them first.", e.activeCheckouts)
+	}
+	return "Account deletion is currently blocked"
+}
+
+func (e userDeletionAdminError) Error() string {
+	return "Administrator accounts cannot be deleted from the app."
+}
+
+func visibleUsersWhereClause(alias string) string {
+	column := "apple_sub"
+	if alias != "" {
+		column = alias + ".apple_sub"
+	}
+	return fmt.Sprintf("%s NOT LIKE '%s%%'", column, deletedUserPrefix)
+}
+
+func countVisibleUsers() int {
+	var count int
+	if err := database.DB.Get(&count, "SELECT COUNT(*) FROM users WHERE "+visibleUsersWhereClause("")); err != nil {
+		return 0
+	}
+	return count
+}
+
+func loadVisibleUserByID(id interface{}) (*middleware.User, error) {
+	var user middleware.User
+	if err := database.DB.Get(&user, "SELECT * FROM users WHERE id = ? AND "+visibleUsersWhereClause(""), id); err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func countUserDeleteBlocks(userID int) (int, error) {
+	var activeArchive int
+	if err := database.DB.Get(&activeArchive, "SELECT COUNT(*) FROM archive_checkouts WHERE user_id = ? AND status = 'active'", userID); err != nil {
+		return 0, err
+	}
+	var activeCollection int
+	if err := database.DB.Get(&activeCollection, "SELECT COUNT(*) FROM collection_checkouts WHERE user_id = ? AND status = 'active'", userID); err != nil {
+		return 0, err
+	}
+	return activeArchive + activeCollection, nil
+}
+
+func deleteUserAccount(userID int, actorID int, selfService bool) error {
+	user, err := loadVisibleUserByID(userID)
+	if err != nil {
+		return err
+	}
+	if user.IsAdmin {
+		return userDeletionAdminError{}
+	}
+
+	activeCheckouts, err := countUserDeleteBlocks(userID)
+	if err != nil {
+		return err
+	}
+	if activeCheckouts > 0 {
+		return userDeletionBlockedError{activeCheckouts: activeCheckouts}
+	}
+
+	tx, err := database.DB.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM device_sessions WHERE user_id = ?", userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM checkout_requests WHERE user_id = ?", userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE archive_locations SET manager_id = NULL WHERE manager_id = ?", userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE collection_locations SET manager_id = NULL WHERE manager_id = ?", userID); err != nil {
+		return err
+	}
+	if user.Email != nil && *user.Email != "" {
+		if _, err := tx.Exec("DELETE FROM magic_link_tokens WHERE email = ?", *user.Email); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.Exec("DELETE FROM users WHERE id = ?", userID); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	if actorID > 0 {
+		action := "user.delete"
+		detail := fmt.Sprintf("target_user=%d deleted", userID)
+		if selfService {
+			action = "user.delete_self"
+			detail = "self-service account deletion"
+		}
+		audit(actorID, action, detail)
+	}
+
+	return nil
+}
 
 func RegisterUserRoutes(api *gin.RouterGroup) {
 	// Current user
@@ -95,20 +214,38 @@ func updateMe(c *gin.Context) {
 		database.DB.Exec("UPDATE users SET email = ?, updated_at = ? WHERE id = ?", *body.Email, now, user.ID)
 	}
 
-	var updated middleware.User
-	database.DB.Get(&updated, "SELECT * FROM users WHERE id = ?", user.ID)
-	c.JSON(http.StatusOK, userResponse(&updated))
+	updated, err := loadVisibleUserByID(user.ID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "User not found"})
+		return
+	}
+	c.JSON(http.StatusOK, userResponse(updated))
 }
 
 func deleteMe(c *gin.Context) {
 	user := middleware.GetUser(c)
-	database.DB.Exec("DELETE FROM users WHERE id = ?", user.ID)
+	if err := deleteUserAccount(user.ID, user.ID, true); err != nil {
+		var blocked userDeletionBlockedError
+		var adminBlocked userDeletionAdminError
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			c.JSON(http.StatusNotFound, gin.H{"detail": "User not found"})
+		case errors.As(err, &adminBlocked):
+			c.JSON(http.StatusConflict, gin.H{"detail": adminBlocked.Error(), "code": "account_deletion_admin_forbidden"})
+		case errors.As(err, &blocked):
+			c.JSON(http.StatusConflict, gin.H{"detail": blocked.Error(), "code": "account_deletion_active_checkouts", "active_checkouts": blocked.activeCheckouts})
+		default:
+			log.Printf("Account anonymization error in deleteMe: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+		}
+		return
+	}
 	c.Status(http.StatusNoContent)
 }
 
 func listUsers(c *gin.Context) {
 	var users []middleware.User
-	err := database.DB.Select(&users, "SELECT * FROM users ORDER BY created_at DESC")
+	err := database.DB.Select(&users, "SELECT * FROM users WHERE "+visibleUsersWhereClause("")+" ORDER BY created_at DESC")
 	if err != nil {
 		log.Printf("DB query error in listUsers: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
@@ -127,7 +264,7 @@ func listUsers(c *gin.Context) {
 }
 
 func lookupUser(c *gin.Context) {
-	rows, err := database.DB.Queryx("SELECT id, display_name, email FROM users WHERE is_active = 1 ORDER BY display_name")
+	rows, err := database.DB.Queryx("SELECT id, display_name, email FROM users WHERE is_active = 1 AND " + visibleUsersWhereClause("") + " ORDER BY display_name")
 	if err != nil {
 		log.Printf("DB query error in lookupUser: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
@@ -156,7 +293,7 @@ func lookupUser(c *gin.Context) {
 
 func listInactiveUsers(c *gin.Context) {
 	var users []middleware.User
-	err := database.DB.Select(&users, "SELECT * FROM users WHERE is_active = 0 ORDER BY created_at DESC")
+	err := database.DB.Select(&users, "SELECT * FROM users WHERE is_active = 0 AND "+visibleUsersWhereClause("")+" ORDER BY created_at DESC")
 	if err != nil {
 		log.Printf("DB query error in listInactiveUsers: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
@@ -176,14 +313,13 @@ func listInactiveUsers(c *gin.Context) {
 
 func getUser(c *gin.Context) {
 	id := c.Param("id")
-	var user middleware.User
-	err := database.DB.Get(&user, "SELECT * FROM users WHERE id = ?", id)
+	user, err := loadVisibleUserByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"detail": "User not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, userResponse(&user))
+	c.JSON(http.StatusOK, userResponse(user))
 }
 
 func updateUser(c *gin.Context) {
@@ -202,8 +338,8 @@ func updateUser(c *gin.Context) {
 	}
 
 	// Read current user to detect activation transition
-	var current middleware.User
-	if err := database.DB.Get(&current, "SELECT * FROM users WHERE id = ?", id); err != nil {
+	current, err := loadVisibleUserByID(id)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"detail": "User not found"})
 		return
 	}
@@ -240,23 +376,26 @@ func updateUser(c *gin.Context) {
 	adminUser2 := middleware.GetUser(c)
 	audit(adminUser2.ID, "user.update", fmt.Sprintf("target=%s", id))
 
-	var updated middleware.User
-	database.DB.Get(&updated, "SELECT * FROM users WHERE id = ?", id)
+	updated, err := loadVisibleUserByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "User not found"})
+		return
+	}
 
 	// Send activation notification if transitioning inactive -> active
 	if wasInactive && updated.IsActive {
 		ws.M.SendToUser(updated.ID, "user.activated", nil)
 	}
 
-	c.JSON(http.StatusOK, userResponse(&updated))
+	c.JSON(http.StatusOK, userResponse(updated))
 }
 
 func activateUser(c *gin.Context) {
 	id := c.Param("id")
 
 	// Check user exists first
-	var user middleware.User
-	if err := database.DB.Get(&user, "SELECT * FROM users WHERE id = ?", id); err != nil {
+	user, err := loadVisibleUserByID(id)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"detail": "User not found"})
 		return
 	}
@@ -265,7 +404,11 @@ func activateUser(c *gin.Context) {
 	database.DB.Exec("UPDATE users SET is_active = 1, updated_at = ? WHERE id = ?", now, id)
 
 	// Re-read updated user
-	database.DB.Get(&user, "SELECT * FROM users WHERE id = ?", id)
+	user, err = loadVisibleUserByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "User not found"})
+		return
+	}
 
 	admin := middleware.GetUser(c)
 	audit(admin.ID, "user.activate", fmt.Sprintf("target=%s", id))
@@ -273,7 +416,7 @@ func activateUser(c *gin.Context) {
 	// Notify user via WebSocket
 	ws.M.SendToUser(user.ID, "user.activated", nil)
 
-	c.JSON(http.StatusOK, userResponse(&user))
+	c.JSON(http.StatusOK, userResponse(user))
 }
 
 func deleteUser(c *gin.Context) {
@@ -285,17 +428,27 @@ func deleteUser(c *gin.Context) {
 		return
 	}
 
-	result, err := database.DB.Exec("DELETE FROM users WHERE id = ?", id)
-	if err != nil {
-		log.Printf("DB delete error in deleteUser: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+	var targetID int
+	if _, err := fmt.Sscanf(id, "%d", &targetID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid user id"})
 		return
 	}
-	affected, _ := result.RowsAffected()
-	if affected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "User not found"})
+
+	if err := deleteUserAccount(targetID, user.ID, false); err != nil {
+		var blocked userDeletionBlockedError
+		var adminBlocked userDeletionAdminError
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			c.JSON(http.StatusNotFound, gin.H{"detail": "User not found"})
+		case errors.As(err, &adminBlocked):
+			c.JSON(http.StatusConflict, gin.H{"detail": adminBlocked.Error(), "code": "account_deletion_admin_forbidden"})
+		case errors.As(err, &blocked):
+			c.JSON(http.StatusConflict, gin.H{"detail": blocked.Error(), "code": "account_deletion_active_checkouts", "active_checkouts": blocked.activeCheckouts})
+		default:
+			log.Printf("DB delete error in deleteUser: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+		}
 		return
 	}
-	audit(user.ID, "user.delete", fmt.Sprintf("target_user=%s", id))
 	c.Status(http.StatusNoContent)
 }

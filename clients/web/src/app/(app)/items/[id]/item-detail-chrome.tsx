@@ -392,7 +392,7 @@ export function ItemCheckoutActiveBanner({
 }) {
   if (!item.checked_out_to) return null;
   const checkoutUsers = item.checked_out_to.users || [];
-  const primaryUserName = checkoutUsers[0]?.user_name || item.checked_out_to.user_name || `User #${item.checked_out_to.user_id}`;
+  const primaryUserName = checkoutUsers[0]?.user_name || item.checked_out_to.user_name || t("users.deletedUser");
   const checkoutLabel = checkoutUsers.length > 1 ? `${primaryUserName} +${checkoutUsers.length - 1}` : primaryUserName;
   const includedComponentIDs = new Set(item.checked_out_to.component_ids || []);
   const includedComponents = (item.components || []).filter((component) => includedComponentIDs.has(component.id));
@@ -432,7 +432,7 @@ export function ItemCheckoutActiveBanner({
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-emerald-950 dark:text-emerald-100">
-                          {entry.user_name || `User #${entry.user_id}`}
+                          {entry.user_name || t("users.deletedUser")}
                         </p>
                         {entry.due_date ? (
                           <p className="mt-1 text-xs text-emerald-800/80 dark:text-emerald-200/80">

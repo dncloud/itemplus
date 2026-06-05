@@ -350,6 +350,7 @@ class Api {
   // -- User --
   getMe = () => this.get<User>("/user");
   updateMe = (data: { display_name?: string; email?: string }) => this.put<User>("/user", data);
+  deleteMe = () => this.del<void>("/user");
   getUsers = () => this.get<User[]>("/users");
   getInactiveUsers = () => this.get<User[]>("/users/inactive");
   getUsersLookup = () => this.get<{ id: number; name: string }[]>("/users/lookup");

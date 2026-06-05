@@ -39,7 +39,7 @@ import {
   settingsPrimaryButtonClass,
   settingsSecondaryButtonClass,
 } from "./settings-page-meta";
-import { flashStatus, messageFromError } from "./settings-page-status";
+import { flashStatus, messageFromError, messageFromErrorCode } from "./settings-page-status";
 import {
   fetchExternalSourceList,
   fetchInitialSettingsData,
@@ -75,6 +75,9 @@ export default function SettingsPage() {
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [emailDraft, setEmailDraft] = useState("");
   const [accountStatus, setAccountStatus] = useState<string | null>(null);
+  const [deleteAccountStatus, setDeleteAccountStatus] = useState<string | null>(null);
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
   const [locIssues, setLocIssues] = useState<LocationHealthResult | null>(null);
   const [locFixing, setLocFixing] = useState(false);
   const [sessions, setSessions] = useState<DeviceSession[]>([]);
@@ -140,6 +143,27 @@ export default function SettingsPage() {
         setSettingsLoaded(true);
       });
   }, []);
+
+  async function deleteAccount() {
+    try {
+      setDeleteAccountBusy(true);
+      setDeleteAccountStatus(null);
+      await api.deleteMe();
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      setDeleteAccountStatus(t("settings.deleteAccountSuccess"));
+      window.location.assign("/auth");
+    } catch (err) {
+      setDeleteAccountStatus(
+        messageFromErrorCode(err, t("settings.deleteAccountFailed"), {
+          account_deletion_active_checkouts: t("settings.deleteAccountBlocked"),
+          account_deletion_admin_forbidden: t("settings.deleteAccountAdminBlocked"),
+        }),
+      );
+    } finally {
+      setDeleteAccountBusy(false);
+      setShowDeleteAccountConfirm(false);
+    }
+  }
 
   useEffect(() => {
     setSubtitleDraft(brandingSubtitle);
@@ -473,6 +497,55 @@ export default function SettingsPage() {
                 {t("common.save")}
               </button>
               {accountStatus ? <StatusMessage tone={accountStatus === t("settings.accountSaved") ? "success" : "error"}>{accountStatus}</StatusMessage> : null}
+            </div>
+            <div className="rounded-xl border border-red-200/80 bg-red-50/60 p-4 dark:border-red-500/20 dark:bg-red-500/5">
+              <div className="space-y-2">
+                <h3 className="text-sm/6 font-semibold text-red-700 dark:text-red-300">{t("settings.deleteAccountTitle")}</h3>
+                <p className="text-sm/6 text-red-700/80 dark:text-red-200/80">{t("settings.deleteAccountDescription")}</p>
+                {me.is_admin ? (
+                  <p className="pt-2 text-sm/6 text-red-700 dark:text-red-200">{t("settings.deleteAccountAdminBlocked")}</p>
+                ) : showDeleteAccountConfirm ? (
+                  <div className="space-y-3 pt-2">
+                    <p className="text-sm/6 text-red-700 dark:text-red-200">{t("settings.deleteAccountPrompt")}</p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        onClick={() => void deleteAccount()}
+                        disabled={deleteAccountBusy}
+                        className={`${settingsDangerButtonClass} disabled:opacity-50`}
+                      >
+                        {deleteAccountBusy ? t("common.loading") : t("settings.deleteAccountConfirm")}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowDeleteAccountConfirm(false);
+                          setDeleteAccountStatus(null);
+                        }}
+                        disabled={deleteAccountBusy}
+                        className={settingsSecondaryButtonClass}
+                      >
+                        {t("settings.deleteAccountCancel")}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="pt-2">
+                    <button
+                      onClick={() => {
+                        setDeleteAccountStatus(null);
+                        setShowDeleteAccountConfirm(true);
+                      }}
+                      className={settingsDangerButtonClass}
+                    >
+                      {t("settings.deleteAccountConfirm")}
+                    </button>
+                  </div>
+                )}
+                {deleteAccountStatus ? (
+                  <StatusMessage tone={deleteAccountStatus === t("settings.deleteAccountSuccess") ? "success" : "error"}>
+                    {deleteAccountStatus}
+                  </StatusMessage>
+                ) : null}
+              </div>
             </div>
           </SettingsCard>
         ) : null}

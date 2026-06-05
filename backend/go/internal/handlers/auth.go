@@ -98,8 +98,7 @@ func resolvedLoginEmail(explicit *string, fallback string) *string {
 }
 
 func createUserForLogin(appleSub string, email *string, displayName *string) (*middleware.User, bool, error) {
-	var count int
-	database.DB.Get(&count, "SELECT COUNT(*) FROM users")
+	count := countVisibleUsers()
 	isFirst := count == 0
 	isActive := isFirst || config.C.AutoActivated
 	now := database.TimestampNow()
@@ -157,6 +156,7 @@ func appleLogin(c *gin.Context) {
 		IdentityToken string  `json:"identity_token"`
 		Email         *string `json:"email"`
 		DisplayName   *string `json:"display_name"`
+		CreateAccount *bool   `json:"create_account"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
@@ -171,9 +171,10 @@ func appleLogin(c *gin.Context) {
 	}
 
 	appleSub := claims.Subject
+	createAccount := body.CreateAccount == nil || *body.CreateAccount
 
 	var user middleware.User
-	err = database.DB.Get(&user, "SELECT * FROM users WHERE apple_sub = ?", appleSub)
+	err = database.DB.Get(&user, "SELECT * FROM users WHERE apple_sub = ? AND "+visibleUsersWhereClause(""), appleSub)
 	if err != nil {
 		// Try matching by email (e.g. seed user with placeholder apple_sub)
 		email := body.Email
@@ -181,7 +182,7 @@ func appleLogin(c *gin.Context) {
 			email = &claims.Email
 		}
 		if email != nil && *email != "" {
-			if emailErr := database.DB.Get(&user, "SELECT * FROM users WHERE email = ?", *email); emailErr == nil {
+			if emailErr := database.DB.Get(&user, "SELECT * FROM users WHERE email = ? AND "+visibleUsersWhereClause(""), *email); emailErr == nil {
 				// Found by email — update apple_sub to real one
 				database.DB.Exec("UPDATE users SET apple_sub = ? WHERE id = ?", appleSub, user.ID)
 				user.AppleSub = appleSub
@@ -189,8 +190,17 @@ func appleLogin(c *gin.Context) {
 			}
 		}
 	}
-	if err != nil {
+	if err == sql.ErrNoRows {
 		email := resolvedLoginEmail(body.Email, claims.Email)
+		if !createAccount {
+			c.JSON(http.StatusNotFound, gin.H{
+				"detail":       "No account exists for this identity",
+				"code":         "account_not_found",
+				"email":        email,
+				"display_name": body.DisplayName,
+			})
+			return
+		}
 		createdUser, _, insertErr := createUserForLogin(appleSub, email, body.DisplayName)
 		if insertErr != nil {
 			log.Printf("Apple login user insert failed: %v", insertErr)
@@ -198,6 +208,10 @@ func appleLogin(c *gin.Context) {
 			return
 		}
 		user = *createdUser
+	} else if err != nil {
+		log.Printf("Apple login user lookup failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Benutzer konnte nicht geladen werden"})
+		return
 	}
 
 	database.DB.Exec("UPDATE users SET last_login = ? WHERE id = ?", database.TimestampNow(), user.ID)
@@ -256,7 +270,7 @@ func magicLinkRequest(c *gin.Context) {
 
 	// Check if user exists
 	var existing middleware.User
-	isNew := database.DB.Get(&existing, "SELECT * FROM users WHERE email = ?", email) != nil
+	isNew := database.DB.Get(&existing, "SELECT * FROM users WHERE email = ? AND "+visibleUsersWhereClause(""), email) != nil
 
 	sent := services.SendMagicLink(email, token, isNew)
 	if !sent {
@@ -301,7 +315,7 @@ func magicLinkVerify(c *gin.Context) {
 	}
 
 	var user middleware.User
-	err = database.DB.Get(&user, "SELECT * FROM users WHERE email = ?", ml.Email)
+	err = database.DB.Get(&user, "SELECT * FROM users WHERE email = ? AND "+visibleUsersWhereClause(""), ml.Email)
 	if err == sql.ErrNoRows {
 		createdUser, _, insertErr := createUserForLogin("magic_"+ml.Email, &ml.Email, nil)
 		if insertErr != nil {

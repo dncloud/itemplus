@@ -44,7 +44,7 @@ func RegisterWebSocketRoute(r *gin.Engine) {
 }
 
 func loadActiveUserFlags(userID int) (isActive, isAdmin bool, err error) {
-	err = database.DB.QueryRow("SELECT is_active, is_admin FROM users WHERE id = ?", userID).Scan(&isActive, &isAdmin)
+	err = database.DB.QueryRow("SELECT is_active, is_admin FROM users WHERE id = ? AND "+visibleUsersWhereClause(""), userID).Scan(&isActive, &isAdmin)
 	return
 }
 
@@ -571,7 +571,11 @@ func doDeleteEntity(userID, targetSession int, realm, entityType string, entityI
 		if !checkUserPermission(userID, "__admin_only__") {
 			return
 		}
-		database.DB.Exec("DELETE FROM users WHERE id = ?", entityID)
+		if err := deleteUserAccount(entityID, userID, false); err != nil {
+			log.Printf("WS user delete error: %v", err)
+			sendDeleteRejected(userID, targetSession, entityID, entityType)
+			return
+		}
 	} else {
 		suffix, ok := entityTableMap[entityType]
 		if !ok {

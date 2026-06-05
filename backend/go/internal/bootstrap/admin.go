@@ -12,7 +12,7 @@ import (
 
 func EnsureInitialAdmin() {
 	var count int
-	if err := database.DB.Get(&count, "SELECT COUNT(*) FROM users"); err != nil {
+	if err := database.DB.Get(&count, "SELECT COUNT(*) FROM users WHERE apple_sub NOT LIKE 'deleted_user_%'"); err != nil {
 		log.Fatalf("Failed to check user count: %v", err)
 	}
 	if count > 0 {

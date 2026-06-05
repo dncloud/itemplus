@@ -12,10 +12,14 @@ import {
 } from "@/app/(app)/items/items-page-utils";
 import { buildPaginationPages } from "@/app/(app)/items/items-page-navigation";
 
-function renderRequestBadge(itemId: number, pendingRequestsByItem: Record<number, CheckoutRequest[]>) {
+function renderRequestBadge(
+  itemId: number,
+  pendingRequestsByItem: Record<number, CheckoutRequest[]>,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
   const requests = pendingRequestsByItem[itemId];
   if (!requests?.length) return null;
-  const names = requests.map((request) => request.user_name || `User #${request.user_id}`);
+  const names = requests.map((request) => request.user_name || t("users.deletedUser"));
   const label = requests.length === 1 ? names[0] : `${names[0]} +${requests.length - 1}`;
   return (
     <span className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 shrink-0">
@@ -27,7 +31,7 @@ function renderRequestBadge(itemId: number, pendingRequestsByItem: Record<number
 function renderCheckoutBadge(item: Item, t: (key: string, vars?: Record<string, string | number>) => string) {
   if (!item.checked_out_to) return null;
   const users = item.checked_out_to.users || [];
-  const primaryName = users[0]?.user_name?.trim() || item.checked_out_to.user_name?.trim() || `User #${item.checked_out_to.user_id}`;
+  const primaryName = users[0]?.user_name?.trim() || item.checked_out_to.user_name?.trim() || t("users.deletedUser");
   const label = users.length > 1 ? `${primaryName} +${users.length - 1}` : primaryName;
   return (
     <span className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300 shrink-0">
@@ -175,7 +179,7 @@ export function ItemsGrid({
                 <div className="mb-2 flex flex-wrap items-start gap-1.5">
                   {renderBundleBadge(item, t)}
                   {renderStatusBadge(item, t)}
-                  {renderRequestBadge(item.id, pendingRequestsByItem)}
+                  {renderRequestBadge(item.id, pendingRequestsByItem, t)}
                   {renderCheckoutBadge(item, t)}
                 </div>
               ) : null}
