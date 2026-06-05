@@ -70,14 +70,14 @@ export function AppShellHeader({
           </button>
 
           <div className="flex items-center gap-2">
-            <ConnectionPill
+            <ConnectionStatusIcon
               label="iPhone"
               status={iosBridgeStatus}
               icon={DevicePhoneMobileIcon}
               t={t}
             />
             {showPrinterStatus ? (
-              <ConnectionPill
+              <ConnectionStatusIcon
                 label={t("settings.printerTitle")}
                 status={printerBridgeStatus}
                 icon={PrinterIcon}
@@ -91,7 +91,7 @@ export function AppShellHeader({
   );
 }
 
-function ConnectionPill({
+function ConnectionStatusIcon({
   label,
   status,
   icon: Icon,
@@ -102,20 +102,21 @@ function ConnectionPill({
   icon: ComponentType<{ className?: string }>;
   t: (key: string) => string;
 }) {
+  const isConnected = status === "connected";
+  const stateLabel = isConnected ? t("settings.connected") : t("settings.disconnected");
+
   return (
     <div
+      title={`${label}: ${stateLabel}`}
+      aria-label={`${label}: ${stateLabel}`}
       className={clsx(
-        "inline-flex items-center gap-x-2 rounded-full border px-3 py-1.5 text-xs font-medium",
-        status === "connected"
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-          : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
+        "inline-flex h-9 w-9 items-center justify-center rounded-full border transition",
+        isConnected
+          ? "border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400"
+          : "border-red-200 bg-red-50 text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400",
       )}
     >
       <Icon className="size-4 shrink-0" />
-      <span className="hidden sm:inline">
-        {label} {status === "connected" ? t("settings.connected") : t("settings.disconnected")}
-      </span>
-      <span className="sm:hidden">{label}</span>
     </div>
   );
 }

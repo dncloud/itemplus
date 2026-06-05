@@ -46,14 +46,16 @@ func userResponse(user *middleware.User) gin.H {
 		"created_at":  user.CreatedAt,
 	}
 
-	// Include last session info (last_ip, last_device)
+	// Include last session info separately from the auth login timestamp.
 	var lastSession struct {
 		IPAddress  *string `db:"ip_address"`
 		DeviceName *string `db:"device_name"`
 		DeviceType *string `db:"device_type"`
+		LastSeen   *string `db:"last_seen"`
+		IsOnline   bool    `db:"is_online"`
 	}
 	if err := database.DB.Get(&lastSession,
-		"SELECT ip_address, device_name, device_type FROM device_sessions WHERE user_id = ? ORDER BY last_seen DESC LIMIT 1",
+		"SELECT ip_address, device_name, device_type, last_seen, is_online FROM device_sessions WHERE user_id = ? ORDER BY last_seen DESC LIMIT 1",
 		user.ID,
 	); err == nil {
 		resp["last_ip"] = lastSession.IPAddress
@@ -62,6 +64,8 @@ func userResponse(user *middleware.User) gin.H {
 		} else {
 			resp["last_device"] = lastSession.DeviceType
 		}
+		resp["last_session_seen"] = lastSession.LastSeen
+		resp["last_session_online"] = lastSession.IsOnline
 	}
 
 	return resp

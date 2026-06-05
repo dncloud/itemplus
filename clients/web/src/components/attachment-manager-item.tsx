@@ -37,6 +37,7 @@ export function SortableAttachment({
   t,
   onEdit,
   onDelete,
+  pendingDelete = false,
   readOnly = false,
 }: {
   attachment: Attachment;
@@ -44,6 +45,7 @@ export function SortableAttachment({
   t: (key: string) => string;
   onEdit: () => void;
   onDelete: () => void;
+  pendingDelete?: boolean;
   readOnly?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: att.id });
@@ -126,8 +128,16 @@ export function SortableAttachment({
             <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
               <PencilIcon className="h-4 w-4 text-gray-400" />
             </button>
-            <button onClick={onDelete} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
-              <TrashIcon className="h-4 w-4 text-red-400" />
+            <button
+              onClick={onDelete}
+              disabled={pendingDelete}
+              className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              {pendingDelete ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+              ) : (
+                <TrashIcon className="h-4 w-4 text-red-400" />
+              )}
             </button>
           </>
         ) : null}

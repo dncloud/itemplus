@@ -106,6 +106,7 @@ export default function UsersPage() {
   const inactive = users.filter((u) => !u.is_active);
   const active = users.filter((u) => u.is_active);
   const permissionLabels = buildPermissionLabels(t);
+  const pendingDeleteUserId = deleteFlow.pending?.type === "user" ? deleteFlow.pending.id : null;
 
   return (
     <div className="space-y-8">
@@ -132,7 +133,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      <PendingUsersSection inactive={inactive} fmtDate={fmtDate} t={t} activateUser={activateUser} deleteUser={deleteUser} />
+      <PendingUsersSection inactive={inactive} fmtDate={fmtDate} t={t} activateUser={activateUser} deleteUser={deleteUser} pendingDeleteUserId={pendingDeleteUserId} />
 
       <ActiveUsersSection
         loading={loading}
@@ -145,6 +146,7 @@ export default function UsersPage() {
         t={t}
         updateUser={updateUser}
         deleteUser={deleteUser}
+        pendingDeleteUserId={pendingDeleteUserId}
       />
 
       {/* Confirm Delete */}

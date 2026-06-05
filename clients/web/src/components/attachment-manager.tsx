@@ -80,6 +80,7 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
   const images = sorted.filter(isGalleryImage);
   const others = sorted.filter((a) => !isGalleryImage(a));
   const hero = images[0];
+  const pendingDeleteAttachmentId = deleteFlow.pending?.type === "attachment" ? deleteFlow.pending.id : null;
 
   useEffect(() => {
     loadAttachmentExternalSources().then(setExternalSources);
@@ -165,8 +166,16 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
                 <button onClick={() => setEditAtt(hero)} className="p-1.5 bg-black/50 rounded-full">
                   <PencilIcon className="h-4 w-4 text-white" />
                 </button>
-                <button onClick={() => remove(hero.id)} className="p-1.5 bg-black/50 rounded-full">
-                  <XMarkIcon className="h-4 w-4 text-white" />
+                <button
+                  onClick={() => remove(hero.id)}
+                  disabled={pendingDeleteAttachmentId === hero.id}
+                  className="p-1.5 bg-black/50 rounded-full disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {pendingDeleteAttachmentId === hero.id ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  ) : (
+                    <XMarkIcon className="h-4 w-4 text-white" />
+                  )}
                 </button>
               </div>
             )}
@@ -192,8 +201,16 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
                       <button onClick={() => setEditAtt(att)} className="p-1.5 bg-white/20 rounded-full pointer-events-auto">
                         <PencilIcon className="h-3.5 w-3.5 text-white" />
                       </button>
-                      <button onClick={() => remove(att.id)} className="p-1.5 bg-white/20 rounded-full pointer-events-auto">
-                        <XMarkIcon className="h-3.5 w-3.5 text-white" />
+                      <button
+                        onClick={() => remove(att.id)}
+                        disabled={pendingDeleteAttachmentId === att.id}
+                        className="p-1.5 bg-white/20 rounded-full pointer-events-auto disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {pendingDeleteAttachmentId === att.id ? (
+                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        ) : (
+                          <XMarkIcon className="h-3.5 w-3.5 text-white" />
+                        )}
                       </button>
                     </div>
                   )}
@@ -262,6 +279,7 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
                     t={t}
                     onEdit={() => setEditAtt(att)}
                     onDelete={() => remove(att.id)}
+                    pendingDelete={pendingDeleteAttachmentId === att.id}
                     readOnly={readOnly}
                   />
                 ))}

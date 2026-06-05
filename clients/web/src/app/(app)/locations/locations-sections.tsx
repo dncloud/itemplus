@@ -22,6 +22,7 @@ export function SortableLocation({
   onPrintQR,
   canWrite,
   canDelete,
+  pendingDelete = false,
   canPrint,
   fmtDateTime,
   t,
@@ -38,6 +39,7 @@ export function SortableLocation({
   onPrintQR: () => void;
   canWrite: boolean;
   canDelete: boolean;
+  pendingDelete?: boolean;
   canPrint: boolean;
   fmtDateTime: (v: string) => string;
   t: (k: string) => string;
@@ -73,7 +75,19 @@ export function SortableLocation({
           {canPrint ? <button onClick={onPrintQR} title={t("common.print")} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><PrinterIcon className="h-4 w-4 text-gray-400" /></button> : null}
           <button onClick={onShowItems} title="Items" className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><CubeIcon className="h-4 w-4 text-gray-400" /></button>
           {canWrite ? <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><PencilIcon className="h-4 w-4 text-gray-400" /></button> : null}
-          {canDelete ? <button onClick={onDelete} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20"><TrashIcon className="h-4 w-4 text-red-400" /></button> : null}
+          {canDelete ? (
+            <button
+              onClick={onDelete}
+              disabled={pendingDelete}
+              className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:hover:bg-red-900/20"
+            >
+              {pendingDelete ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+              ) : (
+                <TrashIcon className="h-4 w-4 text-red-400" />
+              )}
+            </button>
+          ) : null}
         </div>
       </div>
       {!isDragging ? children : null}
@@ -92,6 +106,7 @@ export function SortableNestedLocation({
   onPrintQR,
   canWrite,
   canDelete,
+  pendingDelete = false,
   canPrint,
   fmtDateTime,
   t,
@@ -107,6 +122,7 @@ export function SortableNestedLocation({
   onPrintQR: () => void;
   canWrite: boolean;
   canDelete: boolean;
+  pendingDelete?: boolean;
   canPrint: boolean;
   fmtDateTime: (v: string) => string;
   t: (k: string) => string;
@@ -138,7 +154,19 @@ export function SortableNestedLocation({
           </button>
           {canPrint ? <button onClick={onPrintQR} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10" title={t("common.print")}><PrinterIcon className="h-3.5 w-3.5 text-gray-400" /></button> : null}
           {canWrite ? <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10"><PencilIcon className="h-3.5 w-3.5 text-gray-400" /></button> : null}
-          {canDelete ? <button onClick={onDelete} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20"><TrashIcon className="h-3.5 w-3.5 text-red-400" /></button> : null}
+          {canDelete ? (
+            <button
+              onClick={onDelete}
+              disabled={pendingDelete}
+              className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:hover:bg-red-900/20"
+            >
+              {pendingDelete ? (
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+              ) : (
+                <TrashIcon className="h-3.5 w-3.5 text-red-400" />
+              )}
+            </button>
+          ) : null}
         </div>
         {!isDragging ? children : null}
       </div>
@@ -159,6 +187,7 @@ export function RecursiveNestedLocation({
   onPrintQR,
   canWrite,
   canDelete,
+  pendingDeleteId,
   canPrint,
   fmtDateTime,
   editLoc,
@@ -181,6 +210,7 @@ export function RecursiveNestedLocation({
   onPrintQR: (id: number) => void;
   canWrite: boolean;
   canDelete: boolean;
+  pendingDeleteId: number | null;
   canPrint: boolean;
   fmtDateTime: (v: string) => string;
   editLoc: Partial<Location> | null;
@@ -201,6 +231,7 @@ export function RecursiveNestedLocation({
       onToggle={() => toggle(location.id)}
       onEdit={() => onEdit(location)}
       onDelete={() => onDelete(location.id)}
+      pendingDelete={pendingDeleteId === location.id}
       onShowItems={() => onShowItems(location.id)}
       onPrintQR={() => onPrintQR(location.id)}
       canWrite={canWrite}
@@ -229,6 +260,7 @@ export function RecursiveNestedLocation({
                   toggle={toggle}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  pendingDeleteId={pendingDeleteId}
                   onShowItems={onShowItems}
                   onPrintQR={onPrintQR}
                   canWrite={canWrite}

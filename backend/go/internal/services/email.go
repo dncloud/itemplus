@@ -31,7 +31,6 @@ func SendMagicLink(email, token string, isNewUser bool) bool {
 		subject = "item+ - Complete registration"
 		headline = "Complete your item+ registration"
 		intro = "You were invited to create an account for item+."
-		note = "After registration, an administrator still needs to activate your account before you can get started."
 		btn = "Complete registration"
 	}
 

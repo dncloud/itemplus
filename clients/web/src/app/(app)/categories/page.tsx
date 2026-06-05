@@ -125,6 +125,8 @@ export default function CategoriesPage() {
   });
 
   const propertyTypes = getPropertyTypes(t);
+  const pendingCategoryDeleteId = deleteFlow.pending?.type === "category" ? deleteFlow.pending.id : null;
+  const pendingPropertyDeleteId = deleteFlow.pending?.type === "property" ? deleteFlow.pending.id : null;
   const hasCategoryAIInfo =
     categoryAIBusy ||
     !!categoryAIStatus ||
@@ -501,6 +503,7 @@ export default function CategoriesPage() {
                 canReorder={canWriteCategories}
                 canEdit={canWriteCategories}
                 canDelete={canDeleteCategories}
+                pendingDelete={pendingCategoryDeleteId === cat.id}
                 canShowItems={canReadItems}
                 fmtDateTime={fmtDateTime}
                 t={t}
@@ -574,6 +577,7 @@ export default function CategoriesPage() {
                                 canReorder={canWriteCategories}
                                 canEdit={canWriteCategories}
                                 canDelete={canDeleteCategories}
+                                pendingDelete={pendingPropertyDeleteId === prop.id}
                                 canToggleVisibility={canWriteCategories}
                                 t={t}
                               >

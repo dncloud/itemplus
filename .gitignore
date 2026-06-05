@@ -51,3 +51,6 @@ DerivedData/
 *.temp
 
 .assistant/
+_site/
+.gocache/
+clients/ios/build/

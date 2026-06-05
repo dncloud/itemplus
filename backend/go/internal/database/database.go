@@ -52,6 +52,14 @@ func ReconnectConfigured() error {
 	return nil
 }
 
+func MarkAllDeviceSessionsOffline() error {
+	if DB == nil {
+		return nil
+	}
+	_, err := DB.Exec("UPDATE device_sessions SET is_online = 0")
+	return err
+}
+
 func CurrentDriver() string {
 	return adapterForURL(config.C.DatabaseURL).driverName()
 }

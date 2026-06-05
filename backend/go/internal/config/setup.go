@@ -11,6 +11,7 @@ import (
 type SetupValues struct {
 	AppDomain        string `json:"app_domain"`
 	MagicLinkBaseURL string `json:"magic_link_base_url"`
+	AutoActivated    bool   `json:"auto_activated"`
 	CORSOrigins      string `json:"cors_origins"`
 	TrustedProxies   string `json:"trusted_proxies"`
 	DatabaseURL      string `json:"database_url"`
@@ -36,6 +37,7 @@ func CurrentSetupValues() SetupValues {
 	return SetupValues{
 		AppDomain:        C.AppDomain,
 		MagicLinkBaseURL: C.MagicLinkBaseURL,
+		AutoActivated:    C.AutoActivated,
 		CORSOrigins:      string(corsJSON),
 		TrustedProxies:   strings.Join(C.TrustedProxies, ","),
 		DatabaseURL:      C.DatabaseURL,
@@ -59,6 +61,7 @@ func SaveSetupValues(values SetupValues, complete bool) error {
 	updates := map[string]string{
 		"APP_DOMAIN":                strings.TrimSpace(values.AppDomain),
 		"MAGIC_LINK_BASE_URL":       strings.TrimSpace(values.MagicLinkBaseURL),
+		"AUTO_ACTIVATED":            strconv.FormatBool(values.AutoActivated),
 		"CORS_ORIGINS":              strings.TrimSpace(values.CORSOrigins),
 		"TRUSTED_PROXIES":           strings.TrimSpace(values.TrustedProxies),
 		"DATABASE_URL":              strings.TrimSpace(values.DatabaseURL),
@@ -146,6 +149,7 @@ func updateConfigFile(path string, updates map[string]string, removeKeys []strin
 	appendOrder := []string{
 		"APP_DOMAIN",
 		"MAGIC_LINK_BASE_URL",
+		"AUTO_ACTIVATED",
 		"CORS_ORIGINS",
 		"TRUSTED_PROXIES",
 		"DATABASE_URL",

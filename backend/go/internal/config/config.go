@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,6 +23,7 @@ type Config struct {
 	Debug         bool
 	DebugHTTP     bool
 	SetupRequired bool
+	AutoActivated bool
 
 	DatabaseURL string
 
@@ -70,6 +72,7 @@ var managedConfigEnvKeys = []string{
 	"APP_DOMAIN",
 	"DEBUG",
 	"DEBUG_HTTP",
+	"AUTO_ACTIVATED",
 	"DATABASE_URL",
 	"JWT_SECRET",
 	"JWT_ALGORITHM",
@@ -170,6 +173,76 @@ func RequestCameThroughTrustedProxy(remoteAddr string) bool {
 	return false
 }
 
+func ResolveClientIP(remoteAddr string, headers http.Header) string {
+	fallback := remoteIPHost(remoteAddr)
+	if !RequestCameThroughTrustedProxy(remoteAddr) {
+		return fallback
+	}
+
+	for _, headerName := range []string{"CF-Connecting-IP", "True-Client-IP", "X-Real-IP"} {
+		if ip := normalizeForwardedCandidate(headers.Get(headerName)); ip != "" {
+			return ip
+		}
+	}
+	if ip := firstForwardedIP(headers.Get("X-Forwarded-For")); ip != "" {
+		return ip
+	}
+	if ip := firstForwardedIP(headers.Get("Forwarded")); ip != "" {
+		return ip
+	}
+	return fallback
+}
+
+func remoteIPHost(remoteAddr string) string {
+	host := trimSpace(remoteAddr)
+	if h, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		host = h
+	}
+	return strings.Trim(host, "[]")
+}
+
+func firstForwardedIP(raw string) string {
+	for _, part := range strings.Split(raw, ",") {
+		if ip := normalizeForwardedCandidate(part); ip != "" {
+			return ip
+		}
+	}
+	return ""
+}
+
+func normalizeForwardedCandidate(raw string) string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.Trim(raw, "\"")
+	if raw == "" || strings.EqualFold(raw, "unknown") {
+		return ""
+	}
+	if strings.Contains(raw, ";") {
+		for _, field := range strings.Split(raw, ";") {
+			field = strings.TrimSpace(field)
+			if strings.HasPrefix(strings.ToLower(field), "for=") {
+				raw = strings.TrimSpace(field[4:])
+				raw = strings.Trim(strings.TrimSpace(raw), "\"")
+				break
+			}
+		}
+	}
+	if len(raw) >= 4 && strings.EqualFold(raw[:4], "for=") {
+		raw = raw[4:]
+	}
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "[") && strings.Contains(raw, "]") {
+		return strings.Trim(strings.SplitN(raw, "]", 2)[0], "[]")
+	}
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		raw = host
+	}
+	raw = strings.Trim(raw, "[]")
+	if ip := net.ParseIP(raw); ip != nil {
+		return ip.String()
+	}
+	return ""
+}
+
 func Load() {
 	envPath, envBaseDir := loadEnv()
 	dataDir := defaultDataDir(envBaseDir)
@@ -184,6 +257,7 @@ func Load() {
 		Debug:         envBool("DEBUG"),
 		DebugHTTP:     envBool("DEBUG_HTTP"),
 		SetupRequired: envStr("ITEMPLUS_SETUP_REQUIRED", "") != "",
+		AutoActivated: envBoolDefault("AUTO_ACTIVATED", true),
 
 		DatabaseURL: normalizeDatabaseURL(envStr("DATABASE_URL", "sqlite+aiosqlite:///"+filepath.Join(dataDir, "itemplus.db")), envBaseDir),
 
@@ -352,6 +426,14 @@ func envStrTrimmed(key, fallback string) string {
 
 func envBool(key string) bool {
 	v := strings.ToLower(envStrTrimmed(key, ""))
+	return v == "true" || v == "1"
+}
+
+func envBoolDefault(key string, fallback bool) bool {
+	v := strings.ToLower(envStrTrimmed(key, ""))
+	if v == "" {
+		return fallback
+	}
 	return v == "true" || v == "1"
 }
 

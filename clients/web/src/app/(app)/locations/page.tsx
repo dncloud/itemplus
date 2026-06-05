@@ -145,6 +145,7 @@ export default function LocationsPage() {
   const roots = getRootLocations(locations);
   const childrenOf = (parentId: number) => getChildLocations(locations, parentId);
   const canPrintActions = can("print") && showPrintFeatures && printerBridgeStatus === "connected";
+  const pendingDeleteLocationId = deleteFlow.pending?.type === "location" ? deleteFlow.pending.id : null;
 
   const startEditLocation = (loc: Location) => {
     if (editLoc?.id === loc.id && !isNew) {
@@ -176,6 +177,7 @@ export default function LocationsPage() {
             onToggle={() => toggle(loc.id)}
             onEdit={() => startEditLocation(loc)}
             onDelete={() => remove(loc.id)}
+            pendingDelete={pendingDeleteLocationId === loc.id}
             onShowItems={() => router.push(`/items?location=${loc.id}`)}
             onPrintQR={() => {
               void printLocationQR(loc.id);
@@ -216,6 +218,7 @@ export default function LocationsPage() {
                             onToggle={() => toggle(child.id)}
                             onEdit={() => startEditLocation(child)}
                             onDelete={() => remove(child.id)}
+                            pendingDelete={pendingDeleteLocationId === child.id}
                             onShowItems={() => router.push(`/items?location=${child.id}`)}
                             onPrintQR={() => {
                               void printLocationQR(child.id);
@@ -255,6 +258,7 @@ export default function LocationsPage() {
                                         toggle={toggle}
                                         onEdit={startEditLocation}
                                         onDelete={(id) => remove(id)}
+                                        pendingDeleteId={pendingDeleteLocationId}
                                         onShowItems={(id) => router.push(`/items?location=${id}`)}
                                         onPrintQR={(id) => {
                                           void printLocationQR(id);

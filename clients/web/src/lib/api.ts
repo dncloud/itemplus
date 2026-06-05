@@ -512,6 +512,8 @@ export interface User {
   permissions?: string[];
   last_ip?: string;
   last_device?: string;
+  last_session_seen?: string;
+  last_session_online?: boolean;
   is_active: boolean;
   last_login?: string;
   created_at?: string;

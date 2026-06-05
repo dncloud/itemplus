@@ -126,6 +126,13 @@ func (m *Manager) HasIOSDevices(userID int) bool {
 	return false
 }
 
+func (m *Manager) HasSession(sessionID int) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, ok := m.connections[sessionID]
+	return ok
+}
+
 func (m *Manager) SessionBelongsToUser(sessionID, userID int) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

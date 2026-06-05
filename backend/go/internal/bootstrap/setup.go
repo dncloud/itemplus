@@ -19,6 +19,7 @@ import (
 type setupDraft struct {
 	AppDomain        string
 	MagicLinkBaseURL string
+	AutoActivated    bool
 	CORSOrigins      string
 	TrustedProxies   string
 	DatabaseURL      string
@@ -54,6 +55,7 @@ func RunInitialSetup() error {
 	draft := setupDraft{
 		AppDomain:        current.AppDomain,
 		MagicLinkBaseURL: current.MagicLinkBaseURL,
+		AutoActivated:    current.AutoActivated,
 		CORSOrigins:      current.CORSOrigins,
 		TrustedProxies:   current.TrustedProxies,
 		DatabaseURL:      current.DatabaseURL,
@@ -90,6 +92,10 @@ func RunInitialSetup() error {
 				Title("Magic link base URL").
 				Description("Must include http:// or https://, for example https://itemplus.example.com. Leave empty to derive it automatically from the app domain.").
 				Value(&draft.MagicLinkBaseURL),
+			huh.NewConfirm().
+				Title("Automatically activate new users?").
+				Description("When enabled, new Apple and magic-link users can sign in immediately. Permissions still decide what they may actually do.").
+				Value(&draft.AutoActivated),
 			huh.NewInput().
 				Title("CORS origins").
 				Description(`JSON array, for example ["https://itemplus.example.com"] or ["*"] for local development.`).
@@ -261,6 +267,7 @@ func (d setupDraft) toSetupValues() (config.SetupValues, error) {
 	return config.SetupValues{
 		AppDomain:        trim(d.AppDomain),
 		MagicLinkBaseURL: trim(d.MagicLinkBaseURL),
+		AutoActivated:    d.AutoActivated,
 		CORSOrigins:      trim(d.CORSOrigins),
 		TrustedProxies:   trim(d.TrustedProxies),
 		DatabaseURL:      trim(d.DatabaseURL),

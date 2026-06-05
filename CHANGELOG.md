@@ -17,11 +17,23 @@
 - Improved light-mode contrast for item detail checkout banners and related status surfaces so TWP-inspired light styling stays readable.
 - Fixed category location ordering persistence for both top-level locations and nested child locations.
 - Added a reusable floating notification component for richer in-app feedback patterns.
+- Added consistent pending-delete spinners for users, categories, locations, vendors, and attachments so iPhone-confirmed deletes now visibly wait everywhere instead of only on items.
 
 ### iOS app
 - Switched the home screen browser activity area from horizontal scrolling pills to a clearer vertical session list.
 - Replaced the plain delete-confirm popup for remote web-triggered deletes with a custom-styled in-app confirmation overlay.
 - Fixed multiple Swift 6 concurrency issues in the printer bridge service around sendable closures, finish-state handling, and pointer access.
+- Reworked the scanner overlay with a darker masked camera preview, cleaner centered cutout, and calmer header styling.
+- Polished the login flow for App Store review with a configurable default server, clearer server settings, earlier language selection, and a localized Apple sign-in button.
+
+### Authentication and review readiness
+- Added `AUTO_ACTIVATED=true|false` to the Go server configuration so new Apple and magic-link users can either become active immediately or still require manual admin activation.
+- Kept the first user bootstrap path as an always-active admin while leaving follow-up account activation configurable per installation.
+- Simplified first-review onboarding by allowing demo and review setups to default to direct sign-in without weakening the permission model.
+
+### Landing and public docs
+- Moved the landing site to a Jekyll-based GitHub Pages layout under `docs`, with matching privacy and imprint pages, DE/EN switching, and refreshed product copy.
+- Updated the landing feature section to better reflect current item+, including bundles, components, managed SFTP attachment sources, and the companion role of the iPhone app.
 
 ## 1.2.3 - 2026-05-30
 

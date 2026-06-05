@@ -73,6 +73,7 @@ export default function VendorsPage() {
     () => filterVendors(allItems, search),
     [allItems, search],
   );
+  const pendingDeleteVendorId = deleteFlow.pending ? deleteFlow.pending.id : null;
 
   const [validationError, setValidationError] = useState<string | null>(null);
   const canWriteVendors = can("vendors.write");
@@ -185,6 +186,7 @@ export default function VendorsPage() {
             setValidationError(null);
           }}
           onDelete={remove}
+          pendingDeleteId={pendingDeleteVendorId}
           canEdit={canWriteVendors}
           canDelete={canDeleteVendors}
           renderEditor={(item) => canWriteVendors && editItem?.id === item.id && !isNew ? (

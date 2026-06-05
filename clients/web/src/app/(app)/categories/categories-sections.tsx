@@ -54,6 +54,7 @@ export function SortableProperty({
   canReorder = true,
   canEdit = true,
   canDelete = true,
+  pendingDelete = false,
   canToggleVisibility = true,
   t,
   children,
@@ -67,6 +68,7 @@ export function SortableProperty({
   canReorder?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
+  pendingDelete?: boolean;
   canToggleVisibility?: boolean;
   t: (k: string) => string;
   children?: React.ReactNode;
@@ -112,8 +114,16 @@ export function SortableProperty({
           </button>
         ) : null}
         {canDelete ? (
-          <button onClick={onDelete} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20">
-            <TrashIcon className="h-3.5 w-3.5 text-red-400" />
+          <button
+            onClick={onDelete}
+            disabled={pendingDelete}
+            className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:hover:bg-red-900/20"
+          >
+            {pendingDelete ? (
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+            ) : (
+              <TrashIcon className="h-3.5 w-3.5 text-red-400" />
+            )}
           </button>
         ) : null}
       </div>
@@ -132,6 +142,7 @@ export function SortableCategory({
   canReorder = true,
   canEdit = true,
   canDelete = true,
+  pendingDelete = false,
   canShowItems = true,
   fmtDateTime,
   t,
@@ -146,6 +157,7 @@ export function SortableCategory({
   canReorder?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
+  pendingDelete?: boolean;
   canShowItems?: boolean;
   fmtDateTime: (v: string) => string;
   t: (k: string) => string;
@@ -186,7 +198,17 @@ export function SortableCategory({
               <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><PencilIcon className="h-4 w-4 text-gray-400" /></button>
             ) : null}
             {canDelete ? (
-              <button onClick={onDelete} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20"><TrashIcon className="h-4 w-4 text-red-400" /></button>
+              <button
+                onClick={onDelete}
+                disabled={pendingDelete}
+                className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:hover:bg-red-900/20"
+              >
+                {pendingDelete ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+                ) : (
+                  <TrashIcon className="h-4 w-4 text-red-400" />
+                )}
+              </button>
             ) : null}
           </div>
         ) : null}

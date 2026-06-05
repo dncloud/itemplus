@@ -101,11 +101,12 @@ func createUserForLogin(appleSub string, email *string, displayName *string) (*m
 	var count int
 	database.DB.Get(&count, "SELECT COUNT(*) FROM users")
 	isFirst := count == 0
+	isActive := isFirst || config.C.AutoActivated
 	now := database.TimestampNow()
 
 	result, err := database.DB.Exec(
 		"INSERT INTO users (apple_sub, email, display_name, is_admin, is_active, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, '[]', ?, ?)",
-		appleSub, email, displayName, isFirst, isFirst, now, now,
+		appleSub, email, displayName, isFirst, isActive, now, now,
 	)
 	if err != nil {
 		return nil, false, err

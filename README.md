@@ -262,7 +262,9 @@ The core workflows are there, the apps work, and the project is actively being r
 
 ## Support
 
-If item+ is useful to you and you want to support ongoing work, you can do that via [GitHub Sponsors](https://github.com/sponsors/dncloud).
+item+ stays free. Good software does not always have to cost money, even when building it takes real work. If the project helps you, you can support it voluntarily via [GitHub Sponsors](https://github.com/sponsors/dncloud).
+
+item+ bleibt kostenlos. Gute Software muss nicht immer etwas kosten, auch wenn ihre Entwicklung echte Arbeit ist. Wenn dir das Projekt hilft, kannst du es freiwillig ueber [GitHub Sponsors](https://github.com/sponsors/dncloud) unterstuetzen.
 
 ## License
 

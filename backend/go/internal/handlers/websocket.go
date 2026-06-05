@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -31,6 +32,12 @@ var upgrader = websocket.Upgrader{
 		return false
 	},
 }
+
+const (
+	wsWriteWait  = 10 * time.Second
+	wsPongWait   = 75 * time.Second
+	wsPingPeriod = 30 * time.Second
+)
 
 func RegisterWebSocketRoute(r *gin.Engine) {
 	r.GET("/ws", handleWebSocket)
@@ -88,7 +95,12 @@ func handleWebSocket(c *gin.Context) {
 		return
 	}
 
-	clientIP := c.ClientIP()
+	_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	})
+
+	clientIP := config.ResolveClientIP(c.Request.RemoteAddr, c.Request.Header)
 
 	// Create or reuse device session
 	var sessionID int64
@@ -137,7 +149,10 @@ func handleWebSocket(c *gin.Context) {
 		"device_name": deviceName,
 	})
 
+	done := make(chan struct{})
+
 	defer func() {
+		close(done)
 		ws.M.Remove(int(sessionID))
 		database.DB.Exec("UPDATE device_sessions SET is_online = 0, last_seen = ? WHERE id = ?", database.TimestampNow(), sessionID)
 		ws.M.SendToUser(userID, "device.disconnected", map[string]interface{}{
@@ -145,6 +160,22 @@ func handleWebSocket(c *gin.Context) {
 			"device_type": deviceType,
 			"device_name": deviceName,
 		})
+	}()
+
+	go func() {
+		ticker := time.NewTicker(wsPingPeriod)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if err := conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(wsWriteWait)); err != nil {
+					_ = conn.Close()
+					return
+				}
+			}
+		}
 	}()
 
 	// Message loop
@@ -176,6 +207,16 @@ func cleanupOldSessions(userID int) {
 	}
 	for _, id := range ids[10:] {
 		database.DB.Exec("DELETE FROM device_sessions WHERE id = ?", id)
+	}
+}
+
+func touchDeviceSession(userID, sessionID int) {
+	now := database.TimestampNow()
+	if _, err := database.DB.Exec(
+		"UPDATE device_sessions SET is_online = 1, last_seen = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+		now, now, sessionID, userID,
+	); err != nil {
+		log.Printf("DB device session touch error: %v", err)
 	}
 }
 
@@ -366,6 +407,7 @@ func handlePrintRequest(data map[string]interface{}, userID, sessionID int) {
 
 func handleWSMessage(data map[string]interface{}, userID, sessionID int, deviceType string) {
 	msgType, _ := data["type"].(string)
+	touchDeviceSession(userID, sessionID)
 
 	switch msgType {
 	case "ping":

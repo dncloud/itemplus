@@ -30,12 +30,14 @@ export function PendingUsersSection({
   t,
   activateUser,
   deleteUser,
+  pendingDeleteUserId,
 }: {
   inactive: User[];
   fmtDate: (value: string | null | undefined) => string;
   t: (key: string, params?: Record<string, string | number>) => string;
   activateUser: (userId: number) => void;
   deleteUser: (userId: number) => void;
+  pendingDeleteUserId: number | null;
 }) {
   if (inactive.length === 0) return null;
 
@@ -59,8 +61,16 @@ export function PendingUsersSection({
             >
               <CheckIcon className="h-4 w-4" /> {t("users.activate")}
             </button>
-            <button onClick={() => deleteUser(user.id)} className="inline-flex items-center justify-center rounded-lg border border-amber-300 p-2 transition hover:bg-red-50 dark:border-amber-700 dark:hover:bg-red-900/20">
-              <TrashIcon className="h-4 w-4 text-red-400" />
+            <button
+              onClick={() => deleteUser(user.id)}
+              disabled={pendingDeleteUserId === user.id}
+              className="inline-flex items-center justify-center rounded-lg border border-amber-300 p-2 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:hover:bg-red-900/20"
+            >
+              {pendingDeleteUserId === user.id ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+              ) : (
+                <TrashIcon className="h-4 w-4 text-red-400" />
+              )}
             </button>
           </div>
         ))}
@@ -80,6 +90,7 @@ export function ActiveUsersSection({
   t,
   updateUser,
   deleteUser,
+  pendingDeleteUserId,
 }: {
   loading: boolean;
   active: User[];
@@ -91,6 +102,7 @@ export function ActiveUsersSection({
   t: (key: string, params?: Record<string, string | number>) => string;
   updateUser: (userId: number, data: Record<string, unknown>) => void;
   deleteUser: (userId: number) => void;
+  pendingDeleteUserId: number | null;
 }) {
   return (
     <section className="space-y-3">
@@ -128,9 +140,15 @@ export function ActiveUsersSection({
                         {t("users.registered")}: {fmtDateTime(user.created_at)}
                       </p>
                     ) : null}
-                    {user.last_login ? (
+                    {user.last_login || user.last_session_seen ? (
                       <div className="mt-1.5 space-y-0.5 text-xs text-gray-500 dark:text-gray-400">
-                        <p>{t("users.lastOnline")} {fmtDateTime(user.last_login)}</p>
+                        {user.last_login ? <p>{t("users.lastSignedIn")} {fmtDateTime(user.last_login)}</p> : null}
+                        {user.last_session_seen ? (
+                          <p>
+                            {t("users.lastDeviceSession")} {fmtDateTime(user.last_session_seen)}
+                            {user.last_session_online ? <span className="ml-1 text-emerald-600 dark:text-emerald-400">({t("users.connected")})</span> : null}
+                          </p>
+                        ) : null}
                         {user.last_ip ? <p>IP: {user.last_ip}</p> : null}
                         {user.last_device ? <p>{t("users.device")}: {user.last_device}</p> : null}
                       </div>
@@ -141,8 +159,16 @@ export function ActiveUsersSection({
                       <button onClick={() => setExpandedUser(isExpanded ? null : user.id)} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10">
                         <ChevronDownIcon className={`h-4 w-4 text-gray-400 transition ${isExpanded ? "rotate-180" : ""}`} />
                       </button>
-                      <button onClick={() => deleteUser(user.id)} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20">
-                        <TrashIcon className="h-4 w-4 text-red-400" />
+                      <button
+                        onClick={() => deleteUser(user.id)}
+                        disabled={pendingDeleteUserId === user.id}
+                        className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:hover:bg-red-900/20"
+                      >
+                        {pendingDeleteUserId === user.id ? (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+                        ) : (
+                          <TrashIcon className="h-4 w-4 text-red-400" />
+                        )}
                       </button>
                     </>
                   ) : null}

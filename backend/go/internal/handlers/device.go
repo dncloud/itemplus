@@ -31,6 +31,7 @@ func listDeviceSessions(c *gin.Context, query string, args ...interface{}) {
 		row := map[string]interface{}{}
 		if rows.MapScan(row) == nil {
 			cleanRow(row)
+			reconcileSessionRow(row)
 			result = append(result, row)
 		}
 	}
@@ -38,6 +39,61 @@ func listDeviceSessions(c *gin.Context, query string, args ...interface{}) {
 		result = []map[string]interface{}{}
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func reconcileSessionRow(row map[string]interface{}) {
+	sessionID, ok := rowInt(row["id"])
+	if !ok {
+		return
+	}
+	isOnline, ok := rowBool(row["is_online"])
+	if !ok || !isOnline {
+		return
+	}
+	if ws.M.HasSession(sessionID) {
+		return
+	}
+	row["is_online"] = false
+	if _, err := database.DB.Exec("UPDATE device_sessions SET is_online = 0 WHERE id = ?", sessionID); err != nil {
+		log.Printf("DB session reconcile error: %v", err)
+	}
+}
+
+func rowInt(v interface{}) (int, bool) {
+	switch value := v.(type) {
+	case int:
+		return value, true
+	case int64:
+		return int(value), true
+	case float64:
+		return int(value), true
+	case string:
+		n, err := strconv.Atoi(value)
+		return n, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func rowBool(v interface{}) (bool, bool) {
+	switch value := v.(type) {
+	case bool:
+		return value, true
+	case int:
+		return value != 0, true
+	case int64:
+		return value != 0, true
+	case float64:
+		return value != 0, true
+	case string:
+		switch value {
+		case "1", "true", "TRUE", "True":
+			return true, true
+		case "0", "false", "FALSE", "False":
+			return false, true
+		}
+	}
+	return false, false
 }
 
 func listSessions(c *gin.Context) {

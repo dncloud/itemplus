@@ -95,6 +95,7 @@ export function VendorList({
   fmtDateTime,
   onEdit,
   onDelete,
+  pendingDeleteId = null,
   canEdit = true,
   canDelete = true,
   renderEditor,
@@ -105,6 +106,7 @@ export function VendorList({
   fmtDateTime: (value: string) => string;
   onEdit: (item: Vendor) => void;
   onDelete: (id: number) => void;
+  pendingDeleteId?: number | null;
   canEdit?: boolean;
   canDelete?: boolean;
   renderEditor: (item: Vendor) => React.ReactNode;
@@ -145,8 +147,16 @@ export function VendorList({
                   </button>
                 ) : null}
                 {canDelete ? (
-                  <button onClick={() => onDelete(item.id)} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20">
-                    <TrashIcon className="h-4 w-4 text-red-400" />
+                  <button
+                    onClick={() => onDelete(item.id)}
+                    disabled={pendingDeleteId === item.id}
+                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:hover:bg-red-900/20"
+                  >
+                    {pendingDeleteId === item.id ? (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+                    ) : (
+                      <TrashIcon className="h-4 w-4 text-red-400" />
+                    )}
                   </button>
                 ) : null}
               </div>

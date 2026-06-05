@@ -89,6 +89,9 @@ func main() {
 
 	database.Connect()
 	log.Printf("Database connected: %s", database.CurrentConnectionSummary())
+	if err := database.MarkAllDeviceSessionsOffline(); err != nil {
+		log.Printf("Warning: could not reset device sessions to offline on startup: %v", err)
+	}
 	bootstrap.EnsureInitialAdmin()
 
 	if !config.C.Debug {
@@ -151,7 +154,7 @@ func main() {
 		if c.Request.URL.RawQuery != "" {
 			path += "?" + c.Request.URL.RawQuery
 		}
-		ip := c.ClientIP()
+		ip := config.ResolveClientIP(c.Request.RemoteAddr, c.Request.Header)
 		log.Printf("%s %3d %12s  %s %s", ip, status, latency.Round(time.Microsecond), method, path)
 	})
 
