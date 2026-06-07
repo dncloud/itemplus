@@ -2,7 +2,7 @@
 
 import type { ComponentType } from "react";
 import clsx from "clsx";
-import { Bars3Icon, DevicePhoneMobileIcon, MagnifyingGlassIcon, PrinterIcon } from "@heroicons/react/24/outline";
+import { Bars3Icon, DevicePhoneMobileIcon, MagnifyingGlassIcon, PrinterIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import { useApp } from "@/lib/app-context";
 
 export function AppShellLoading() {
@@ -26,6 +26,10 @@ export function AppShellHeader({
   t,
   iosBridgeStatus,
   printerBridgeStatus,
+  aiAssistantBusy,
+  aiAssistantPanelAvailable,
+  aiAssistantPanelOpen,
+  onToggleAiAssistant,
   showPrinterStatus,
   onOpenSidebar,
   onOpenSearch,
@@ -33,6 +37,10 @@ export function AppShellHeader({
   t: (key: string) => string;
   iosBridgeStatus: "connected" | "disconnected";
   printerBridgeStatus: "connected" | "disconnected";
+  aiAssistantBusy: boolean;
+  aiAssistantPanelAvailable: boolean;
+  aiAssistantPanelOpen: boolean;
+  onToggleAiAssistant: () => void;
   showPrinterStatus: boolean;
   onOpenSidebar: () => void;
   onOpenSearch: () => void;
@@ -70,6 +78,22 @@ export function AppShellHeader({
           </button>
 
           <div className="flex items-center gap-2">
+            {aiAssistantBusy || aiAssistantPanelAvailable ? (
+              <button
+                type="button"
+                onClick={onToggleAiAssistant}
+                title={aiAssistantBusy ? t("common.aiWorking") : aiAssistantPanelOpen ? t("common.closeAiSession") : t("common.openAiSession")}
+                aria-label={aiAssistantBusy ? t("common.aiWorking") : aiAssistantPanelOpen ? t("common.closeAiSession") : t("common.openAiSession")}
+                className={clsx(
+                  "inline-flex h-9 w-9 items-center justify-center rounded-full border transition",
+                  aiAssistantPanelOpen || aiAssistantBusy
+                    ? "border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
+                    : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white",
+                )}
+              >
+                <SparklesIcon className={clsx("size-4 shrink-0", aiAssistantBusy ? "animate-pulse" : "")} />
+              </button>
+            ) : null}
             <ConnectionStatusIcon
               label="iPhone"
               status={iosBridgeStatus}

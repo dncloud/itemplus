@@ -37,9 +37,10 @@ export function subscribeItemCreateDeviceEvents(options: ItemCreateDeviceSubscri
   });
 
   const unsubPhotoUploaded = wsClient.on("photo.uploaded", (data) => {
-    if (data.purpose !== "ai_lookup") return;
     const tempImageID = typeof data.temp_image_id === "string" ? data.temp_image_id : "";
     if (!tempImageID) return;
+    const purpose = typeof data.purpose === "string" ? data.purpose : "";
+    if (purpose && purpose !== "ai_lookup") return;
     options.onPhotoUploaded(tempImageID);
   });
 

@@ -20,6 +20,24 @@
 - Improved the scanner presentation with the darker masked preview and quieter cutout treatment refined during App Store review preparation.
 - Prepared the iPhone release track for `1.2.5` with build `12501`.
 
+### AI workflows, chat UX, and settings
+- Added editable AI prompt templates in Settings for item parsing, category property suggestions, and property enhancement, so each installation can tune Ina to its own inventory style instead of relying on one fixed built-in prompt.
+- Added a restore-to-defaults flow for those AI prompt templates and moved the API key closer to provider, model, and base URL for a clearer configuration layout.
+- Reworked the category and property AI flows from “additional instructions” into a more explicit task-based chat with a visible conversational history, user/assistant roles, and a calmer message composer.
+- Introduced Ina as the named assistant in the web app and aligned the assistant prompts so the model can answer in a more natural, context-aware voice instead of sounding like a generated report.
+- Changed category and property AI behavior so the current conversation history is passed back into the model, allowing follow-up answers, small clarifications, and mixed relevant/irrelevant user messages to be interpreted more naturally.
+- Updated the category/property AI drawers so they can be reopened from the header, remain available while a session is active, and are ended explicitly through a dedicated “end chat session” action instead of disappearing as soon as the drawer closes.
+- Replaced the separate info-first category/property AI flow with a more direct chat-first interaction, including clearer follow-up handling, calmer “thinking” animation, and keyboard-friendly chat sending (`Enter` to send, `Shift+Enter` for line breaks).
+- Added inline editing for select and multiselect options in the property editor, so option labels can be corrected directly without deleting and recreating them.
+- Exposed more property-type details during editing, including select/multiselect custom-value settings and weight units, and removed leftover placeholders that made the editor feel more generated than intentional.
+- Reworked the item-create AI drawer into the same Ina chat model: simplified header actions, fewer debug/status panels, editable basics inside the drawer, and a smaller bottom composer with chat/session/photo actions gathered in one place.
+- Added contextual AI suggestion cards that attach directly to the Ina message that produced them, keeping field/property suggestions inside the conversation instead of isolating them in a detached technical block.
+- Added scanned barcodes to the item-create AI context panel so Ina can see the same basis information the user sees while preparing or refining a draft.
+- Restored the photo-to-Ina flow inside item creation, including connected-iPhone-only camera actions, waiting states, and showing the uploaded photo itself as a user chat message once it arrives.
+- Made the item-create device bridge more tolerant of `photo.uploaded` events whose `purpose` field is missing as long as a temporary image ID is present, preventing the AI photo flow from getting stuck in “waiting for photo”.
+- Added temporary-image retrieval for AI uploads so freshly captured photos can be rendered directly in the chat instead of only being referenced indirectly by the AI request.
+- Improved wording and localization across the Ina surfaces, including German umlauts in visible UI copy, quieter button labels such as `Senden`, and more neutral suggestion headings that fit the conversational flow better.
+
 ## 1.2.4 - 2026-05-31
 
 ### AI, categories, and item creation

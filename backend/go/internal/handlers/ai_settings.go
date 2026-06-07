@@ -13,19 +13,28 @@ import (
 )
 
 type aiSettingsResponse struct {
-	Provider  string `json:"provider"`
-	Model     string `json:"model"`
-	BaseURL   string `json:"base_url"`
-	Enabled   bool   `json:"enabled"`
-	HasAPIKey bool   `json:"has_api_key"`
+	Provider                         string `json:"provider"`
+	Model                            string `json:"model"`
+	BaseURL                          string `json:"base_url"`
+	Enabled                          bool   `json:"enabled"`
+	HasAPIKey                        bool   `json:"has_api_key"`
+	ParseItemPrompt                  string `json:"parse_item_prompt"`
+	CategoryPropertyPrompt           string `json:"category_property_prompt"`
+	PropertyEnhancementPrompt        string `json:"property_enhancement_prompt"`
+	ParseItemPromptDefault           string `json:"parse_item_prompt_default"`
+	CategoryPropertyPromptDefault    string `json:"category_property_prompt_default"`
+	PropertyEnhancementPromptDefault string `json:"property_enhancement_prompt_default"`
 }
 
 type aiSettingsPayload struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
-	BaseURL  string `json:"base_url"`
-	APIKey   string `json:"api_key"`
-	Enabled  *bool  `json:"enabled"`
+	Provider                  string `json:"provider"`
+	Model                     string `json:"model"`
+	BaseURL                   string `json:"base_url"`
+	APIKey                    string `json:"api_key"`
+	Enabled                   *bool  `json:"enabled"`
+	ParseItemPrompt           string `json:"parse_item_prompt"`
+	CategoryPropertyPrompt    string `json:"category_property_prompt"`
+	PropertyEnhancementPrompt string `json:"property_enhancement_prompt"`
 }
 
 func adminGetAISettings(c *gin.Context) {
@@ -123,22 +132,31 @@ func parseAISettingsPayload(c *gin.Context, persist bool) (services.AISettings, 
 	}
 
 	return services.AISettings{
-		Provider: provider,
-		Model:    model,
-		BaseURL:  baseURL,
-		APIKey:   apiKey,
-		Enabled:  enabled,
+		Provider:                  provider,
+		Model:                     model,
+		BaseURL:                   baseURL,
+		APIKey:                    apiKey,
+		Enabled:                   enabled,
+		ParseItemPrompt:           strings.TrimSpace(body.ParseItemPrompt),
+		CategoryPropertyPrompt:    strings.TrimSpace(body.CategoryPropertyPrompt),
+		PropertyEnhancementPrompt: strings.TrimSpace(body.PropertyEnhancementPrompt),
 	}, nil
 }
 
 func loadAISettings() aiSettingsResponse {
 	full := loadAISettingsWithSecret()
 	return aiSettingsResponse{
-		Provider:  full.Provider,
-		Model:     full.Model,
-		BaseURL:   full.BaseURL,
-		Enabled:   full.Enabled,
-		HasAPIKey: strings.TrimSpace(full.APIKey) != "",
+		Provider:                         full.Provider,
+		Model:                            full.Model,
+		BaseURL:                          full.BaseURL,
+		Enabled:                          full.Enabled,
+		HasAPIKey:                        strings.TrimSpace(full.APIKey) != "",
+		ParseItemPrompt:                  full.ParseItemPrompt,
+		CategoryPropertyPrompt:           full.CategoryPropertyPrompt,
+		PropertyEnhancementPrompt:        full.PropertyEnhancementPrompt,
+		ParseItemPromptDefault:           services.DefaultParseItemPromptTemplate(),
+		CategoryPropertyPromptDefault:    services.DefaultCategoryPropertyPromptTemplate(),
+		PropertyEnhancementPromptDefault: services.DefaultPropertyEnhancementPromptTemplate(),
 	}
 }
 
@@ -148,18 +166,27 @@ func loadAISettingsWithSecret() services.AISettings {
 	var baseURL sql.NullString
 	var apiKey sql.NullString
 	var enabled sql.NullString
+	var parseItemPrompt sql.NullString
+	var categoryPropertyPrompt sql.NullString
+	var propertyEnhancementPrompt sql.NullString
 
 	_ = database.DB.Get(&provider, "SELECT value FROM app_settings WHERE `key` = ?", "ai.provider")
 	_ = database.DB.Get(&model, "SELECT value FROM app_settings WHERE `key` = ?", "ai.model")
 	_ = database.DB.Get(&baseURL, "SELECT value FROM app_settings WHERE `key` = ?", "ai.base_url")
 	_ = database.DB.Get(&apiKey, "SELECT value FROM app_settings WHERE `key` = ?", "ai.api_key")
 	_ = database.DB.Get(&enabled, "SELECT value FROM app_settings WHERE `key` = ?", "ai.enabled")
+	_ = database.DB.Get(&parseItemPrompt, "SELECT value FROM app_settings WHERE `key` = ?", "ai.parse_item_prompt")
+	_ = database.DB.Get(&categoryPropertyPrompt, "SELECT value FROM app_settings WHERE `key` = ?", "ai.category_property_prompt")
+	_ = database.DB.Get(&propertyEnhancementPrompt, "SELECT value FROM app_settings WHERE `key` = ?", "ai.property_enhancement_prompt")
 
 	settings := services.AISettings{
-		Provider: "openai",
-		Model:    "gpt-5-mini",
-		BaseURL:  "https://api.openai.com/v1",
-		Enabled:  false,
+		Provider:                  "openai",
+		Model:                     "gpt-5-mini",
+		BaseURL:                   "https://api.openai.com/v1",
+		Enabled:                   false,
+		ParseItemPrompt:           services.DefaultParseItemPromptTemplate(),
+		CategoryPropertyPrompt:    services.DefaultCategoryPropertyPromptTemplate(),
+		PropertyEnhancementPrompt: services.DefaultPropertyEnhancementPromptTemplate(),
 	}
 	if provider.Valid && strings.TrimSpace(provider.String) != "" {
 		settings.Provider = strings.ToLower(strings.TrimSpace(provider.String))
@@ -176,16 +203,28 @@ func loadAISettingsWithSecret() services.AISettings {
 	if enabled.Valid {
 		settings.Enabled = parseFlexibleBool(enabled.String, settings.Enabled)
 	}
+	if parseItemPrompt.Valid && strings.TrimSpace(parseItemPrompt.String) != "" {
+		settings.ParseItemPrompt = strings.TrimSpace(parseItemPrompt.String)
+	}
+	if categoryPropertyPrompt.Valid && strings.TrimSpace(categoryPropertyPrompt.String) != "" {
+		settings.CategoryPropertyPrompt = strings.TrimSpace(categoryPropertyPrompt.String)
+	}
+	if propertyEnhancementPrompt.Valid && strings.TrimSpace(propertyEnhancementPrompt.String) != "" {
+		settings.PropertyEnhancementPrompt = strings.TrimSpace(propertyEnhancementPrompt.String)
+	}
 	return settings
 }
 
 func saveAISettings(settings services.AISettings) error {
 	now := database.TimestampNow()
 	entries := map[string]string{
-		"ai.provider": settings.Provider,
-		"ai.model":    settings.Model,
-		"ai.base_url": settings.BaseURL,
-		"ai.enabled":  strconv.FormatBool(settings.Enabled),
+		"ai.provider":                    settings.Provider,
+		"ai.model":                       settings.Model,
+		"ai.base_url":                    settings.BaseURL,
+		"ai.enabled":                     strconv.FormatBool(settings.Enabled),
+		"ai.parse_item_prompt":           settings.ParseItemPrompt,
+		"ai.category_property_prompt":    settings.CategoryPropertyPrompt,
+		"ai.property_enhancement_prompt": settings.PropertyEnhancementPrompt,
 	}
 
 	for key, value := range entries {

@@ -16,11 +16,14 @@ import (
 )
 
 type AISettings struct {
-	Provider string
-	Model    string
-	BaseURL  string
-	APIKey   string
-	Enabled  bool
+	Provider                  string
+	Model                     string
+	BaseURL                   string
+	APIKey                    string
+	Enabled                   bool
+	ParseItemPrompt           string
+	CategoryPropertyPrompt    string
+	PropertyEnhancementPrompt string
 }
 
 type AIConnectionTestResult struct {
@@ -55,6 +58,7 @@ type ParseItemIntentResult struct {
 	Intent                string              `json:"intent"`
 	Confidence            float64             `json:"confidence"`
 	NeedsConfirmation     bool                `json:"needs_confirmation"`
+	AssistantMessage      string              `json:"assistant_message"`
 	SuggestedRealm        string              `json:"suggested_realm"`
 	SuggestedCategoryID   *int64              `json:"suggested_category_id,omitempty"`
 	SuggestedCategoryName string              `json:"suggested_category_name,omitempty"`
@@ -109,6 +113,7 @@ type SuggestCategoryPropertiesRequest struct {
 type SuggestCategoryPropertiesResult struct {
 	Confidence        float64              `json:"confidence"`
 	NeedsConfirmation bool                 `json:"needs_confirmation"`
+	AssistantMessage  string               `json:"assistant_message"`
 	Questions         []string             `json:"questions"`
 	Notes             []string             `json:"notes"`
 	Properties        []AIPropertyProposal `json:"properties"`
@@ -132,6 +137,7 @@ type SuggestPropertyEnhancementRequest struct {
 type SuggestPropertyEnhancementResult struct {
 	Confidence        float64            `json:"confidence"`
 	NeedsConfirmation bool               `json:"needs_confirmation"`
+	AssistantMessage  string             `json:"assistant_message"`
 	Questions         []string           `json:"questions"`
 	Notes             []string           `json:"notes"`
 	Property          AIPropertyProposal `json:"property"`
@@ -152,13 +158,13 @@ type categoryInferenceResult struct {
 }
 
 type openAIResponse struct {
-	ID         string `json:"id"`
-	Status     string `json:"status"`
-	OutputText string `json:"output_text"`
+	ID                string `json:"id"`
+	Status            string `json:"status"`
+	OutputText        string `json:"output_text"`
 	IncompleteDetails *struct {
 		Reason string `json:"reason"`
 	} `json:"incomplete_details"`
-	Output     []struct {
+	Output []struct {
 		Type    string `json:"type"`
 		Content []struct {
 			Type string `json:"type"`
@@ -171,11 +177,11 @@ type openAIResponse struct {
 }
 
 const (
-	aiResponsesMaxOutputTokens       = 6000
-	aiChatCompletionsMaxTokens       = 4000
-	aiConnectionTestMaxOutputTokens  = 32
-	aiConnectionTestTimeout          = 20 * time.Second
-	aiGenerateTimeout                = 180 * time.Second
+	aiResponsesMaxOutputTokens      = 6000
+	aiChatCompletionsMaxTokens      = 4000
+	aiConnectionTestMaxOutputTokens = 32
+	aiConnectionTestTimeout         = 20 * time.Second
+	aiGenerateTimeout               = 180 * time.Second
 )
 
 type chatCompletionResponse struct {
@@ -339,7 +345,7 @@ func ParseItemIntent(settings AISettings, req ParseItemIntentRequest) (*ParseIte
 		return nil, err
 	}
 
-	outputText, transport, err := generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput, buildParseJSONSchema())
+	outputText, transport, err := generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(settings.ParseItemPrompt, req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput, buildParseJSONSchema())
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +404,7 @@ func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit
 
 	if cfg.Provider != "openai" && parseCtx.ImageInput == nil {
 		var builder strings.Builder
-		streamErr := generateViaChatCompletionsStream(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, buildParseJSONSchema(), func(delta string) error {
+		streamErr := generateViaChatCompletionsStream(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(settings.ParseItemPrompt, req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, buildParseJSONSchema(), func(delta string) error {
 			hadStreamDelta = true
 			builder.WriteString(delta)
 			if emit != nil {
@@ -413,7 +419,7 @@ func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit
 	}
 
 	if strings.TrimSpace(outputText) == "" {
-		outputText, transport, err = generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput, buildParseJSONSchema())
+		outputText, transport, err = generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(settings.ParseItemPrompt, req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput, buildParseJSONSchema())
 		if err != nil {
 			return nil, err
 		}
@@ -501,8 +507,8 @@ func SuggestCategoryProperties(settings AISettings, req SuggestCategoryPropertie
 
 	contextPayload := map[string]any{
 		"realm":               req.Realm,
-		"prompt":              req.Prompt,
 		"locale":              req.Locale,
+		"explicit_task":       req.Prompt,
 		"category":            buildAISingleCategorySummary(req.Category),
 		"existing_properties": buildAIPropertySummary(req.ExistingProperties),
 	}
@@ -517,7 +523,7 @@ func SuggestCategoryProperties(settings AISettings, req SuggestCategoryPropertie
 		cfg.Provider,
 		cfg.Model,
 		settings.APIKey,
-		buildCategoryPropertyInstructions(req.AllowWebSearch, req.Locale),
+		buildCategoryPropertyInstructions(settings.CategoryPropertyPrompt, req.AllowWebSearch, req.Locale),
 		string(contextJSON),
 		req.AllowWebSearch,
 		nil,
@@ -541,8 +547,8 @@ func SuggestPropertyEnhancement(settings AISettings, req SuggestPropertyEnhancem
 
 	contextPayload := map[string]any{
 		"realm":               req.Realm,
-		"prompt":              req.Prompt,
 		"locale":              req.Locale,
+		"explicit_task":       req.Prompt,
 		"category":            buildAISingleCategorySummary(req.Category),
 		"property":            buildAISinglePropertySummary(req.Property),
 		"existing_properties": buildAIPropertySummary(req.ExistingProperties),
@@ -558,7 +564,7 @@ func SuggestPropertyEnhancement(settings AISettings, req SuggestPropertyEnhancem
 		cfg.Provider,
 		cfg.Model,
 		settings.APIKey,
-		buildPropertyEnhancementInstructions(req.AllowWebSearch, req.Locale),
+		buildPropertyEnhancementInstructions(settings.PropertyEnhancementPrompt, req.AllowWebSearch, req.Locale),
 		string(contextJSON),
 		req.AllowWebSearch,
 		nil,
@@ -607,7 +613,43 @@ func uniqueNormalizedTokens(value string) []string {
 	return tokens
 }
 
-func buildParseInstructions(allowWebSearch bool, locale string, identifyOnly bool) string {
+func DefaultParseItemPromptTemplate() string {
+	return `You work inside item+, an inventory and collection management system.
+Your assistant name is Ina ("Intelligence Neuronatic Assistant").
+
+You receive:
+- the user's item request
+- the selected category, if one is already chosen
+- the available property schema for that category
+
+Your job:
+- identify the item correctly
+- fill the matching fields and properties with reliable details
+
+Rules:
+- first use user-provided information
+- then use reliable general knowledge
+- if a category is already selected, keep that category
+- if no category is selected, choose the best available category only when it is reasonably clear
+- use only the provided properties
+- prefer property IDs as keys when IDs are available
+- leave unclear or variant-specific values out
+- do not invent values just to fill every field
+- focus on the actionable part of the request
+- ignore small talk, mood, weather, and unrelated side remarks unless they change the task
+- for number properties, return only the number and use the schema unit
+- keep quantity at 1 unless the prompt clearly says otherwise
+- if multiple variants are plausible, ask a short question instead of guessing
+- omit unknown properties instead of returning empty strings
+- keep description short and factual
+- write assistant_message like a short natural reply to the user
+- assistant_message must sound conversational, not like a report
+- when you refer to yourself, call yourself Ina
+- do not use headings such as "Open questions", "Notes", or "Status"
+- if you need clarification, ask naturally inside assistant_message`
+}
+
+func buildParseInstructions(basePrompt string, allowWebSearch bool, locale string, identifyOnly bool) string {
 	languageInstruction := "Write all human-readable output in English."
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
 		languageInstruction = "Write all human-readable output in German."
@@ -615,6 +657,7 @@ func buildParseInstructions(allowWebSearch bool, locale string, identifyOnly boo
 
 	if identifyOnly {
 		return `You identify products from a barcode, prompt, and optional image.
+Your assistant name is Ina ("Intelligence Neuronatic Assistant").
 
 Goal:
 - determine the most likely product or title
@@ -635,6 +678,11 @@ Rules:
 - keep missing_required as an empty array
 - keep notes short and factual
 - keep official product titles unchanged when appropriate
+- write assistant_message like a short natural reply to the user
+- assistant_message must sound conversational, not like a report
+- when you refer to yourself, call yourself Ina
+- do not use headings such as "Open questions", "Notes", or "Status"
+- if you need clarification, ask naturally inside assistant_message
 
 ` + languageInstruction + `
 
@@ -645,6 +693,7 @@ Use this shape:
   "intent": "create_item",
   "confidence": 0.0,
   "needs_confirmation": true,
+  "assistant_message": "",
   "suggested_realm": "archive",
   "suggested_category_id": null,
   "suggested_category_name": "",
@@ -663,36 +712,20 @@ Use this shape:
 }`
 	}
 
-	instructions := `You enrich one item draft from:
-- the user prompt
-- the selected category, if one is already chosen
-- the provided property schema
-
-Goal:
-- identify the item correctly
-- fill the matching fields and properties with reliable details
-
-Rules:
-- first use user-provided information
-- then use reliable general knowledge
-- if web search is available, use it only when it helps confirm missing details
-- if a category is already selected, keep that category
-- if no category is selected, choose the best available category only when it is reasonably clear
-- use only the provided properties
-- prefer property IDs as keys when IDs are available
-- leave unclear or variant-specific values out
-- do not invent values just to fill every field
-- for number properties, return only the number and use the schema unit
-- keep quantity at 1 unless the prompt clearly says otherwise`
+	instructions := strings.TrimSpace(basePrompt)
+	if instructions == "" {
+		instructions = DefaultParseItemPromptTemplate()
+	}
 
 	if allowWebSearch {
 		instructions += `
-- web search is allowed`
+- web search is allowed when it helps confirm missing details`
+	} else {
+		instructions += `
+- do not rely on web search`
 	}
 
 	instructions += `
-- if multiple variants are plausible, ask a short question instead of guessing
-- omit unknown properties instead of returning empty strings
 
 ` + languageInstruction + `
 
@@ -708,6 +741,11 @@ Questions:
 
 Notes:
 - briefly mention helpful inferred or web-supported details when useful
+- write assistant_message like a short natural reply to the user
+- assistant_message must sound conversational, not like a report
+- when you refer to yourself, call yourself Ina
+- do not use headings such as "Open questions", "Notes", or "Status"
+- if you need clarification, ask naturally inside assistant_message
 
 Return exactly one JSON object and no markdown.
 
@@ -716,6 +754,7 @@ Use this shape:
   "intent": "create_item",
   "confidence": 0.0,
   "needs_confirmation": true,
+  "assistant_message": "",
   "suggested_realm": "archive",
   "suggested_category_id": null,
   "suggested_category_name": "",
@@ -762,6 +801,7 @@ func finalizeParseItemIntentResult(outputText, transport, model, provider string
 	if result.Fields == nil {
 		result.Fields = map[string]any{}
 	}
+	result.AssistantMessage = strings.TrimSpace(result.AssistantMessage)
 	if result.Properties == nil {
 		result.Properties = map[string]any{}
 	}
@@ -802,6 +842,9 @@ func finalizeParseItemIntentResult(outputText, transport, model, provider string
 	result.Model = model
 	result.Provider = provider
 	result.RawPrompt = req.Prompt
+	if result.AssistantMessage == "" {
+		result.AssistantMessage = fallbackParseAssistantMessage(result, req.Locale)
+	}
 	result.Context = map[string]any{
 		"realm":                   req.Realm,
 		"category_count":          len(req.Categories),
@@ -811,6 +854,20 @@ func finalizeParseItemIntentResult(outputText, transport, model, provider string
 		"selected_property_count": len(filteredProperties),
 	}
 	return &result, nil
+}
+
+func fallbackParseAssistantMessage(result ParseItemIntentResult, locale string) string {
+	german := strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de")
+	if len(result.Questions) > 0 {
+		return strings.Join(result.Questions, "\n\n")
+	}
+	if len(result.Notes) > 0 {
+		return strings.Join(result.Notes, "\n\n")
+	}
+	if german {
+		return "Ich habe einen ersten Entwurf vorbereitet."
+	}
+	return "I prepared a first draft."
 }
 
 func sanitizeParseResultJSON(jsonText string) string {
@@ -1577,6 +1634,7 @@ func buildParseJSONSchema() map[string]any {
 			"intent":                  map[string]any{"type": "string"},
 			"confidence":              map[string]any{"type": "number"},
 			"needs_confirmation":      map[string]any{"type": "boolean"},
+			"assistant_message":       map[string]any{"type": "string"},
 			"suggested_realm":         map[string]any{"type": "string"},
 			"suggested_category_id":   map[string]any{"type": []string{"integer", "null"}},
 			"suggested_category_name": map[string]any{"type": "string"},
@@ -1591,6 +1649,7 @@ func buildParseJSONSchema() map[string]any {
 			"intent",
 			"confidence",
 			"needs_confirmation",
+			"assistant_message",
 			"suggested_realm",
 			"suggested_category_name",
 			"fields",
@@ -1609,6 +1668,7 @@ func buildCategoryPropertyJSONSchema() map[string]any {
 		"properties": map[string]any{
 			"confidence":         map[string]any{"type": "number"},
 			"needs_confirmation": map[string]any{"type": "boolean"},
+			"assistant_message":  map[string]any{"type": "string"},
 			"questions":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"notes":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"properties": map[string]any{
@@ -1629,7 +1689,7 @@ func buildCategoryPropertyJSONSchema() map[string]any {
 				},
 			},
 		},
-		"required":             []string{"confidence", "needs_confirmation", "questions", "notes", "properties"},
+		"required":             []string{"confidence", "needs_confirmation", "assistant_message", "questions", "notes", "properties"},
 		"additionalProperties": false,
 	}
 }
@@ -1640,6 +1700,7 @@ func buildPropertyEnhancementJSONSchema() map[string]any {
 		"properties": map[string]any{
 			"confidence":         map[string]any{"type": "number"},
 			"needs_confirmation": map[string]any{"type": "boolean"},
+			"assistant_message":  map[string]any{"type": "string"},
 			"questions":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"notes":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"property": map[string]any{
@@ -1657,46 +1718,71 @@ func buildPropertyEnhancementJSONSchema() map[string]any {
 				"additionalProperties": false,
 			},
 		},
-		"required":             []string{"confidence", "needs_confirmation", "questions", "notes", "property"},
+		"required":             []string{"confidence", "needs_confirmation", "assistant_message", "questions", "notes", "property"},
 		"additionalProperties": false,
 	}
 }
 
-func buildCategoryPropertyInstructions(allowWebSearch bool, locale string) string {
+func DefaultCategoryPropertyPromptTemplate() string {
+	return `You work inside item+, an inventory and collection management system.
+Your assistant name is Ina ("Intelligence Neuronatic Assistant").
+
+You receive:
+- an explicit_task
+- one category
+- existing_properties that already exist in that category
+
+Your job:
+- carry out the explicit_task
+- use category and existing_properties only as context
+
+Rules:
+- explicit_task is authoritative
+- do only what explicit_task asks for
+- do not turn a narrow request into a full category optimization
+- if explicit_task asks for one focused property or one focused change, return only that
+- suggest multiple properties only when explicit_task clearly asks for a broader set
+- focus on the actionable part of the message
+- ignore small talk, mood, weather, and other irrelevant side remarks unless they change the task
+- avoid duplicates of existing_properties
+- keep property names concise and reusable
+- use only these property types:
+  text, textblock, number, boolean, date, time, select, multiselect, rating, dimensions, age_rating, condition, priority, weight
+- prefer select or multiselect with concrete options when a fixed list is genuinely useful
+- prefer multiselect when multiple options can apply at once
+- prefer select when only one option is usually chosen
+- use number with unit for measurable values
+- use weight only for physical weight
+- use condition and priority only when they genuinely help
+- set show_in_list true only for genuinely useful scannable properties
+- display_width must be one of: third, half, full
+- if explicit_task is ambiguous, ask a short question instead of expanding scope
+- write assistant_message like a short natural reply to the user
+- assistant_message must sound conversational, not like a report
+- when you refer to yourself, call yourself Ina
+- do not use headings such as "Open questions", "Notes", "Status", or bullet labels unless the user asked for that style
+- if you need clarification, ask naturally inside assistant_message
+- if the message only contains acknowledgement or casual chatter, respond briefly and naturally in assistant_message and leave properties unchanged
+- keep notes short and factual`
+}
+
+func buildCategoryPropertyInstructions(basePrompt string, allowWebSearch bool, locale string) string {
 	languageInstruction := "Write all human-readable output in English."
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
 		languageInstruction = "Write all human-readable output in German."
 	}
 
-	instructions := `You suggest useful category properties for an inventory category.
-
-Goal:
-- create practical property suggestions for this category
-- avoid duplicates of properties that already exist
-- prefer concise, reusable property names
-
-Rules:
-- propose only properties that fit this category well
-- usually suggest between 4 and 10 properties
-- use only these property types:
-  text, textblock, number, boolean, date, time, select, multiselect, rating, dimensions, age_rating, condition, priority, weight
-- if a property naturally has a fixed list of known options, prefer select or multiselect and include the options
-- prefer multiselect when multiple options can apply at once
-- prefer select when exactly one option is typically chosen
-- examples:
-  - USB versions or connector families can be multiselect with concrete choices
-  - sound card standards like Gravis, AdLib, SB16 can be select or multiselect when that fits the property meaning
-- use number with unit for measurable values
-- use weight only for physical weight
-- use condition and priority only when they genuinely help for this category
-- set show_in_list true for the most useful scannable properties
-- display_width should be one of: third, half, full
-- do not repeat existing properties with only tiny wording changes
-- keep notes short and factual`
+	instructions := strings.TrimSpace(basePrompt)
+	if instructions == "" {
+		instructions = DefaultCategoryPropertyPromptTemplate()
+	}
 
 	if allowWebSearch {
 		instructions += `
 - web search is allowed when it helps confirm common standards or option sets`
+	} else {
+		instructions += `
+- do not rely on web search`
 	}
 
 	instructions += `
@@ -1709,6 +1795,7 @@ Use this shape:
 {
   "confidence": 0.0,
   "needs_confirmation": false,
+  "assistant_message": "",
   "questions": [],
   "notes": [],
   "properties": [
@@ -1727,37 +1814,63 @@ Use this shape:
 	return instructions
 }
 
-func buildPropertyEnhancementInstructions(allowWebSearch bool, locale string) string {
-	languageInstruction := "Write all human-readable output in English."
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
-		languageInstruction = "Write all human-readable output in German."
-	}
+func DefaultPropertyEnhancementPromptTemplate() string {
+	return `You work inside item+, an inventory and collection management system.
+Your assistant name is Ina ("Intelligence Neuronatic Assistant").
 
-	instructions := `You improve one existing category property for an inventory system.
+You receive:
+- an explicit_task
+- one category
+- one existing property
+- existing_properties from the same category
 
-Goal:
-- refine the existing property so it fits the category better
-- keep the property practical and easy to use in a form
+Your job:
+- carry out the explicit_task for that one property
+- use category and existing_properties only as context
 
 Rules:
-- this is about one existing property, not a full property list
+- explicit_task is authoritative
+- do only what explicit_task asks for
+- do not broaden the task into a full category cleanup
+- this is about one property, not a full property list
+- focus on the actionable part of the message
+- ignore small talk, mood, weather, and other irrelevant side remarks unless they change the task
 - you may keep the current property unchanged when it already fits well
-- improve the property type when that clearly helps
-- if known standards, versions, or families make sense here, prefer select or multiselect and include concrete options
-- examples:
-  - USB-related properties can become multiselect with concrete versions or connector families
-  - sound card standards like Gravis, AdLib, SB16 can become select or multiselect when that is a better fit
+- improve the property type only when that clearly helps the explicit_task
+- prefer select or multiselect with concrete options when known standards or fixed variants are genuinely useful
 - prefer multiselect when multiple values can apply at the same time
 - prefer select when only one value is usually chosen
 - keep names concise and reusable
 - do not turn this property into a duplicate of another existing property
 - use number with unit for measurable values
-- display_width should be one of: third, half, full
+- display_width must be one of: third, half, full
+- if explicit_task is ambiguous, ask a short question instead of making unrelated changes
+- write assistant_message like a short natural reply to the user
+- assistant_message must sound conversational, not like a report
+- when you refer to yourself, call yourself Ina
+- do not use headings such as "Open questions", "Notes", "Status", or bullet labels unless the user asked for that style
+- if you need clarification, ask naturally inside assistant_message
+- if the message only contains acknowledgement or casual chatter, respond briefly and naturally in assistant_message and keep the property unchanged
 - keep notes short and factual`
+}
+
+func buildPropertyEnhancementInstructions(basePrompt string, allowWebSearch bool, locale string) string {
+	languageInstruction := "Write all human-readable output in English."
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
+		languageInstruction = "Write all human-readable output in German."
+	}
+
+	instructions := strings.TrimSpace(basePrompt)
+	if instructions == "" {
+		instructions = DefaultPropertyEnhancementPromptTemplate()
+	}
 
 	if allowWebSearch {
 		instructions += `
 - web search is allowed when it helps confirm common standards or option sets`
+	} else {
+		instructions += `
+- do not rely on web search`
 	}
 
 	instructions += `
@@ -1770,6 +1883,7 @@ Use this shape:
 {
   "confidence": 0.0,
   "needs_confirmation": false,
+  "assistant_message": "",
   "questions": [],
   "notes": [],
   "property": {
@@ -1825,6 +1939,7 @@ func finalizeCategoryPropertySuggestions(outputText, transport, model, provider 
 	if result.Notes == nil {
 		result.Notes = []string{}
 	}
+	result.AssistantMessage = strings.TrimSpace(result.AssistantMessage)
 	if result.Properties == nil {
 		result.Properties = []AIPropertyProposal{}
 	}
@@ -1868,6 +1983,9 @@ func finalizeCategoryPropertySuggestions(outputText, transport, model, provider 
 	}
 
 	result.Properties = cleaned
+	if result.AssistantMessage == "" {
+		result.AssistantMessage = fallbackCategoryAssistantMessage(result, req.Locale)
+	}
 	result.Transport = transport
 	result.Model = model
 	result.Provider = provider
@@ -1903,6 +2021,7 @@ func finalizePropertyEnhancement(outputText, transport, model, provider string, 
 	if result.Notes == nil {
 		result.Notes = []string{}
 	}
+	result.AssistantMessage = strings.TrimSpace(result.AssistantMessage)
 
 	current := buildAISinglePropertySummary(req.Property)
 	currentID, _ := mapInt64(req.Property["id"])
@@ -1964,6 +2083,9 @@ func finalizePropertyEnhancement(outputText, transport, model, provider string, 
 			result.Property.Name = strings.TrimSpace(currentName)
 		}
 	}
+	if result.AssistantMessage == "" {
+		result.AssistantMessage = fallbackPropertyAssistantMessage(result, req.Locale)
+	}
 
 	result.Transport = transport
 	result.Model = model
@@ -1977,6 +2099,40 @@ func finalizePropertyEnhancement(outputText, transport, model, provider string, 
 	}
 
 	return &result, nil
+}
+
+func fallbackCategoryAssistantMessage(result SuggestCategoryPropertiesResult, locale string) string {
+	german := strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de")
+	if len(result.Questions) > 0 {
+		return strings.Join(result.Questions, "\n\n")
+	}
+	if len(result.Notes) > 0 {
+		return strings.Join(result.Notes, "\n\n")
+	}
+	if len(result.Properties) > 0 {
+		if german {
+			return "Ich habe ein paar Vorschläge vorbereitet."
+		}
+		return "I prepared a few suggestions."
+	}
+	if german {
+		return "Ich habe gerade nichts Sinnvolles zum Ergänzen gefunden."
+	}
+	return "I couldn't find anything useful to add right now."
+}
+
+func fallbackPropertyAssistantMessage(result SuggestPropertyEnhancementResult, locale string) string {
+	german := strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de")
+	if len(result.Questions) > 0 {
+		return strings.Join(result.Questions, "\n\n")
+	}
+	if len(result.Notes) > 0 {
+		return strings.Join(result.Notes, "\n\n")
+	}
+	if german {
+		return "Ich habe den Property-Entwurf angepasst."
+	}
+	return "I updated the property draft."
 }
 
 func normalizeSuggestedPropertyType(value string) string {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { api, type Category, type Property } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
@@ -13,11 +13,10 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { PlusIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, ChevronRightIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import { useRouter } from "next/navigation";
 import { useDeleteFlow, ConfirmDelete } from "@/components/confirm-delete";
 import { AIInfoDrawer } from "@/components/item-create-ai-sections";
-import { FloatingNotification, type FloatingNotificationState } from "@/components/floating-notification";
 import {
   CategoryAIProposalPanel,
   CategoryInlineForm,
@@ -27,10 +26,12 @@ import {
   getPropertyTypes,
 } from "./categories-sections";
 import {
+  buildEditablePropertyPayload,
   fetchCategoriesPageData,
   fetchCategoryProperties,
   persistCategoryOrder,
   persistPropertyOrder,
+  sortProperties,
 } from "./categories-page-utils";
 import { buildPropertyOptionsPayload } from "@/lib/property-options";
 import type {
@@ -39,8 +40,113 @@ import type {
   AIPropertyProposal,
 } from "@/lib/api";
 
+type AIChatEntry = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  pending?: boolean;
+  animate?: boolean;
+};
+
+function createChatId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function AnimatedAIText({
+  content,
+  animate = false,
+  pending = false,
+  onAnimationDone,
+}: {
+  content: string;
+  animate?: boolean;
+  pending?: boolean;
+  onAnimationDone?: () => void;
+}) {
+  const [visibleLength, setVisibleLength] = useState(animate ? 0 : content.length);
+
+  useEffect(() => {
+    if (pending) {
+      setVisibleLength(0);
+      return;
+    }
+    if (!animate) {
+      setVisibleLength(content.length);
+      return;
+    }
+
+    setVisibleLength(0);
+    let index = 0;
+    const timer = window.setInterval(() => {
+      index += 1;
+      setVisibleLength(Math.min(index, content.length));
+      if (index >= content.length) {
+        window.clearInterval(timer);
+        onAnimationDone?.();
+      }
+    }, 12);
+    return () => window.clearInterval(timer);
+  }, [animate, content, onAnimationDone, pending]);
+
+  if (pending) {
+    return (
+      <span className="ai-thinking-text">
+        {content}
+      </span>
+    );
+  }
+
+  const visibleText = content.slice(0, visibleLength);
+  return (
+    <p
+      className={`whitespace-pre-wrap ${animate ? "text-white [text-shadow:0_0_10px_rgba(96,165,250,0.2)]" : ""}`}
+    >
+      {visibleText}
+      {animate && visibleLength < content.length ? <span className="ml-0.5 inline-block h-4 w-[1px] animate-pulse bg-blue-300 align-middle" /> : null}
+    </p>
+  );
+}
+
+function AIChatMessage({
+  role,
+  name,
+  content,
+  pending = false,
+  animate = false,
+  onAnimationDone,
+}: {
+  role: "user" | "assistant";
+  name: string;
+  content: string;
+  pending?: boolean;
+  animate?: boolean;
+  onAnimationDone?: () => void;
+}) {
+  const isUser = role === "user";
+  return (
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+      <div className={`max-w-[88%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-2`}>
+        <p className="px-1 text-xs font-medium uppercase tracking-[0.08em] text-gray-400">{name}</p>
+        <div
+          className={`rounded-2xl px-4 py-3 text-sm ${
+            isUser
+              ? "bg-blue-500 text-white"
+              : "border border-white/10 bg-white/5 text-gray-200"
+          }`}
+        >
+          {isUser ? (
+            <p className="whitespace-pre-wrap">{content}</p>
+          ) : (
+            <AnimatedAIText content={content} animate={animate} pending={pending} onAnimationDone={onAnimationDone} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CategoriesPage() {
-  const { realm, locale, fmtDateTime, t, can } = useApp();
+  const { realm, locale, fmtDateTime, t, can, currentUserLabel, setAiAssistantBusy, setAiAssistantPanelController } = useApp();
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [editCat, setEditCat] = useState<Partial<Category> | null>(null);
@@ -54,16 +160,27 @@ export default function CategoriesPage() {
   const [categoryAIResult, setCategoryAIResult] = useState<AICategoryPropertySuggestionResult | null>(null);
   const [categoryAIInstructions, setCategoryAIInstructions] = useState("");
   const [categoryAIDrawerOpen, setCategoryAIDrawerOpen] = useState(false);
+  const [categoryAIChat, setCategoryAIChat] = useState<AIChatEntry[]>([]);
   const [propertyAIBusy, setPropertyAIBusy] = useState(false);
   const [propertyAIStatus, setPropertyAIStatus] = useState<string | null>(null);
   const [propertyAIResult, setPropertyAIResult] = useState<AIPropertyEnhancementSuggestionResult | null>(null);
   const [propertyAIInstructions, setPropertyAIInstructions] = useState("");
   const [propertyAIDrawerOpen, setPropertyAIDrawerOpen] = useState(false);
-  const [notification, setNotification] = useState<FloatingNotificationState>(null);
+  const [propertyAIChat, setPropertyAIChat] = useState<AIChatEntry[]>([]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const canWriteCategories = can("categories.write");
   const canDeleteCategories = can("categories.delete");
   const canReadItems = can("items.read");
+  const aiUserName = currentUserLabel || t("categories.aiUserFallback");
+  const aiAssistantName = t("categories.aiAssistantName");
+
+  const markCategoryChatEntrySeen = useCallback((id: string) => {
+    setCategoryAIChat((current) => current.map((entry) => (entry.id === id && entry.animate ? { ...entry, animate: false } : entry)));
+  }, []);
+
+  const markPropertyChatEntrySeen = useCallback((id: string) => {
+    setPropertyAIChat((current) => current.map((entry) => (entry.id === id && entry.animate ? { ...entry, animate: false } : entry)));
+  }, []);
 
   const loadingRef = useRef(false);
   const load = useCallback(async () => {
@@ -97,6 +214,7 @@ export default function CategoriesPage() {
     setCategoryAIResult(null);
     setCategoryAIInstructions("");
     setCategoryAIDrawerOpen(false);
+    setCategoryAIChat([]);
   }, [editCat?.id, isNew]);
 
   useEffect(() => {
@@ -105,13 +223,68 @@ export default function CategoriesPage() {
     setPropertyAIResult(null);
     setPropertyAIInstructions("");
     setPropertyAIDrawerOpen(false);
+    setPropertyAIChat([]);
   }, [editProp?.id, isNewProp]);
 
   useEffect(() => {
-    if (!notification) return;
-    const timeout = window.setTimeout(() => setNotification(null), 3200);
-    return () => window.clearTimeout(timeout);
-  }, [notification]);
+    setAiAssistantBusy(categoryAIBusy || propertyAIBusy);
+    return () => setAiAssistantBusy(false);
+  }, [categoryAIBusy, propertyAIBusy, setAiAssistantBusy]);
+
+  const endCategoryAISession = useCallback(() => {
+    setCategoryAIBusy(false);
+    setCategoryAIStatus(null);
+    setCategoryAIResult(null);
+    setCategoryAIInstructions("");
+    setCategoryAIChat([]);
+    setCategoryAIDrawerOpen(false);
+  }, []);
+
+  const endPropertyAISession = useCallback(() => {
+    setPropertyAIBusy(false);
+    setPropertyAIStatus(null);
+    setPropertyAIResult(null);
+    setPropertyAIInstructions("");
+    setPropertyAIChat([]);
+    setPropertyAIDrawerOpen(false);
+  }, []);
+
+  useEffect(() => {
+    const propertySessionAvailable = propertyAIDrawerOpen || propertyAIBusy || propertyAIChat.length > 0;
+    const categorySessionAvailable = categoryAIDrawerOpen || categoryAIBusy || categoryAIChat.length > 0;
+
+    if (propertySessionAvailable) {
+      setAiAssistantPanelController({
+        available: true,
+        open: propertyAIDrawerOpen,
+        toggle: () => setPropertyAIDrawerOpen((open) => !open),
+      });
+      return;
+    }
+
+    if (categorySessionAvailable) {
+      setAiAssistantPanelController({
+        available: true,
+        open: categoryAIDrawerOpen,
+        toggle: () => setCategoryAIDrawerOpen((open) => !open),
+      });
+      return;
+    }
+
+    setAiAssistantPanelController(null);
+  }, [
+    categoryAIBusy,
+    categoryAIDrawerOpen,
+    categoryAIChat.length,
+    propertyAIBusy,
+    propertyAIDrawerOpen,
+    propertyAIChat.length,
+    setAiAssistantPanelController,
+  ]);
+
+  useEffect(() => {
+    return () => setAiAssistantPanelController(null);
+  }, [setAiAssistantPanelController]);
 
   const loadProps = async (catId: number) => {
     setProperties(await fetchCategoryProperties(catId));
@@ -127,20 +300,6 @@ export default function CategoriesPage() {
   const propertyTypes = getPropertyTypes(t);
   const pendingCategoryDeleteId = deleteFlow.pending?.type === "category" ? deleteFlow.pending.id : null;
   const pendingPropertyDeleteId = deleteFlow.pending?.type === "property" ? deleteFlow.pending.id : null;
-  const hasCategoryAIInfo =
-    categoryAIBusy ||
-    !!categoryAIStatus ||
-    (categoryAIResult?.properties.length || 0) > 0 ||
-    (categoryAIResult?.notes.length || 0) > 0 ||
-    (categoryAIResult?.questions.length || 0) > 0 ||
-    categoryAIInstructions.trim().length > 0;
-  const hasPropertyAIInfo =
-    propertyAIBusy ||
-    !!propertyAIStatus ||
-    (propertyAIResult?.notes.length || 0) > 0 ||
-    (propertyAIResult?.questions.length || 0) > 0 ||
-    propertyAIInstructions.trim().length > 0;
-
   const toggleExpand = async (catId: number) => {
     if (expanded === catId) { setExpanded(null); return; }
     setExpanded(catId);
@@ -156,7 +315,28 @@ export default function CategoriesPage() {
     load();
   };
 
-  const buildCategoryAIPrompt = (category: Partial<Category>, currentProperties: Property[], additionalInstructions: string) => {
+  const buildConversationContext = (history: AIChatEntry[], nextUserMessage: string) => {
+    const lines = history
+      .filter((entry) => !entry.pending && entry.content.trim())
+      .map((entry) => `${entry.role === "user" ? "User" : "Ina"}: ${entry.content.trim()}`);
+
+    if (nextUserMessage.trim()) {
+      lines.push(`User: ${nextUserMessage.trim()}`);
+    }
+
+    if (lines.length === 0) {
+      return "";
+    }
+
+    return `Conversation so far:\n${lines.join("\n\n")}`;
+  };
+
+  const buildCategoryAIPrompt = (
+    category: Partial<Category>,
+    currentProperties: Property[],
+    history: AIChatEntry[],
+    additionalInstructions: string,
+  ) => {
     const lines = [
       `Kategorie: ${(category.name || "").trim()}`,
     ];
@@ -166,23 +346,68 @@ export default function CategoriesPage() {
     if (currentProperties.length > 0) {
       lines.push(`Bereits vorhanden: ${currentProperties.map((property) => property.name).join(", ")}`);
     }
-    lines.push(
-      "Schlage passende Properties fuer diese Kategorie vor. Nutze Auswahl oder Mehrfachauswahl mit konkreten Optionen, wenn Standards oder bekannte Varianten sinnvoll sind.",
-    );
+    const conversationContext = buildConversationContext(history, additionalInstructions);
+    if (conversationContext) {
+      lines.push(conversationContext);
+    }
+    lines.push("Nutze den Gesprächsverlauf als Kontext. Reagiere auf den letzten User-Teil als eigentlichen nächsten Schritt.");
+    lines.push("Führe nur den beschriebenen Auftrag für diese Kategorie aus. Erweitere die Kategorie nicht allgemein und schlage nichts Unverlangtes vor.");
     if (additionalInstructions.trim()) {
-      lines.push(`Zusätzliche Anweisungen: ${additionalInstructions.trim()}`);
+      lines.push(`Letzte User-Nachricht: ${additionalInstructions.trim()}`);
     }
     return lines.join("\n");
   };
 
+  const resolveCategoryAIReply = (result: AICategoryPropertySuggestionResult | null, status: string) => {
+    const assistantMessage = result?.assistant_message?.trim();
+    if (assistantMessage) {
+      return assistantMessage;
+    }
+    const questions = result?.questions || [];
+    if (questions.length > 0) {
+      return questions.join("\n\n");
+    }
+    const notes = result?.notes || [];
+    if (notes.length > 0) {
+      return notes.join("\n\n");
+    }
+    return status;
+  };
+
+  const resolvePropertyAIReply = (result: AIPropertyEnhancementSuggestionResult | null, status: string) => {
+    const assistantMessage = result?.assistant_message?.trim();
+    if (assistantMessage) {
+      return assistantMessage;
+    }
+    const questions = result?.questions || [];
+    if (questions.length > 0) {
+      return questions.join("\n\n");
+    }
+    const notes = result?.notes || [];
+    if (notes.length > 0) {
+      return notes.join("\n\n");
+    }
+    return status;
+  };
+
   const runCategoryAI = async () => {
     if (isNew || !editCat?.id || !editCat.name?.trim()) return;
-    const prompt = buildCategoryAIPrompt(editCat, properties, categoryAIInstructions);
-    setNotification({
-      tone: "info",
-      title: t("categories.aiStartingTitle"),
-      message: t("categories.aiStartingMessage"),
-    });
+    const task = categoryAIInstructions.trim();
+    const prompt = buildCategoryAIPrompt(editCat, properties, categoryAIChat, task);
+    const assistantMessageId = createChatId("category-ai-assistant");
+    if (task) {
+      setCategoryAIChat((current) => [
+        ...current,
+        { id: createChatId("category-ai-user"), role: "user", content: task },
+        { id: assistantMessageId, role: "assistant", content: t("categories.aiThinking"), pending: true },
+      ]);
+      setCategoryAIInstructions("");
+    } else {
+      setCategoryAIChat((current) => [
+        ...current,
+        { id: assistantMessageId, role: "assistant", content: t("categories.aiThinking"), pending: true },
+      ]);
+    }
     setCategoryAIBusy(true);
     setCategoryAIStatus(null);
     setCategoryAIDrawerOpen(true);
@@ -195,18 +420,48 @@ export default function CategoriesPage() {
         allow_web_search: true,
       });
       setCategoryAIResult(result);
-      setCategoryAIStatus(
-        result.properties.length > 0 ? t("categories.aiSuggestionsReady") : t("categories.aiNoSuggestions"),
+      const nextStatus =
+        result.properties.length > 0 ? t("categories.aiSuggestionsReady") : t("categories.aiNoSuggestions");
+      setCategoryAIStatus(nextStatus);
+      const reply = resolveCategoryAIReply(result, nextStatus);
+      setCategoryAIChat((current) =>
+        current.map((entry) =>
+          entry.id === assistantMessageId ? { ...entry, content: reply, pending: false, animate: true } : entry,
+        ),
       );
     } catch (error) {
       setCategoryAIResult(null);
-      setCategoryAIStatus(error instanceof Error ? error.message : t("categories.aiFailed"));
+      const failure = error instanceof Error ? error.message : t("categories.aiFailed");
+      setCategoryAIStatus(failure);
+      setCategoryAIChat((current) =>
+        current.map((entry) =>
+          entry.id === assistantMessageId ? { ...entry, content: failure, pending: false, animate: true } : entry,
+        ),
+      );
     } finally {
       setCategoryAIBusy(false);
     }
   };
 
-  const buildPropertyAIPrompt = (category: Partial<Category>, property: Partial<Property>, additionalInstructions: string) => {
+  const openCategoryAI = () => {
+    if (isNew || !editCat?.id || !editCat.name?.trim()) return;
+    setCategoryAIDrawerOpen(true);
+  };
+
+  const handleCategoryComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (categoryAIBusy) return;
+      void runCategoryAI();
+    }
+  };
+
+  const buildPropertyAIPrompt = (
+    category: Partial<Category>,
+    property: Partial<Property>,
+    history: AIChatEntry[],
+    additionalInstructions: string,
+  ) => {
     const lines = [
       `Kategorie: ${(category.name || "").trim()}`,
       `Property: ${(property.name || "").trim()}`,
@@ -222,11 +477,14 @@ export default function CategoriesPage() {
     if (choices.length > 0) {
       lines.push(`Vorhandene Optionen: ${choices.join(", ")}`);
     }
-    lines.push(
-      "Verbessere diese vorhandene Property fuer die Kategorie. Wenn feste Standards oder Varianten sinnvoll sind, schlage Auswahl oder Mehrfachauswahl mit konkreten Optionen vor.",
-    );
+    const conversationContext = buildConversationContext(history, additionalInstructions);
+    if (conversationContext) {
+      lines.push(conversationContext);
+    }
+    lines.push("Nutze den Gesprächsverlauf als Kontext. Reagiere auf den letzten User-Teil als eigentlichen nächsten Schritt.");
+    lines.push("Führe nur den beschriebenen Auftrag für diese Property aus. Nimm keine allgemeinen Verbesserungen an der ganzen Kategorie oder an anderen Properties vor.");
     if (additionalInstructions.trim()) {
-      lines.push(`Zusätzliche Anweisungen: ${additionalInstructions.trim()}`);
+      lines.push(`Letzte User-Nachricht: ${additionalInstructions.trim()}`);
     }
     return lines.join("\n");
   };
@@ -259,12 +517,22 @@ export default function CategoriesPage() {
 
   const runPropertyAI = async (category: Pick<Category, "id" | "name" | "description">) => {
     if (isNewProp || !editProp?.id || !editProp.name?.trim()) return;
-    const prompt = buildPropertyAIPrompt(category, editProp, propertyAIInstructions);
-    setNotification({
-      tone: "info",
-      title: t("categories.aiStartingTitle"),
-      message: t("categories.aiStartingMessage"),
-    });
+    const task = propertyAIInstructions.trim();
+    const prompt = buildPropertyAIPrompt(category, editProp, propertyAIChat, task);
+    const assistantMessageId = createChatId("property-ai-assistant");
+    if (task) {
+      setPropertyAIChat((current) => [
+        ...current,
+        { id: createChatId("property-ai-user"), role: "user", content: task },
+        { id: assistantMessageId, role: "assistant", content: t("categories.aiThinking"), pending: true },
+      ]);
+      setPropertyAIInstructions("");
+    } else {
+      setPropertyAIChat((current) => [
+        ...current,
+        { id: assistantMessageId, role: "assistant", content: t("categories.aiThinking"), pending: true },
+      ]);
+    }
     setPropertyAIBusy(true);
     setPropertyAIStatus(null);
     setPropertyAIDrawerOpen(true);
@@ -279,12 +547,43 @@ export default function CategoriesPage() {
       });
       setPropertyAIResult(result);
       applyPropertyAIResult(result);
-      setPropertyAIStatus(t("categories.aiPropertyEnhanced"));
+      const nextStatus = t("categories.aiPropertyEnhanced");
+      setPropertyAIStatus(nextStatus);
+      const reply = resolvePropertyAIReply(result, nextStatus);
+      setPropertyAIChat((current) =>
+        current.map((entry) =>
+          entry.id === assistantMessageId ? { ...entry, content: reply, pending: false, animate: true } : entry,
+        ),
+      );
     } catch (error) {
       setPropertyAIResult(null);
-      setPropertyAIStatus(error instanceof Error ? error.message : t("categories.aiFailed"));
+      const failure = error instanceof Error ? error.message : t("categories.aiFailed");
+      setPropertyAIStatus(failure);
+      setPropertyAIChat((current) =>
+        current.map((entry) =>
+          entry.id === assistantMessageId ? { ...entry, content: failure, pending: false, animate: true } : entry,
+        ),
+      );
     } finally {
       setPropertyAIBusy(false);
+    }
+  };
+
+  const openPropertyAI = () => {
+    if (isNewProp || !editProp?.id || !editCat?.id) return;
+    setPropertyAIDrawerOpen(true);
+  };
+
+  const handlePropertyComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (propertyAIBusy) return;
+      if (!editCat?.id || !editCat.name?.trim()) return;
+      void runPropertyAI({
+        id: editCat.id,
+        name: editCat.name,
+        description: editCat.description || "",
+      });
     }
   };
 
@@ -401,10 +700,29 @@ export default function CategoriesPage() {
   const saveProp = async () => {
     if (!canWriteCategories) return;
     if (!editProp?.name || !editProp?.property_type) return;
-    if (isNewProp) await api.createProperty({ ...editProp, category_id: expanded!, position: properties.length });
-    else if (editProp.id) await api.updateProperty(editProp.id, editProp);
+    const payload = buildEditablePropertyPayload({
+      ...editProp,
+      category_id: editProp.category_id ?? expanded ?? undefined,
+      position: editProp.position ?? (isNewProp ? properties.length : undefined),
+    });
+    let saved: Property | null = null;
+    if (isNewProp) {
+      saved = await api.createProperty(payload);
+    } else if (editProp.id) {
+      saved = await api.updateProperty(editProp.id, payload);
+    }
     setEditProp(null);
-    if (expanded) loadProps(expanded);
+    setIsNewProp(false);
+    if (saved) {
+      setProperties((current) => {
+        if (isNewProp) {
+          return sortProperties([...current, saved!]);
+        }
+        return sortProperties(current.map((property) => (property.id === saved!.id ? saved! : property)));
+      });
+    } else if (expanded) {
+      await loadProps(expanded);
+    }
   };
 
   const deleteProp = (id: number) => {
@@ -421,7 +739,6 @@ export default function CategoriesPage() {
 
   return (
     <div className="space-y-6">
-      <FloatingNotification notification={notification} onClose={() => setNotification(null)} t={t} />
       <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:border-b sm:border-gray-200 sm:text-left lg:mb-8 dark:border-white/10">
         <div className="space-y-1 py-3">
           <nav className="text-sm font-medium dark:text-gray-100">
@@ -519,9 +836,7 @@ export default function CategoriesPage() {
                           onSave={saveCat}
                           showAIButton
                           aiBusy={categoryAIBusy}
-                          hasAIInfo={hasCategoryAIInfo}
-                          onOpenAIInfo={() => setCategoryAIDrawerOpen(true)}
-                          onRunAI={() => { void runCategoryAI(); }}
+                          onRunAI={openCategoryAI}
                           t={t}
                         />
                       </div>
@@ -591,9 +906,7 @@ export default function CategoriesPage() {
                                       propertyTypes={propertyTypes}
                                       showAIButton
                                       aiBusy={propertyAIBusy}
-                                      hasAIInfo={hasPropertyAIInfo}
-                                      onOpenAIInfo={() => setPropertyAIDrawerOpen(true)}
-                                      onRunAI={() => { void runPropertyAI(cat); }}
+                                      onRunAI={openPropertyAI}
                                       t={t}
                                     />
                                   </div>
@@ -620,59 +933,57 @@ export default function CategoriesPage() {
         title={t("categories.aiInfoTitle")}
         subtitle={t("categories.aiInfoSubtitle")}
       >
-        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-          <label className="mb-2 block text-sm font-medium text-white">{t("categories.aiInstructionsLabel")}</label>
-          <textarea
-            value={categoryAIInstructions}
-            onChange={(event) => setCategoryAIInstructions(event.target.value)}
-            rows={4}
-            placeholder={t("categories.aiInstructionsPlaceholder")}
-            className="block w-full rounded-md bg-black/20 px-3 py-2 text-sm text-white outline outline-1 -outline-offset-1 outline-white/10 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-500"
-          />
+        <div className="space-y-4">
+          {categoryAIChat.map((entry) => (
+            <AIChatMessage
+              key={entry.id}
+              role={entry.role}
+              name={entry.role === "user" ? aiUserName : aiAssistantName}
+              content={entry.content}
+              pending={entry.pending}
+              animate={entry.animate}
+              onAnimationDone={entry.role === "assistant" ? () => markCategoryChatEntrySeen(entry.id) : undefined}
+            />
+          ))}
+
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
+            <label className="mb-2 block text-sm font-medium text-white">{t("categories.aiMessageLabel")}</label>
+            <textarea
+              value={categoryAIInstructions}
+              onChange={(event) => setCategoryAIInstructions(event.target.value)}
+              onKeyDown={handleCategoryComposerKeyDown}
+              rows={2}
+              placeholder={categoryAIChat.length > 0 ? t("categories.aiReplyPlaceholder") : t("categories.aiInstructionsPlaceholder")}
+              className="block min-h-[84px] w-full resize-none rounded-2xl bg-black/20 px-4 py-2.5 text-sm text-white outline outline-1 -outline-offset-1 outline-white/10 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-500"
+            />
+            <div className="mt-4 flex justify-end">
+              {categoryAIChat.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={endCategoryAISession}
+                  className="mr-auto inline-flex items-center rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-gray-300 transition hover:bg-white/5 hover:text-white"
+                >
+                  {t("categories.aiEndSession")}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => { void runCategoryAI(); }}
+                disabled={categoryAIBusy}
+                className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <SparklesIcon className="h-4 w-4" />
+                {categoryAIBusy
+                  ? t("categories.aiRunning")
+                  : t("categories.aiSend")}
+              </button>
+            </div>
+          </div>
         </div>
 
-        {!hasCategoryAIInfo ? (
+        {!categoryAIBusy && categoryAIChat.length === 0 && !(categoryAIResult?.properties.length || 0) ? (
           <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-gray-300">
             {t("categories.aiInfoEmpty")}
-          </div>
-        ) : null}
-
-        {categoryAIBusy ? (
-          <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 px-4 py-4 text-sm text-blue-200">
-            {t("categories.aiRunning")}
-          </div>
-        ) : null}
-
-        {categoryAIStatus ? (
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-            <p className="text-sm font-semibold text-white">{t("categories.aiInfoStatusTitle")}</p>
-            <p className="mt-1 text-sm text-gray-300">{categoryAIStatus}</p>
-          </div>
-        ) : null}
-
-        {(categoryAIResult?.questions.length || 0) > 0 ? (
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-            <p className="text-sm font-semibold text-white">{t("categories.aiQuestions")}</p>
-            <ul className="mt-3 space-y-2 text-sm text-gray-300">
-              {(categoryAIResult?.questions || []).map((question, index) => (
-                <li key={`${question}-${index}`} className="rounded-lg border border-white/10 bg-black/10 px-3 py-2">
-                  {question}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {(categoryAIResult?.notes.length || 0) > 0 ? (
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-            <p className="text-sm font-semibold text-white">{t("categories.aiNotes")}</p>
-            <div className="mt-3 space-y-2 text-sm text-gray-300">
-              {(categoryAIResult?.notes || []).map((note, index) => (
-                <div key={`${note}-${index}`} className="rounded-lg border border-white/10 bg-black/10 px-3 py-2">
-                  {note}
-                </div>
-              ))}
-            </div>
           </div>
         ) : null}
 
@@ -699,59 +1010,65 @@ export default function CategoriesPage() {
         title={t("categories.aiPropertyInfoTitle")}
         subtitle={t("categories.aiPropertyInfoSubtitle")}
       >
-        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-          <label className="mb-2 block text-sm font-medium text-white">{t("categories.aiInstructionsLabel")}</label>
-          <textarea
-            value={propertyAIInstructions}
-            onChange={(event) => setPropertyAIInstructions(event.target.value)}
-            rows={4}
-            placeholder={t("categories.aiInstructionsPlaceholder")}
-            className="block w-full rounded-md bg-black/20 px-3 py-2 text-sm text-white outline outline-1 -outline-offset-1 outline-white/10 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-500"
-          />
+        <div className="space-y-4">
+          {propertyAIChat.map((entry) => (
+            <AIChatMessage
+              key={entry.id}
+              role={entry.role}
+              name={entry.role === "user" ? aiUserName : aiAssistantName}
+              content={entry.content}
+              pending={entry.pending}
+              animate={entry.animate}
+              onAnimationDone={entry.role === "assistant" ? () => markPropertyChatEntrySeen(entry.id) : undefined}
+            />
+          ))}
+
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
+            <label className="mb-2 block text-sm font-medium text-white">{t("categories.aiMessageLabel")}</label>
+            <textarea
+              value={propertyAIInstructions}
+              onChange={(event) => setPropertyAIInstructions(event.target.value)}
+              onKeyDown={handlePropertyComposerKeyDown}
+              rows={2}
+              className="block min-h-[84px] w-full resize-none rounded-2xl bg-black/20 px-4 py-2.5 text-sm text-white outline outline-1 -outline-offset-1 outline-white/10 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-500"
+            />
+            <div className="mt-4 flex justify-end">
+              {propertyAIChat.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={endPropertyAISession}
+                  className="mr-auto inline-flex items-center rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-gray-300 transition hover:bg-white/5 hover:text-white"
+                >
+                  {t("categories.aiEndSession")}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!editCat?.id || !editCat.name?.trim()) return;
+                  void runPropertyAI({
+                    id: editCat.id,
+                    name: editCat.name,
+                    description: editCat.description || "",
+                  });
+                }}
+                disabled={propertyAIBusy}
+                className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <SparklesIcon className="h-4 w-4" />
+                {propertyAIBusy
+                  ? t("categories.aiRunning")
+                  : propertyAIResult?.needs_confirmation
+                    ? t("categories.aiAnswerAndRerun")
+                    : t("categories.aiSend")}
+              </button>
+            </div>
+          </div>
         </div>
 
-        {!hasPropertyAIInfo ? (
+        {!propertyAIBusy && propertyAIChat.length === 0 ? (
           <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-gray-300">
             {t("categories.aiInfoEmpty")}
-          </div>
-        ) : null}
-
-        {propertyAIBusy ? (
-          <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 px-4 py-4 text-sm text-blue-200">
-            {t("categories.aiRunning")}
-          </div>
-        ) : null}
-
-        {propertyAIStatus ? (
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-            <p className="text-sm font-semibold text-white">{t("categories.aiInfoStatusTitle")}</p>
-            <p className="mt-1 text-sm text-gray-300">{propertyAIStatus}</p>
-          </div>
-        ) : null}
-
-        {(propertyAIResult?.questions.length || 0) > 0 ? (
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-            <p className="text-sm font-semibold text-white">{t("categories.aiQuestions")}</p>
-            <ul className="mt-3 space-y-2 text-sm text-gray-300">
-              {(propertyAIResult?.questions || []).map((question, index) => (
-                <li key={`${question}-${index}`} className="rounded-lg border border-white/10 bg-black/10 px-3 py-2">
-                  {question}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {(propertyAIResult?.notes.length || 0) > 0 ? (
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-            <p className="text-sm font-semibold text-white">{t("categories.aiNotes")}</p>
-            <div className="mt-3 space-y-2 text-sm text-gray-300">
-              {(propertyAIResult?.notes || []).map((note, index) => (
-                <div key={`${note}-${index}`} className="rounded-lg border border-white/10 bg-black/10 px-3 py-2">
-                  {note}
-                </div>
-              ))}
-            </div>
           </div>
         ) : null}
       </AIInfoDrawer>

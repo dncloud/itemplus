@@ -17,10 +17,12 @@ import {
 import { useApp } from "@/lib/app-context";
 import { ItemCreateAIPanel, ItemCreateHeader } from "@/components/item-create-ai-panel";
 import {
+  countVisibleSuggestedFields,
+  countVisibleSuggestedProperties,
   formatItemSuggestionValue as formatSuggestionValue,
   resolvePhotoLookupPrompt,
 } from "@/components/item-create-helpers";
-import { extractPartialAIOutput, type AIPropertyReviewHint } from "@/components/item-create-ai-utils";
+import { extractPartialAIOutput } from "@/components/item-create-ai-utils";
 import { buildAIViewState, deriveAISuggestions } from "@/components/item-create-ai-state";
 import { InventorySection, PropertiesSection } from "@/components/item-create-form-sections";
 import { ItemCreateBasicsSection } from "@/components/item-create-basics-section";
@@ -44,17 +46,58 @@ import {
 import { ModalSection } from "@/components/item-create-ui";
 import { ItemCreateErrorView, ItemCreateLoadingView } from "@/components/item-create-view";
 import AttachmentManager from "@/components/attachment-manager";
-import { FloatingNotification, type FloatingNotificationState } from "@/components/floating-notification";
 
 type ItemCreatePageProps = {
   mode?: "create" | "edit";
   itemId?: number;
 };
 
+type AIChatEntry = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  imageUrl?: string;
+  pending?: boolean;
+  animate?: boolean;
+};
+
+type AIChatSuggestion = {
+  id: string;
+  label: string;
+  value: string;
+  onApply: () => void;
+};
+
+function createChatId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function loadTempImagePreview(tempImageID: string): Promise<string | null> {
+  try {
+    const response = await fetch(`/api/ai/temp-image/${tempImageID}`, { credentials: "include" });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === "string") {
+          resolve(reader.result);
+          return;
+        }
+        reject(new Error("Could not convert temp image"));
+      };
+      reader.onerror = () => reject(reader.error || new Error("Could not read temp image"));
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { realm, locale, t } = useApp();
+  const { realm, locale, t, iosBridgeStatus, currentUserLabel, setAiAssistantBusy, setAiAssistantPanelController } = useApp();
   const isEditMode = mode === "edit";
   const initialBarcode = searchParams.get("barcode") || "";
   const initialSymbology = searchParams.get("symbology") || "";
@@ -68,19 +111,15 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   );
   const [aiAssistBusy, setAiAssistBusy] = useState(false);
   const [aiAssistStatus, setAiAssistStatus] = useState<string | null>(null);
-  const [aiAssistResult, setAiAssistResult] = useState<AIParseItemIntentResult | null>(null);
   const [aiSuggestedItem, setAiSuggestedItem] = useState<Partial<Item>>({});
   const [aiSuggestedPropValues, setAiSuggestedPropValues] = useState<Record<string, unknown>>({});
-  const [aiPropertyReviewHints, setAiPropertyReviewHints] = useState<AIPropertyReviewHint[]>([]);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
-  const [notification, setNotification] = useState<FloatingNotificationState>(null);
-  const [aiLastRequest, setAiLastRequest] = useState("");
+  const [aiChat, setAiChat] = useState<AIChatEntry[]>([]);
+  const [aiSuggestionAnchorMessageId, setAiSuggestionAnchorMessageId] = useState<string | null>(null);
   const [aiLiveText, setAiLiveText] = useState("");
-  const [aiProgressMessages, setAiProgressMessages] = useState<string[]>([]);
-  const [aiThinkingMessages, setAiThinkingMessages] = useState<string[]>([]);
   const [barcodeCapturePending, setBarcodeCapturePending] = useState(false);
-  const [lastBarcodeLookupCode, setLastBarcodeLookupCode] = useState<string | null>(null);
   const [photoLookupPending, setPhotoLookupPending] = useState(false);
+  const [lastBarcodeLookupCode, setLastBarcodeLookupCode] = useState<string | null>(null);
   const consumedInitialBarcodeRef = useRef(false);
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -93,6 +132,12 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   const [allProperties, setAllProperties] = useState<Property[]>([]);
   const [catProperties, setCatProperties] = useState<Property[]>([]);
   const [propValues, setPropValues] = useState<Record<string, unknown>>({});
+  const markAssistantMessageSeen = useCallback((id: string) => {
+    setAiChat((current) =>
+      current.map((entry) => (entry.id === id && entry.animate ? { ...entry, animate: false } : entry)),
+    );
+  }, []);
+  const aiUserName = currentUserLabel || t("items.aiUserFallback");
 
   const loadSourceItem = useCallback(async () => {
     if (!isEditMode || !itemId) return;
@@ -145,10 +190,9 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   }, [consumedInitialBarcodeRef, initialBarcode, initialSymbology, isEditMode, router, searchParams]);
 
   useEffect(() => {
-    if (!notification) return;
-    const timeout = window.setTimeout(() => setNotification(null), 3200);
-    return () => window.clearTimeout(timeout);
-  }, [notification]);
+    setAiAssistantBusy(aiAssistBusy);
+    return () => setAiAssistantBusy(false);
+  }, [aiAssistBusy, setAiAssistantBusy]);
 
   const selectedCategoryId = editItem.category_id;
   useEffect(() => {
@@ -177,8 +221,8 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
       });
       setAiSuggestedItem(nextState.suggestedItem);
       setAiSuggestedPropValues(nextState.suggestedPropValues);
-      setAiPropertyReviewHints(nextState.reviewHints || []);
       setAiAssistStatus(nextState.status);
+      return nextState;
     },
     [allProperties, barcodeDraft?.code, categories, editItem.category_id, editItem.name, realm, t],
   );
@@ -219,6 +263,16 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     [],
   );
 
+  const buildConversationContext = useCallback((history: AIChatEntry[], nextUserMessage: string) => {
+    const lines = history
+      .filter((entry) => !entry.pending && entry.content.trim())
+      .map((entry) => `${entry.role === "user" ? "User" : "Ina"}: ${entry.content.trim()}`);
+    if (nextUserMessage.trim()) {
+      lines.push(`User: ${nextUserMessage.trim()}`);
+    }
+    return lines.join("\n");
+  }, []);
+
   const runAIAssist = useCallback(async (
     promptOverride?: string,
     allowWebSearch = true,
@@ -227,25 +281,26 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   ) => {
     const promptText = (promptOverride ?? buildAIAssistPrompt()).trim();
     if (!promptText) {
+      setAiDrawerOpen(true);
+      setAiChat((current) => [
+        ...current,
+        { id: createChatId("item-ai-assistant"), role: "assistant", content: t("items.aiAssistNeedsBasics"), animate: true },
+      ]);
       setAiAssistStatus(t("items.aiAssistNeedsBasics"));
       return;
     }
     const identifyOnly = options?.identifyOnly === true;
-    setNotification({
-      tone: "info",
-      title: t("items.aiStartingTitle"),
-      message: t("items.aiStartingMessage"),
-    });
-    setAiLastRequest(promptText);
+    const assistantMessageId = createChatId("item-ai-assistant");
     setAiAssistBusy(true);
     setAiAssistStatus(null);
-    setAiAssistResult(null);
     setAiSuggestedItem({});
     setAiSuggestedPropValues({});
-    setAiPropertyReviewHints([]);
     setAiLiveText("");
-    setAiProgressMessages([]);
-    setAiThinkingMessages([]);
+    setAiDrawerOpen(true);
+    setAiChat((current) => [
+      ...current,
+      { id: assistantMessageId, role: "assistant", content: t("categories.aiThinking"), pending: true },
+    ]);
 
     try {
       let streamedResult: AIParseItemIntentResult | null = null;
@@ -263,18 +318,22 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
           identify_only: identifyOnly,
         },
         (event: AIParseStreamEvent) => {
-          if (event.type === "status" && event.message) {
-            setAiProgressMessages((prev) => [...prev, event.message!]);
-          }
-          if (event.type === "note" && event.message) {
-            setAiThinkingMessages((prev) => [...prev, event.message!]);
-          }
-          if (event.type === "request" && event.message) setAiLastRequest(event.message);
           if (event.type === "delta" && event.delta) setAiLiveText((prev) => prev + event.delta);
           if (event.type === "result" && event.result) {
             streamedResult = event.result;
-            setAiAssistResult(event.result);
-            collectAISuggestions(event.result);
+            const nextState = collectAISuggestions(event.result);
+            const visibleSuggestionCount =
+              countVisibleSuggestedFields(nextState.suggestedItem, editItem, valuesEqual) +
+              countVisibleSuggestedProperties(nextState.suggestedPropValues, propValues, valuesEqual);
+            if (visibleSuggestionCount > 0) {
+              setAiSuggestionAnchorMessageId(assistantMessageId);
+            }
+            const reply = event.result.assistant_message?.trim() || t("items.aiSuggestionsReady");
+            setAiChat((current) =>
+              current.map((entry) =>
+                entry.id === assistantMessageId ? { ...entry, content: reply, pending: false, animate: true } : entry,
+              ),
+            );
           }
           if (event.type === "error" && event.message) {
             streamedError = event.message;
@@ -288,10 +347,29 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
       const partialOutput = extractPartialAIOutput(message);
       if (partialOutput) setAiLiveText((prev) => prev || partialOutput);
       setAiAssistStatus(message);
+      setAiChat((current) =>
+        current.map((entry) =>
+          entry.id === assistantMessageId ? { ...entry, content: message, pending: false, animate: true } : entry,
+        ),
+      );
     } finally {
       setAiAssistBusy(false);
     }
-  }, [barcodeDraft?.code, buildAIAssistPrompt, collectAISuggestions, editItem?.category_id, locale, realm, t]);
+  }, [barcodeDraft?.code, buildAIAssistPrompt, collectAISuggestions, editItem, locale, propValues, realm, t, valuesEqual]);
+
+  const sendAIMessage = useCallback(
+    async (message: string) => {
+      const trimmedMessage = message.trim();
+      if (!trimmedMessage) {
+        await runAIAssist();
+        return;
+      }
+      setAiChat((current) => [...current, { id: createChatId("item-ai-user"), role: "user", content: trimmedMessage }]);
+      const conversationContext = buildConversationContext(aiChat, trimmedMessage);
+      await runAIAssist(buildAIAssistPrompt(conversationContext));
+    },
+    [aiChat, buildAIAssistPrompt, buildConversationContext, runAIAssist],
+  );
 
   const applySuggestedField = <K extends keyof Item>(field: K) => {
     const result = applySuggestedItemFieldState(editItem, aiSuggestedItem, field);
@@ -313,7 +391,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     setPropValues(result.nextPropValues);
     setAiSuggestedItem({});
     setAiSuggestedPropValues({});
-    setAiPropertyReviewHints([]);
+    setAiSuggestionAnchorMessageId(null);
     setAiAssistStatus(t("items.aiApplied"));
   };
 
@@ -358,6 +436,17 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
       },
       onPhotoUploaded: (tempImageID) => {
         setPhotoLookupPending(false);
+        void loadTempImagePreview(tempImageID).then((imageUrl) => {
+          setAiChat((current) => [
+            ...current,
+            {
+              id: createChatId("item-ai-user-photo"),
+              role: "user",
+              content: imageUrl ? "" : t("items.aiPhotoAction"),
+              imageUrl: imageUrl || undefined,
+            },
+          ]);
+        });
         setAiAssistStatus(t("items.aiPhotoReceived"));
         const prompt = resolvePhotoLookupPrompt({
           itemName: editItem.name,
@@ -382,7 +471,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     void runAIAssist(buildBarcodeLookupPrompt(code), true, undefined, { identifyOnly: true });
   }, [barcodeDraft?.code, buildBarcodeLookupPrompt, editItem.name, lastBarcodeLookupCode, runAIAssist]);
 
-  const { suggestedCategoryName, hasVisibleSuggestions, aiStatusDetails, aiErrorInsights } = useMemo(
+  const { suggestedCategoryName, hasVisibleSuggestions } = useMemo(
     () =>
       buildAIViewState({
         aiSuggestedItem,
@@ -397,6 +486,110 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
       }),
     [aiSuggestedItem, editItem, aiSuggestedPropValues, propValues, aiAssistStatus, aiLiveText, categories, valuesEqual, t],
   );
+  const hasAISession =
+    aiDrawerOpen ||
+    aiAssistBusy ||
+    hasVisibleSuggestions ||
+    aiChat.length > 0;
+
+  const aiChatSuggestions = useMemo<AIChatSuggestion[]>(() => {
+    const entries: AIChatSuggestion[] = [];
+
+    if (typeof aiSuggestedItem.name === "string" && aiSuggestedItem.name.trim() && !valuesEqual(editItem.name, aiSuggestedItem.name)) {
+      entries.push({
+        id: "field:name",
+        label: t("items.name"),
+        value: aiSuggestedItem.name,
+        onApply: () => applySuggestedField("name"),
+      });
+    }
+
+    if (typeof aiSuggestedItem.description === "string" && !valuesEqual(editItem.description, aiSuggestedItem.description)) {
+      entries.push({
+        id: "field:description",
+        label: t("items.description"),
+        value: aiSuggestedItem.description,
+        onApply: () => applySuggestedField("description"),
+      });
+    }
+
+    if (typeof aiSuggestedItem.category_id === "number" && suggestedCategoryName && !valuesEqual(editItem.category_id, aiSuggestedItem.category_id)) {
+      entries.push({
+        id: "field:category_id",
+        label: t("items.category"),
+        value: suggestedCategoryName,
+        onApply: () => applySuggestedField("category_id"),
+      });
+    }
+
+    if (typeof aiSuggestedItem.purchase_price === "number" && !valuesEqual(editItem.purchase_price, aiSuggestedItem.purchase_price)) {
+      entries.push({
+        id: "field:purchase_price",
+        label: t("items.purchasePrice"),
+        value: String(aiSuggestedItem.purchase_price),
+        onApply: () => applySuggestedField("purchase_price"),
+      });
+    }
+
+    if (typeof aiSuggestedItem.purchase_currency === "string" && !valuesEqual(editItem.purchase_currency, aiSuggestedItem.purchase_currency)) {
+      entries.push({
+        id: "field:purchase_currency",
+        label: t("items.currency"),
+        value: aiSuggestedItem.purchase_currency,
+        onApply: () => applySuggestedField("purchase_currency"),
+      });
+    }
+
+    if (typeof aiSuggestedItem.quantity === "number" && !valuesEqual(editItem.quantity, aiSuggestedItem.quantity)) {
+      entries.push({
+        id: "field:quantity",
+        label: t("items.quantity"),
+        value: String(aiSuggestedItem.quantity),
+        onApply: () => applySuggestedField("quantity"),
+      });
+    }
+
+    for (const prop of catProperties) {
+      const suggestion = aiSuggestedPropValues[String(prop.id)];
+      if (typeof suggestion === "undefined" || valuesEqual(propValues[String(prop.id)], suggestion)) continue;
+      entries.push({
+        id: `property:${prop.id}`,
+        label: prop.name,
+        value: formatSuggestionValue(suggestion, prop),
+        onApply: () => applySuggestedProperty(String(prop.id)),
+      });
+    }
+
+    return entries;
+  }, [
+    aiSuggestedItem,
+    suggestedCategoryName,
+    editItem,
+    catProperties,
+    aiSuggestedPropValues,
+    propValues,
+    valuesEqual,
+    applySuggestedField,
+    applySuggestedProperty,
+    formatSuggestionValue,
+    t,
+  ]);
+
+  useEffect(() => {
+    if (!hasAISession) {
+      setAiAssistantPanelController(null);
+      return;
+    }
+    setAiAssistantPanelController({
+      available: true,
+      open: aiDrawerOpen,
+      toggle: () => setAiDrawerOpen((open) => !open),
+    });
+  }, [aiDrawerOpen, hasAISession, setAiAssistantPanelController]);
+
+  useEffect(() => {
+    return () => setAiAssistantPanelController(null);
+  }, [setAiAssistantPanelController]);
 
   const pageTitle = isEditMode && editItem.name?.trim() ? `${t("common.edit")} - ${editItem.name.trim()}` : isEditMode ? t("common.edit") : t("items.new");
   const cancelHref = isEditMode && itemId ? `/items/${itemId}` : "/items";
@@ -413,7 +606,6 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
 
   return (
     <div className="space-y-8">
-      <FloatingNotification notification={notification} onClose={() => setNotification(null)} t={t} />
       <ItemCreateHeader
         t={t}
         realm={realm}
@@ -422,44 +614,44 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
         barcodeCapturePending={barcodeCapturePending}
         requestBarcodeCapture={requestBarcodeCapture}
         aiAssistBusy={aiAssistBusy}
-        canRunAI={!!editItem.name?.trim() && typeof editItem.category_id === "number"}
-        runAIAssist={() => {
-          void runAIAssist();
-        }}
-        openAIInfo={() => setAiDrawerOpen(true)}
-        hasAIInfo={
-          !!aiAssistStatus ||
-          !!aiLastRequest ||
-          !!aiLiveText ||
-          aiProgressMessages.length > 0 ||
-          aiThinkingMessages.length > 0 ||
-          (aiAssistResult?.notes?.length || 0) > 0 ||
-          (aiAssistResult?.questions?.length || 0) > 0 ||
-          aiPropertyReviewHints.length > 0
-        }
+        openAIPanel={() => setAiDrawerOpen((open) => !open)}
+        hasAIInfo={hasAISession}
+        aiPanelOpen={aiDrawerOpen}
       />
 
       <ItemCreateAIPanel
         t={t}
+        editItem={editItem}
+        setEditItem={setEditItem}
+        categories={categories}
+        clearPropValues={() => setPropValues({})}
         barcodeDraft={barcodeDraft}
         clearBarcodeDraft={() => setBarcodeDraft(null)}
         hasVisibleSuggestions={hasVisibleSuggestions}
         applyAllAISuggestions={applyAllAISuggestions}
+        runAIAssist={(message) => {
+          void sendAIMessage(message);
+        }}
         aiAssistBusy={aiAssistBusy}
-        aiAssistStatus={aiAssistStatus}
-        aiStatusDetails={aiStatusDetails}
-        aiErrorInsights={aiErrorInsights}
-        aiAssistResultQuestions={aiAssistResult?.questions || []}
-        aiAssistResultNotes={aiAssistResult?.notes || []}
-        aiPropertyReviewHints={aiPropertyReviewHints}
-        aiLastRequest={aiLastRequest}
-        aiLiveText={aiLiveText}
-        aiProgressMessages={aiProgressMessages}
-        aiThinkingMessages={aiThinkingMessages}
+        canPhotoLookup={iosBridgeStatus === "connected"}
         photoLookupPending={photoLookupPending}
         requestPhotoLookup={requestPhotoLookup}
         aiDrawerOpen={aiDrawerOpen}
         closeAIDrawer={() => setAiDrawerOpen(false)}
+        aiUserName={aiUserName}
+        aiChat={aiChat}
+        aiSuggestionAnchorMessageId={aiSuggestionAnchorMessageId}
+        aiChatSuggestions={aiChatSuggestions}
+        markAssistantMessageSeen={markAssistantMessageSeen}
+        endAIDrawerSession={() => {
+          setAiDrawerOpen(false);
+          setAiAssistStatus(null);
+          setAiSuggestedItem({});
+          setAiSuggestedPropValues({});
+          setAiSuggestionAnchorMessageId(null);
+          setAiChat([]);
+          setAiLiveText("");
+        }}
       />
 
       {isEditMode && itemId && sourceItem ? (

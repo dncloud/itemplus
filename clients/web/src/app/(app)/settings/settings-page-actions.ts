@@ -121,6 +121,9 @@ export function buildAISettingsPayload(aiDraft: AISettingsDraft): AISettingsPayl
     base_url: aiDraft.base_url.trim(),
     api_key: (aiDraft.api_key || "").trim(),
     enabled: aiDraft.enabled,
+    parse_item_prompt: aiDraft.parse_item_prompt.trim(),
+    category_property_prompt: aiDraft.category_property_prompt.trim(),
+    property_enhancement_prompt: aiDraft.property_enhancement_prompt.trim(),
   };
 }
 

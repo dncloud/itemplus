@@ -96,6 +96,31 @@ export function SettingsAISection({
                 placeholder={defaultAIBaseURL(aiDraft.provider)}
               />
             </div>
+            <div>
+              <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">
+                {isAIKeyOptional(aiDraft.provider) ? t("settings.aiApiKeyOptional") : t("settings.aiApiKey")}
+              </label>
+              <input
+                type="password"
+                value={aiDraft.api_key}
+                onChange={(e) => setAiDraft((prev) => ({ ...prev, api_key: e.target.value }))}
+                className={inputClass}
+                placeholder={
+                  aiDraft.has_api_key
+                    ? t("settings.aiApiKeyStored")
+                    : isAIKeyOptional(aiDraft.provider)
+                      ? t("settings.aiApiKeyOptionalPlaceholder")
+                      : "sk-..."
+                }
+              />
+              <p className="mt-2 text-sm/6 text-gray-500 dark:text-gray-400">
+                {aiDraft.has_api_key
+                  ? t("settings.aiApiKeyStoredHint")
+                  : isAIKeyOptional(aiDraft.provider)
+                    ? t("settings.aiApiKeyOptionalHint")
+                    : t("settings.aiApiKeyHint")}
+              </p>
+            </div>
           </div>
           <div className="lg:col-span-2">
             <p className="text-sm/6 text-gray-500 dark:text-gray-400">
@@ -109,36 +134,58 @@ export function SettingsAISection({
               })}
             </p>
           </div>
-          <div className="lg:col-span-2">
-            <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">
-              {isAIKeyOptional(aiDraft.provider) ? t("settings.aiApiKeyOptional") : t("settings.aiApiKey")}
-            </label>
-            <input
-              type="password"
-              value={aiDraft.api_key}
-              onChange={(e) => setAiDraft((prev) => ({ ...prev, api_key: e.target.value }))}
-              className={inputClass}
-              placeholder={
-                aiDraft.has_api_key
-                  ? t("settings.aiApiKeyStored")
-                  : isAIKeyOptional(aiDraft.provider)
-                    ? t("settings.aiApiKeyOptionalPlaceholder")
-                    : "sk-..."
-              }
-            />
-            <p className="mt-2 text-sm/6 text-gray-500 dark:text-gray-400">
-              {aiDraft.has_api_key
-                ? t("settings.aiApiKeyStoredHint")
-                : isAIKeyOptional(aiDraft.provider)
-                  ? t("settings.aiApiKeyOptionalHint")
-                  : t("settings.aiApiKeyHint")}
-            </p>
+          <div className="lg:col-span-2 space-y-4">
+            <div>
+              <p className="text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.aiPromptTemplates")}</p>
+              <p className="mt-1 text-sm/6 text-gray-500 dark:text-gray-400">{t("settings.aiPromptTemplatesHint")}</p>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.aiParsePrompt")}</label>
+              <textarea
+                value={aiDraft.parse_item_prompt}
+                onChange={(e) => setAiDraft((prev) => ({ ...prev, parse_item_prompt: e.target.value }))}
+                rows={10}
+                className={`${inputClass} min-h-44 font-mono text-xs`}
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.aiCategoryPrompt")}</label>
+              <textarea
+                value={aiDraft.category_property_prompt}
+                onChange={(e) => setAiDraft((prev) => ({ ...prev, category_property_prompt: e.target.value }))}
+                rows={12}
+                className={`${inputClass} min-h-52 font-mono text-xs`}
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.aiPropertyPrompt")}</label>
+              <textarea
+                value={aiDraft.property_enhancement_prompt}
+                onChange={(e) => setAiDraft((prev) => ({ ...prev, property_enhancement_prompt: e.target.value }))}
+                rows={12}
+                className={`${inputClass} min-h-52 font-mono text-xs`}
+              />
+            </div>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={saveAISettings} className={primaryButtonClass}>
             {t("common.save")}
+          </button>
+          <button
+            onClick={() =>
+              setAiDraft((prev) => ({
+                ...prev,
+                parse_item_prompt: prev.parse_item_prompt_default,
+                category_property_prompt: prev.category_property_prompt_default,
+                property_enhancement_prompt: prev.property_enhancement_prompt_default,
+              }))
+            }
+            className={secondaryButtonClass}
+            type="button"
+          >
+            {t("settings.aiRestoreDefaults")}
           </button>
           <button onClick={testAISettings} disabled={aiTesting} className={`${secondaryButtonClass} disabled:opacity-50`}>
             {aiTesting ? t("settings.aiTesting") : t("settings.aiTestConnection")}

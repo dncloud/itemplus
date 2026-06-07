@@ -10,6 +10,20 @@ export function sortProperties(properties: Property[]) {
   return [...properties].sort((a, b) => a.position - b.position);
 }
 
+export function buildEditablePropertyPayload(property: Partial<Property>): Partial<Property> {
+  return {
+    category_id: property.category_id,
+    name: property.name,
+    property_type: property.property_type,
+    unit: property.unit,
+    options: property.options,
+    required: property.required,
+    show_in_list: property.show_in_list,
+    display_width: property.display_width,
+    position: property.position,
+  };
+}
+
 export async function fetchCategoriesPageData() {
   return sortCategories(await api.getCategories());
 }

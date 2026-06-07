@@ -18,7 +18,7 @@ import {
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { realm, setRealm, serverURL, theme, setTheme, ready, isAdmin, can, t, iosBridgeStatus, printerBridgeStatus, showPrintFeatures } = useApp();
+  const { realm, setRealm, serverURL, theme, setTheme, ready, isAdmin, can, t, iosBridgeStatus, printerBridgeStatus, aiAssistantBusy, aiAssistantPanelAvailable, aiAssistantPanelOpen, toggleAiAssistantPanel, showPrintFeatures } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [badges, setBadges] = useState<Record<string, number>>({});
@@ -102,6 +102,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         t={t}
         iosBridgeStatus={iosBridgeStatus}
         printerBridgeStatus={printerBridgeStatus}
+        aiAssistantBusy={aiAssistantBusy}
+        aiAssistantPanelAvailable={aiAssistantPanelAvailable}
+        aiAssistantPanelOpen={aiAssistantPanelOpen}
+        onToggleAiAssistant={toggleAiAssistantPanel}
         showPrinterStatus={showPrintFeatures && (isAdmin || can("print"))}
         onOpenSidebar={() => setSidebarOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}

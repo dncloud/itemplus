@@ -32,6 +32,9 @@ import { formatAppDate, formatAppDateTime } from "./app-context-format";
 interface AppContextValue {
   iosBridgeStatus: "connected" | "disconnected";
   printerBridgeStatus: "connected" | "disconnected";
+  aiAssistantBusy: boolean;
+  aiAssistantPanelAvailable: boolean;
+  aiAssistantPanelOpen: boolean;
   realm: Realm;
   setRealm: (r: Realm) => void;
   serverURL: string;
@@ -40,6 +43,7 @@ interface AppContextValue {
   isDark: boolean;
   ready: boolean;
   isAdmin: boolean;
+  currentUserLabel: string;
   can: (perm: string) => boolean;
   locale: Locale;
   setLocale: (l: Locale) => void;
@@ -91,6 +95,9 @@ interface AppContextValue {
   fmtDate: (dateStr: string | null | undefined) => string;
   fmtDateTime: (dateStr: string | null | undefined) => string;
   t: (key: string, vars?: Record<string, string | number>) => string;
+  setAiAssistantBusy: (v: boolean) => void;
+  setAiAssistantPanelController: (controller: AIAssistantPanelController | null) => void;
+  toggleAiAssistantPanel: () => void;
 }
 
 type BridgeSession = {
@@ -100,11 +107,19 @@ type BridgeSession = {
   printer_bridge_reachable?: boolean | number;
 };
 
+type AIAssistantPanelController = {
+  available: boolean;
+  open: boolean;
+  toggle: () => void;
+};
+
 const AppContext = createContext<AppContextValue>(null!);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [iosBridgeStatus, setIosBridgeStatus] = useState<"connected" | "disconnected">("disconnected");
   const [printerBridgeStatus, setPrinterBridgeStatus] = useState<"connected" | "disconnected">("disconnected");
+  const [aiAssistantBusy, setAiAssistantBusy] = useState(false);
+  const [aiAssistantPanelController, setAiAssistantPanelController] = useState<AIAssistantPanelController | null>(null);
   const [realm, _setRealm] = useState<Realm>(getStoredRealm);
   const [serverURL] = useState(getServerURL);
   const [theme, _setTheme] = useState<Theme>(getStoredTheme);
@@ -135,6 +150,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [brandingWidth, setBrandingWidth] = useState<number>(180);
   const [locale, _setLocale] = useState<Locale>(getStoredLocale);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [currentUserLabel, setCurrentUserLabel] = useState("");
   const [permissions, setPermissions] = useState<string[]>([]);
 
   const can = useCallback((perm: string) => isAdmin || permissions.includes(perm), [isAdmin, permissions]);
@@ -179,6 +195,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     api.baseURL = "";
     api.getMe().then((u) => {
       setIsAdmin(u.is_admin);
+      setCurrentUserLabel((u.name || u.email || "").trim());
       setPermissions(u.permissions || []);
     }).catch(() => {}).finally(() => setReady(true));
   }, []);
@@ -449,9 +466,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (key: string, vars?: Record<string, string | number>) => translate(locale, key, vars),
     [locale]
   );
+  const toggleAiAssistantPanel = useCallback(() => {
+    aiAssistantPanelController?.toggle();
+  }, [aiAssistantPanelController]);
 
   return (
-    <AppContext.Provider value={{ iosBridgeStatus, printerBridgeStatus, realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showPrintFeatures, setShowPrintFeatures, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, printItemQR, printLocationQR, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, fmtDate, fmtDateTime, t }}>
+    <AppContext.Provider value={{ iosBridgeStatus, printerBridgeStatus, aiAssistantBusy, aiAssistantPanelAvailable: aiAssistantPanelController?.available ?? false, aiAssistantPanelOpen: aiAssistantPanelController?.open ?? false, realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, currentUserLabel, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showPrintFeatures, setShowPrintFeatures, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, printItemQR, printLocationQR, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, fmtDate, fmtDateTime, t, setAiAssistantBusy, setAiAssistantPanelController, toggleAiAssistantPanel }}>
       {children}
     </AppContext.Provider>
   );

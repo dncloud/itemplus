@@ -11,7 +11,6 @@ import {
   CubeIcon,
   EyeIcon,
   EyeSlashIcon,
-  InformationCircleIcon,
   PencilIcon,
   SparklesIcon,
   TrashIcon,
@@ -19,10 +18,11 @@ import {
 } from "@heroicons/react/24/outline";
 import SelectPicker from "@/components/select-picker";
 import type { AIPropertyProposal, Category, Property } from "@/lib/api";
+import { getPropertyOptionConfig } from "@/lib/property-options";
 
 const categoryInputClass = "w-full h-[38px] rounded-md bg-white px-3 py-1.5 text-sm text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500";
 
-export const TYPES_WITH_UNIT = new Set(["number", "dimensions"]);
+export const TYPES_WITH_UNIT = new Set(["number", "dimensions", "weight"]);
 export const TYPES_WITH_CHOICES = new Set(["select", "multiselect"]);
 
 export function getPropertyTypes(t: (key: string) => string): { value: string; label: string }[] {
@@ -218,7 +218,19 @@ export function SortableCategory({
   );
 }
 
-function SortableChoice({ id, value, onRemove }: { id: string; value: string; onRemove: () => void }) {
+function SortableChoice({
+  id,
+  value,
+  onChange,
+  onRemove,
+  placeholder,
+}: {
+  id: string;
+  value: string;
+  onChange: (next: string) => void;
+  onRemove: () => void;
+  placeholder: string;
+}) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const style = { transform: CSS.Transform.toString(transform), transition };
   return (
@@ -226,7 +238,12 @@ function SortableChoice({ id, value, onRemove }: { id: string; value: string; on
       <button type="button" {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
         <Bars3Icon className="h-3.5 w-3.5 text-gray-400" />
       </button>
-      <span className="flex-1 text-sm">{value}</span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="min-w-0 flex-1 bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-gray-500"
+      />
       <button type="button" onClick={onRemove} className="text-red-400 hover:text-red-500">
         <XMarkIcon className="h-4 w-4" />
       </button>
@@ -241,8 +258,6 @@ export function CategoryInlineForm({
   onSave,
   showAIButton = false,
   aiBusy = false,
-  hasAIInfo = false,
-  onOpenAIInfo,
   onRunAI,
   t,
 }: {
@@ -252,8 +267,6 @@ export function CategoryInlineForm({
   onSave: () => void;
   showAIButton?: boolean;
   aiBusy?: boolean;
-  hasAIInfo?: boolean;
-  onOpenAIInfo?: () => void;
   onRunAI?: () => void;
   t: (k: string) => string;
 }) {
@@ -288,20 +301,6 @@ export function CategoryInlineForm({
             >
               <SparklesIcon className="h-4 w-4" />
             </button>
-            {onOpenAIInfo ? (
-              <button
-                type="button"
-                onClick={onOpenAIInfo}
-                className={`inline-flex items-center justify-center rounded-lg border p-2 transition ${
-                  hasAIInfo
-                    ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
-                    : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/10"
-                }`}
-                title={t("categories.aiInfoButton")}
-              >
-                <InformationCircleIcon className="h-4 w-4" />
-              </button>
-            ) : null}
           </div>
         ) : null}
         <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700">{t("common.cancel")}</button>
@@ -338,14 +337,11 @@ export function CategoryAIProposalPanel({
   const typeLabel = (value: string) => propertyTypes.find((entry) => entry.value === value)?.label || value;
 
   return (
-    <div className="border-t border-gray-100 px-4 py-4 sm:px-6 dark:border-white/10">
+    <div className="border-t border-gray-100 pt-4 dark:border-white/10">
       <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-500/20 dark:bg-blue-500/10">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-gray-900 dark:text-white">{t("categories.aiTitle")}</p>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{t("categories.aiHint")}</p>
-          </div>
-          {proposals.length > 1 ? (
+        <p className="text-sm font-semibold text-gray-900 dark:text-white">{t("categories.aiTitle")}</p>
+        {proposals.length > 1 ? (
+          <div className="mt-4">
             <button
               type="button"
               onClick={onApplyAll}
@@ -353,8 +349,8 @@ export function CategoryAIProposalPanel({
             >
               {t("categories.aiApplyAll")}
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         {busy ? <p className="mt-3 text-sm text-blue-700 dark:text-blue-200">{t("categories.aiRunning")}</p> : null}
         {status ? <p className="mt-3 text-sm text-blue-700 dark:text-blue-200">{status}</p> : null}
@@ -434,23 +430,46 @@ export function CategoryAIProposalPanel({
   );
 }
 
-function ChoicesEditor({ choices, onChange, t }: { choices: string[]; onChange: (c: string[]) => void; t: (k: string) => string }) {
+function ChoicesEditor({
+  property,
+  onChange,
+  t,
+}: {
+  property: Partial<Property>;
+  onChange: (next: Partial<Property>) => void;
+  t: (k: string) => string;
+}) {
+  const optionConfig = getPropertyOptionConfig(property.options);
+  const choices = optionConfig.choices;
   const [newChoice, setNewChoice] = useState("");
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const updateOptions = (next: { choices?: string[]; allowCustom?: boolean; customLabel?: string }) => {
+    const current = getPropertyOptionConfig(property.options);
+    onChange({
+      ...property,
+      options: {
+        choices: next.choices ?? current.choices,
+        allow_custom: next.allowCustom ?? current.allowCustom,
+        custom_label: next.customLabel ?? current.customLabel,
+      },
+    });
+  };
 
   const add = () => {
     const trimmed = newChoice.trim();
     if (!trimmed || choices.includes(trimmed)) return;
-    onChange([...choices, trimmed]);
+    updateOptions({ choices: [...choices, trimmed] });
     setNewChoice("");
   };
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIdx = choices.indexOf(String(active.id));
-    const newIdx = choices.indexOf(String(over.id));
-    onChange(arrayMove(choices, oldIdx, newIdx));
+    const oldIdx = Number(String(active.id).replace("choice-", ""));
+    const newIdx = Number(String(over.id).replace("choice-", ""));
+    if (Number.isNaN(oldIdx) || Number.isNaN(newIdx)) return;
+    updateOptions({ choices: arrayMove(choices, oldIdx, newIdx) });
   };
 
   return (
@@ -459,9 +478,19 @@ function ChoicesEditor({ choices, onChange, t }: { choices: string[]; onChange: 
       <div className="space-y-1.5 mb-2">
         {choices.length > 0 ? (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-            <SortableContext items={choices} strategy={verticalListSortingStrategy}>
+            <SortableContext items={choices.map((_, index) => `choice-${index}`)} strategy={verticalListSortingStrategy}>
               {choices.map((choice, index) => (
-                <SortableChoice key={choice} id={choice} value={choice} onRemove={() => onChange(choices.filter((_, idx) => idx !== index))} />
+                <SortableChoice
+                  key={`choice-${index}`}
+                  id={`choice-${index}`}
+                  value={choice}
+                  onChange={(next) =>
+                    updateOptions({
+                      choices: choices.map((entry, entryIndex) => (entryIndex === index ? next : entry)),
+                    })}
+                  onRemove={() => updateOptions({ choices: choices.filter((_, idx) => idx !== index) })}
+                  placeholder={t("categories.choicePlaceholder")}
+                />
               ))}
             </SortableContext>
           </DndContext>
@@ -481,6 +510,25 @@ function ChoicesEditor({ choices, onChange, t }: { choices: string[]; onChange: 
           +
         </button>
       </div>
+      <div className="mt-4 space-y-3">
+        <label className="flex items-center gap-3 cursor-pointer text-sm/6 font-medium text-gray-900 dark:text-white">
+          <span>{t("categories.allowCustomChoice")}</span>
+          <button
+            type="button"
+            onClick={() => updateOptions({ allowCustom: !optionConfig.allowCustom })}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${optionConfig.allowCustom ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${optionConfig.allowCustom ? "translate-x-6" : "translate-x-1"}`} />
+          </button>
+        </label>
+        {optionConfig.allowCustom ? (
+          <Field
+            label={t("categories.customChoiceLabel")}
+            value={optionConfig.customLabel}
+            onChange={(value) => updateOptions({ customLabel: value })}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -493,8 +541,6 @@ export function PropertyInlineForm({
   propertyTypes,
   showAIButton = false,
   aiBusy = false,
-  hasAIInfo = false,
-  onOpenAIInfo,
   onRunAI,
   t,
 }: {
@@ -505,8 +551,6 @@ export function PropertyInlineForm({
   propertyTypes: { value: string; label: string }[];
   showAIButton?: boolean;
   aiBusy?: boolean;
-  hasAIInfo?: boolean;
-  onOpenAIInfo?: () => void;
   onRunAI?: () => void;
   t: (k: string) => string;
 }) {
@@ -526,8 +570,8 @@ export function PropertyInlineForm({
       ) : null}
       {property.property_type && TYPES_WITH_CHOICES.has(property.property_type) ? (
         <ChoicesEditor
-          choices={(property.options as Record<string, unknown>)?.choices as string[] || []}
-          onChange={(choices) => onChange({ ...property, options: { ...(property.options || {}), choices } })}
+          property={property}
+          onChange={onChange}
           t={t}
         />
       ) : null}
@@ -580,20 +624,6 @@ export function PropertyInlineForm({
             >
               <SparklesIcon className="h-4 w-4" />
             </button>
-            {onOpenAIInfo ? (
-              <button
-                type="button"
-                onClick={onOpenAIInfo}
-                className={`inline-flex items-center justify-center rounded-lg border p-2 transition ${
-                  hasAIInfo
-                    ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
-                    : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/10"
-                }`}
-                title={t("categories.aiInfoButton")}
-              >
-                <InformationCircleIcon className="h-4 w-4" />
-              </button>
-            ) : null}
           </div>
         ) : null}
         <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700">{t("common.cancel")}</button>

@@ -246,9 +246,9 @@ export function AIInfoDrawer({
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="absolute inset-0 pl-10 focus:outline-none sm:pl-16">
+      <div className="pointer-events-none absolute inset-0 pl-10 focus:outline-none sm:pl-16">
         <div className="ml-auto flex h-full w-full max-w-2xl">
-          <div className="relative flex h-full w-full flex-col overflow-y-auto bg-gray-800 py-6 shadow-2xl ring-1 ring-white/10">
+          <div className="pointer-events-auto relative flex h-full w-full flex-col overflow-y-auto bg-gray-800 py-6 shadow-2xl ring-1 ring-white/10">
             <div className="px-4 sm:px-6">
               <div className="flex items-start justify-between gap-4">
                 <div>

@@ -9,7 +9,12 @@ import type {
 
 export type LabelTemplateDraft = LabelTemplatePayload;
 export type ExternalSourceDraft = ExternalSourcePayload;
-export type AISettingsDraft = AISettingsPayload & { has_api_key: boolean };
+export type AISettingsDraft = AISettingsPayload & {
+  has_api_key: boolean;
+  parse_item_prompt_default: string;
+  category_property_prompt_default: string;
+  property_enhancement_prompt_default: string;
+};
 
 export function createEmptyTemplateDraft(): LabelTemplateDraft {
   return {
@@ -107,6 +112,12 @@ export function createEmptyAIDraft(): AISettingsDraft {
     api_key: "",
     enabled: false,
     has_api_key: false,
+    parse_item_prompt: "",
+    category_property_prompt: "",
+    property_enhancement_prompt: "",
+    parse_item_prompt_default: "",
+    category_property_prompt_default: "",
+    property_enhancement_prompt_default: "",
   };
 }
 
@@ -136,6 +147,12 @@ export function createProviderDraft(
     api_key: previous?.api_key || "",
     enabled: previous?.enabled ?? false,
     has_api_key: previous?.has_api_key ?? false,
+    parse_item_prompt: previous?.parse_item_prompt ?? "",
+    category_property_prompt: previous?.category_property_prompt ?? "",
+    property_enhancement_prompt: previous?.property_enhancement_prompt ?? "",
+    parse_item_prompt_default: previous?.parse_item_prompt_default ?? "",
+    category_property_prompt_default: previous?.category_property_prompt_default ?? "",
+    property_enhancement_prompt_default: previous?.property_enhancement_prompt_default ?? "",
   };
 }
 
@@ -147,5 +164,11 @@ export function draftFromAISettings(settings: AISettings): AISettingsDraft {
     api_key: "",
     enabled: settings.enabled,
     has_api_key: settings.has_api_key,
+    parse_item_prompt: settings.parse_item_prompt,
+    category_property_prompt: settings.category_property_prompt,
+    property_enhancement_prompt: settings.property_enhancement_prompt,
+    parse_item_prompt_default: settings.parse_item_prompt_default,
+    category_property_prompt_default: settings.category_property_prompt_default,
+    property_enhancement_prompt_default: settings.property_enhancement_prompt_default,
   };
 }

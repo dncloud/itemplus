@@ -20,6 +20,7 @@ func RegisterAIRoutes(g *gin.RouterGroup) {
 	g.POST("/suggest-category-properties", middleware.RequirePermission("categories.write"), suggestCategoryProperties)
 	g.POST("/suggest-property-enhancement", middleware.RequirePermission("categories.write"), suggestPropertyEnhancement)
 	g.POST("/temp-image", middleware.RequirePermission("items.write"), uploadAITempImage)
+	g.GET("/temp-image/:id", middleware.RequirePermission("items.write"), getAITempImage)
 }
 
 func parseItemIntent(c *gin.Context) {
@@ -446,4 +447,26 @@ func uploadAITempImage(c *gin.Context) {
 
 	tempID := services.SaveAITempImage(data, mimeType)
 	c.JSON(http.StatusOK, gin.H{"temp_image_id": tempID})
+}
+
+func getAITempImage(c *gin.Context) {
+	tempID := strings.TrimSpace(c.Param("id"))
+	if tempID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Missing temp image id"})
+		return
+	}
+
+	image, ok := services.GetAITempImage(tempID)
+	if !ok || len(image.Data) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Temp image not found"})
+		return
+	}
+
+	mimeType := strings.TrimSpace(image.MimeType)
+	if mimeType == "" {
+		mimeType = http.DetectContentType(image.Data)
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, mimeType, image.Data)
 }

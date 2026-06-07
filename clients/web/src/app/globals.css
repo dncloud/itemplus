@@ -20,3 +20,34 @@ textarea {
 textarea::-webkit-resizer {
   display: none;
 }
+
+@keyframes ai-text-shimmer {
+  0% {
+    background-position: 140% 0;
+  }
+  100% {
+    background-position: -40% 0;
+  }
+}
+
+.ai-thinking-text {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.7) 0%,
+    rgba(255, 255, 255, 0.7) 38%,
+    rgba(255, 255, 255, 0.96) 49%,
+    #ffffff 50%,
+    rgba(255, 255, 255, 0.96) 51%,
+    rgba(255, 255, 255, 0.7) 62%,
+    rgba(255, 255, 255, 0.7) 100%
+  );
+  background-size: 180% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+  animation: ai-text-shimmer 2.1s linear infinite;
+}

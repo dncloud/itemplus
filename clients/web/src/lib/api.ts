@@ -146,6 +146,12 @@ export interface AISettings {
   base_url: string;
   enabled: boolean;
   has_api_key: boolean;
+  parse_item_prompt: string;
+  category_property_prompt: string;
+  property_enhancement_prompt: string;
+  parse_item_prompt_default: string;
+  category_property_prompt_default: string;
+  property_enhancement_prompt_default: string;
 }
 
 export interface AISettingsPayload {
@@ -154,6 +160,9 @@ export interface AISettingsPayload {
   base_url: string;
   api_key?: string;
   enabled: boolean;
+  parse_item_prompt: string;
+  category_property_prompt: string;
+  property_enhancement_prompt: string;
 }
 
 export interface AIConnectionTestResult {
@@ -169,6 +178,7 @@ export interface AIParseItemIntentResult {
   intent: string;
   confidence: number;
   needs_confirmation: boolean;
+  assistant_message: string;
   suggested_realm: "archive" | "collection";
   suggested_category_id?: number | null;
   suggested_category_name?: string;
@@ -207,6 +217,7 @@ export interface AICategoryProposal {
 export interface AICategoryPropertySuggestionResult {
   confidence: number;
   needs_confirmation: boolean;
+  assistant_message: string;
   questions: string[];
   notes: string[];
   properties: AIPropertyProposal[];
@@ -220,6 +231,7 @@ export interface AICategoryPropertySuggestionResult {
 export interface AIPropertyEnhancementSuggestionResult {
   confidence: number;
   needs_confirmation: boolean;
+  assistant_message: string;
   questions: string[];
   notes: string[];
   property: AIPropertyProposal;
