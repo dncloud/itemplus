@@ -4,6 +4,23 @@ import { type ElementType, type ReactNode } from "react";
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react";
 import { CheckIcon } from "@heroicons/react/20/solid";
 
+type SettingsAccent = "blue" | "emerald";
+
+const choiceTileActiveClasses: Record<SettingsAccent, string> = {
+  blue: "border-blue-400 bg-blue-50/60 text-blue-700 dark:border-blue-600 dark:bg-blue-900/10 dark:text-blue-300",
+  emerald: "border-emerald-400 bg-emerald-50/60 text-emerald-700 dark:border-emerald-500 dark:bg-emerald-500/10 dark:text-emerald-300",
+};
+
+const choiceTileDotClasses: Record<SettingsAccent, string> = {
+  blue: "border-blue-500 bg-blue-500",
+  emerald: "border-emerald-500 bg-emerald-500",
+};
+
+const toggleActiveClasses: Record<SettingsAccent, string> = {
+  blue: "bg-blue-500",
+  emerald: "bg-emerald-500",
+};
+
 export function SelectField({
   label,
   value,
@@ -61,18 +78,20 @@ export function ChoiceTile({
   title,
   description,
   onClick,
+  accent = "blue",
 }: {
   active: boolean;
   title: ReactNode;
   description?: ReactNode;
   onClick: () => void;
+  accent?: SettingsAccent;
 }) {
   return (
     <button
       onClick={onClick}
       className={`relative flex w-full items-start gap-3 rounded-md border px-3 py-2.5 text-left transition ${
         active
-          ? "border-blue-400 bg-blue-50/60 text-blue-700 dark:border-blue-600 dark:bg-blue-900/10 dark:text-blue-300"
+          ? choiceTileActiveClasses[accent]
           : "border-gray-200 bg-transparent hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
       }`}
     >
@@ -80,7 +99,7 @@ export function ChoiceTile({
         <span className="block text-sm font-semibold">{title}</span>
         {description ? <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{description}</span> : null}
       </span>
-      <span className={`mt-0.5 h-5 w-5 rounded-full border transition ${active ? "border-blue-500 bg-blue-500" : "border-gray-300 dark:border-gray-600"}`}>
+      <span className={`mt-0.5 h-5 w-5 rounded-full border transition ${active ? choiceTileDotClasses[accent] : "border-gray-300 dark:border-gray-600"}`}>
         {active ? <span className="block h-full w-full scale-50 rounded-full bg-white" /> : null}
       </span>
     </button>
@@ -92,18 +111,20 @@ export function ToggleRow({
   description,
   checked,
   onToggle,
+  accent = "blue",
 }: {
   title: ReactNode;
   description?: ReactNode;
   checked: boolean;
   onToggle: () => void;
+  accent?: SettingsAccent;
 }) {
   return (
     <label className="group relative flex flex-row-reverse items-center justify-between gap-3 border-b border-gray-200 py-3 last:border-b-0 dark:border-white/10">
       <button
         type="button"
         onClick={onToggle}
-        className={`relative h-6 w-10 flex-none rounded-full transition-all duration-150 ease-out ${checked ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-700"}`}
+        className={`relative h-6 w-10 flex-none rounded-full transition-all duration-150 ease-out ${checked ? toggleActiveClasses[accent] : "bg-gray-300 dark:bg-gray-700"}`}
       >
         <span className={`absolute top-1 left-1 h-4 w-4 rounded-full bg-white transition-transform duration-150 ease-out ${checked ? "translate-x-4" : ""}`} />
       </button>

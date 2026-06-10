@@ -6,7 +6,7 @@ import {
   ArchiveBoxIcon,
   ArrowsRightLeftIcon,
   BuildingOffice2Icon,
-  Cog6ToothIcon,
+  ChartBarSquareIcon,
   ComputerDesktopIcon,
   CubeIcon,
   HomeIcon,
@@ -15,7 +15,6 @@ import {
   SparklesIcon,
   SunIcon,
   TagIcon,
-  UserCircleIcon,
   UsersIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
@@ -25,6 +24,8 @@ const enableNavPrefetch = process.env.NODE_ENV === "production";
 
 const navItems = [
   { href: "/dashboard", labelKey: "nav.dashboard", icon: HomeIcon },
+  { href: "/chat", labelKey: "nav.chat", icon: SparklesIcon, admin: true },
+  { href: "/ai-usage", labelKey: "nav.aiUsage", icon: ChartBarSquareIcon, admin: true },
   { href: "/items", labelKey: "nav.items", icon: CubeIcon, perm: "items.read" },
   { href: "/categories", labelKey: "nav.categories", icon: TagIcon, perm: "categories.read" },
   { href: "/locations", labelKey: "nav.locations", icon: MapPinIcon, perm: "locations.read" },
@@ -34,6 +35,7 @@ const navItems = [
 ];
 
 const primaryNav = ["/dashboard", "/items", "/categories", "/locations", "/vendors"];
+const aiNav = ["/chat", "/ai-usage"];
 const secondaryNav = ["/checkouts", "/users"];
 
 function SidebarNavLink({
@@ -88,7 +90,6 @@ export function AppSidebar({
   setSidebarOpen,
   setRealm,
   setTheme,
-  logout,
   routerPush,
   sidebarOpen,
 }: {
@@ -103,12 +104,12 @@ export function AppSidebar({
   setSidebarOpen: (open: boolean) => void;
   setRealm: (realm: "archive" | "collection") => void;
   setTheme: (theme: "light" | "dark" | "system") => void;
-  logout: () => Promise<void>;
   routerPush: (href: string) => void;
   sidebarOpen: boolean;
 }) {
   const visibleNavItems = navItems.filter((item) => (item.admin ? isAdmin : !item.perm || can(item.perm)));
   const mainNavItems = visibleNavItems.filter((item) => primaryNav.includes(item.href));
+  const aiNavItems = visibleNavItems.filter((item) => aiNav.includes(item.href));
   const adminNavItems = visibleNavItems.filter((item) => secondaryNav.includes(item.href));
   const isActivePath = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
@@ -209,6 +210,29 @@ export function AppSidebar({
             ))}
           </ul>
 
+          {aiNavItems.length > 0 ? (
+            <>
+              <div className="pt-6 text-xs/6 font-semibold text-gray-400 dark:text-gray-400">{t("nav.aiGroup")}</div>
+              <ul role="list" className="-mx-2 mt-2 space-y-1">
+                {aiNavItems.map(({ href, labelKey, icon }) => (
+                  <li key={href}>
+                    <SidebarNavLink
+                      href={href}
+                      label={t(labelKey)}
+                      icon={icon}
+                      active={isActivePath(href)}
+                      badge={badges[href]}
+                      onClick={() => {
+                        setSidebarOpen(false);
+                        if (badges[href]) void loadBadges();
+                      }}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+
           {adminNavItems.length > 0 ? (
             <>
               <div className="pt-6 text-xs/6 font-semibold text-gray-400 dark:text-gray-400">Manage</div>
@@ -231,30 +255,6 @@ export function AppSidebar({
               </ul>
             </>
           ) : null}
-
-          <div className="pt-6 text-xs/6 font-semibold text-gray-400 dark:text-gray-400">Account</div>
-          <ul role="list" className="-mx-2 mt-2 space-y-1">
-            <li>
-              <SidebarNavLink
-                href="/settings"
-                label={t("nav.settings")}
-                icon={Cog6ToothIcon}
-                active={pathname === "/settings"}
-                onClick={() => setSidebarOpen(false)}
-              />
-            </li>
-            <li className="mt-auto">
-              <button
-                onClick={() => void logout()}
-                className="group flex w-full gap-x-3 rounded-md p-2 text-left text-sm/6 font-semibold text-gray-700 hover:bg-gray-50 hover:text-indigo-600 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-white"
-              >
-                <span className="flex shrink-0 items-center text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-white">
-                  <UserCircleIcon className="h-5 w-5" />
-                </span>
-                <span className="truncate">{t("nav.logout")}</span>
-              </button>
-            </li>
-          </ul>
         </nav>
       </div>
     </nav>

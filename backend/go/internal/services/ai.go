@@ -11,16 +11,21 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
 
 type AISettings struct {
+	ProfileID                 string
+	ProfileName               string
 	Provider                  string
 	Model                     string
 	BaseURL                   string
 	APIKey                    string
 	Enabled                   bool
+	SupportsVision            bool
+	ChatPrompt                string
 	ParseItemPrompt           string
 	CategoryPropertyPrompt    string
 	PropertyEnhancementPrompt string
@@ -34,6 +39,66 @@ type AIConnectionTestResult struct {
 	ResponseID string `json:"response_id,omitempty"`
 	RequestID  string `json:"request_id,omitempty"`
 	Transport  string `json:"transport,omitempty"`
+}
+
+type AIModelOption struct {
+	ID      string `json:"id"`
+	OwnedBy string `json:"owned_by,omitempty"`
+	Created int64  `json:"created,omitempty"`
+}
+
+type AIUsage struct {
+	InputTokens       int `json:"input_tokens,omitempty"`
+	OutputTokens      int `json:"output_tokens,omitempty"`
+	TotalTokens       int `json:"total_tokens,omitempty"`
+	ReasoningTokens   int `json:"reasoning_tokens,omitempty"`
+	WebSearchRequests int `json:"web_search_requests,omitempty"`
+	WebFetchRequests  int `json:"web_fetch_requests,omitempty"`
+}
+
+type ollamaWebSearchRequest struct {
+	Query      string `json:"query"`
+	MaxResults int    `json:"max_results,omitempty"`
+}
+
+type ollamaWebSearchResult struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Content string `json:"content"`
+}
+
+type ollamaWebSearchResponse struct {
+	Results []ollamaWebSearchResult `json:"results"`
+}
+
+type ollamaWebFetchRequest struct {
+	URL string `json:"url"`
+}
+
+type ollamaWebFetchResponse struct {
+	Title   string   `json:"title"`
+	Content string   `json:"content"`
+	Links   []string `json:"links"`
+}
+
+type AIDebugError struct {
+	Err      error
+	RawDebug string
+	Usage    *AIUsage
+}
+
+func (e *AIDebugError) Error() string {
+	if e == nil || e.Err == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+func (e *AIDebugError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 type ParseItemIntentRequest struct {
@@ -72,6 +137,7 @@ type ParseItemIntentResult struct {
 	Transport             string              `json:"transport,omitempty"`
 	Model                 string              `json:"model,omitempty"`
 	Provider              string              `json:"provider,omitempty"`
+	Usage                 *AIUsage            `json:"usage,omitempty"`
 	Context               map[string]any      `json:"context,omitempty"`
 }
 
@@ -80,6 +146,46 @@ type AIStreamEvent struct {
 	Message string                 `json:"message,omitempty"`
 	Delta   string                 `json:"delta,omitempty"`
 	Result  *ParseItemIntentResult `json:"result,omitempty"`
+}
+
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type ChatRequest struct {
+	Messages       []ChatMessage  `json:"messages"`
+	Locale         string         `json:"locale,omitempty"`
+	AllowWebSearch bool           `json:"allow_web_search,omitempty"`
+	TempImageID    string         `json:"temp_image_id,omitempty"`
+	AppContext     map[string]any `json:"app_context,omitempty"`
+}
+
+type ChatResult struct {
+	AssistantMessage string         `json:"assistant_message"`
+	Transport        string         `json:"transport,omitempty"`
+	Model            string         `json:"model,omitempty"`
+	Provider         string         `json:"provider,omitempty"`
+	Usage            *AIUsage       `json:"usage,omitempty"`
+	Context          map[string]any `json:"context,omitempty"`
+}
+
+type InventoryLookupRequest struct {
+	Kind         string `json:"kind"`
+	Realm        string `json:"realm,omitempty"`
+	Search       string `json:"search,omitempty"`
+	LocationName string `json:"location_name,omitempty"`
+	CategoryName string `json:"category_name,omitempty"`
+	UserName     string `json:"user_name,omitempty"`
+	Status       string `json:"status,omitempty"`
+	StockState   string `json:"stock_state,omitempty"`
+	Limit        int    `json:"limit,omitempty"`
+}
+
+type InventoryLookupPlan struct {
+	NeedsLookup bool                    `json:"needs_lookup"`
+	Reason      string                  `json:"reason,omitempty"`
+	Request     *InventoryLookupRequest `json:"request,omitempty"`
 }
 
 type AICategoryProposal struct {
@@ -118,9 +224,11 @@ type SuggestCategoryPropertiesResult struct {
 	Notes             []string             `json:"notes"`
 	Properties        []AIPropertyProposal `json:"properties"`
 	RawPrompt         string               `json:"raw_prompt,omitempty"`
+	RawDebug          string               `json:"raw_debug,omitempty"`
 	Transport         string               `json:"transport,omitempty"`
 	Model             string               `json:"model,omitempty"`
 	Provider          string               `json:"provider,omitempty"`
+	Usage             *AIUsage             `json:"usage,omitempty"`
 	Context           map[string]any       `json:"context,omitempty"`
 }
 
@@ -142,9 +250,11 @@ type SuggestPropertyEnhancementResult struct {
 	Notes             []string           `json:"notes"`
 	Property          AIPropertyProposal `json:"property"`
 	RawPrompt         string             `json:"raw_prompt,omitempty"`
+	RawDebug          string             `json:"raw_debug,omitempty"`
 	Transport         string             `json:"transport,omitempty"`
 	Model             string             `json:"model,omitempty"`
 	Provider          string             `json:"provider,omitempty"`
+	Usage             *AIUsage           `json:"usage,omitempty"`
 	Context           map[string]any     `json:"context,omitempty"`
 }
 
@@ -174,6 +284,14 @@ type openAIResponse struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+	Usage *struct {
+		InputTokens         int `json:"input_tokens"`
+		OutputTokens        int `json:"output_tokens"`
+		TotalTokens         int `json:"total_tokens"`
+		OutputTokensDetails *struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"output_tokens_details"`
+	} `json:"usage"`
 }
 
 const (
@@ -182,6 +300,13 @@ const (
 	aiConnectionTestMaxOutputTokens = 32
 	aiConnectionTestTimeout         = 20 * time.Second
 	aiGenerateTimeout               = 180 * time.Second
+	aiGenerateTimeoutLocalLLM       = 420 * time.Second
+	ollamaWebSearchBaseURL          = "https://ollama.com/api"
+	ollamaWebSearchMaxResults       = 3
+	ollamaWebFetchMaxPages          = 2
+	ollamaWebSearchExcerptChars     = 320
+	ollamaWebFetchContentChars      = 2400
+	ollamaWebFetchMaxLinks          = 8
 )
 
 type chatCompletionResponse struct {
@@ -191,6 +316,20 @@ type chatCompletionResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+	PromptEvalCount int `json:"prompt_eval_count"`
+	EvalCount       int `json:"eval_count"`
+}
+
+type openAIModelListResponse struct {
+	Data  []AIModelOption `json:"data"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
@@ -216,7 +355,7 @@ func resolveAIConfig(settings AISettings, timeout time.Duration) (*resolvedAICon
 	if provider == "" {
 		provider = "openai"
 	}
-	if provider != "openai" && provider != "ollama" && provider != "openai_compatible" {
+	if provider != "openai" && provider != "ollama" {
 		return nil, fmt.Errorf("Unsupported AI provider: %s", settings.Provider)
 	}
 	if !settings.Enabled {
@@ -248,7 +387,21 @@ func resolveAIConfig(settings AISettings, timeout time.Duration) (*resolvedAICon
 	}, nil
 }
 
-func prepareParseContext(req ParseItemIntentRequest) (*preparedParseContext, error) {
+func generateTimeoutForProvider(provider string) time.Duration {
+	if strings.EqualFold(strings.TrimSpace(provider), "ollama") {
+		return aiGenerateTimeoutLocalLLM
+	}
+	return aiGenerateTimeout
+}
+
+func aiSettingsSupportsVision(settings AISettings) bool {
+	if strings.EqualFold(strings.TrimSpace(settings.Provider), "openai") {
+		return true
+	}
+	return settings.SupportsVision
+}
+
+func prepareParseContext(req ParseItemIntentRequest, supportsVision bool) (*preparedParseContext, error) {
 	if req.IdentifyOnly {
 		contextPayload := map[string]any{
 			"realm":   req.Realm,
@@ -256,14 +409,17 @@ func prepareParseContext(req ParseItemIntentRequest) (*preparedParseContext, err
 			"barcode": req.Barcode,
 			"locale":  req.Locale,
 		}
-		if strings.TrimSpace(req.TempImageID) != "" {
+		if supportsVision && strings.TrimSpace(req.TempImageID) != "" {
 			contextPayload["has_image"] = true
 		}
 		contextJSON, err := json.Marshal(contextPayload)
 		if err != nil {
 			return nil, err
 		}
-		imageInput, _ := loadAIImageInput(req.TempImageID)
+		var imageInput *AIImageInput
+		if supportsVision {
+			imageInput, _ = loadAIImageInput(req.TempImageID)
+		}
 		return &preparedParseContext{
 			ContextJSON: string(contextJSON),
 			ImageInput:  imageInput,
@@ -297,14 +453,17 @@ func prepareParseContext(req ParseItemIntentRequest) (*preparedParseContext, err
 	if selectedCategoryID == nil {
 		contextPayload["available_categories"] = buildAICategorySummary(req.Categories)
 	}
-	if strings.TrimSpace(req.TempImageID) != "" {
+	if supportsVision && strings.TrimSpace(req.TempImageID) != "" {
 		contextPayload["has_image"] = true
 	}
 	contextJSON, err := json.Marshal(contextPayload)
 	if err != nil {
 		return nil, err
 	}
-	imageInput, _ := loadAIImageInput(req.TempImageID)
+	var imageInput *AIImageInput
+	if supportsVision {
+		imageInput, _ = loadAIImageInput(req.TempImageID)
+	}
 	return &preparedParseContext{
 		SelectedCategoryID:   selectedCategoryID,
 		SelectedCategoryName: selectedCategoryName,
@@ -332,37 +491,480 @@ func TestAIConnection(settings AISettings) (*AIConnectionTestResult, error) {
 	return nil, err
 }
 
-func ParseItemIntent(settings AISettings, req ParseItemIntentRequest) (*ParseItemIntentResult, error) {
-	if strings.TrimSpace(req.Prompt) == "" {
-		return nil, fmt.Errorf("Prompt is required")
+func ListOpenAIModels(settings AISettings) ([]AIModelOption, error) {
+	provider := strings.ToLower(strings.TrimSpace(settings.Provider))
+	if provider == "" {
+		provider = "openai"
 	}
-	cfg, err := resolveAIConfig(settings, aiGenerateTimeout)
+	if provider != "openai" {
+		return nil, fmt.Errorf("Model loading is only supported for OpenAI profiles")
+	}
+
+	apiKey := strings.TrimSpace(settings.APIKey)
+	if apiKey == "" {
+		return nil, fmt.Errorf("API key is missing")
+	}
+
+	baseURL := strings.TrimRight(strings.TrimSpace(settings.BaseURL), "/")
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+
+	client := &http.Client{Timeout: aiConnectionTestTimeout}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, baseURL+"/models", nil)
 	if err != nil {
 		return nil, err
 	}
-	parseCtx, err := prepareParseContext(req)
+	applyAIHeaders(req, provider, apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("Model list request failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+
+	var parsed openAIModelListResponse
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, err
+	}
+	if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
+		return nil, errors.New(strings.TrimSpace(parsed.Error.Message))
+	}
+
+	models := make([]AIModelOption, 0, len(parsed.Data))
+	seen := make(map[string]struct{}, len(parsed.Data))
+	for _, option := range parsed.Data {
+		id := strings.TrimSpace(option.ID)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		option.ID = id
+		option.OwnedBy = strings.TrimSpace(option.OwnedBy)
+		models = append(models, option)
+	}
+	sort.Slice(models, func(i, j int) bool {
+		return strings.ToLower(models[i].ID) < strings.ToLower(models[j].ID)
+	})
+
+	return models, nil
+}
+
+func emitAIRaw(onRaw func(string) error, parts ...string) error {
+	if onRaw == nil {
+		return nil
+	}
+	return onRaw(sanitizeAIRawDebug(strings.Join(parts, "\n")))
+}
+
+var aiRawDataURLPattern = regexp.MustCompile(`data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+`)
+
+func sanitizeAIRawDebug(raw string) string {
+	return aiRawDataURLPattern.ReplaceAllString(raw, "data:image/*;base64,[image omitted]")
+}
+
+func usageFromOpenAIResponse(parsed openAIResponse) *AIUsage {
+	if parsed.Usage == nil {
+		return nil
+	}
+	usage := &AIUsage{
+		InputTokens:  parsed.Usage.InputTokens,
+		OutputTokens: parsed.Usage.OutputTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}
+	if parsed.Usage.OutputTokensDetails != nil {
+		usage.ReasoningTokens = parsed.Usage.OutputTokensDetails.ReasoningTokens
+	}
+	if usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.TotalTokens == 0 && usage.ReasoningTokens == 0 {
+		return nil
+	}
+	return usage
+}
+
+func usageFromChatCompletionResponse(parsed chatCompletionResponse) *AIUsage {
+	if parsed.Usage != nil {
+		usage := &AIUsage{
+			InputTokens:  parsed.Usage.PromptTokens,
+			OutputTokens: parsed.Usage.CompletionTokens,
+			TotalTokens:  parsed.Usage.TotalTokens,
+		}
+		if usage.InputTokens != 0 || usage.OutputTokens != 0 || usage.TotalTokens != 0 {
+			return usage
+		}
+	}
+	if parsed.PromptEvalCount != 0 || parsed.EvalCount != 0 {
+		return &AIUsage{
+			InputTokens:  parsed.PromptEvalCount,
+			OutputTokens: parsed.EvalCount,
+			TotalTokens:  parsed.PromptEvalCount + parsed.EvalCount,
+		}
+	}
+	return nil
+}
+
+func mergeAIUsage(parts ...*AIUsage) *AIUsage {
+	merged := &AIUsage{}
+	for _, part := range parts {
+		if part == nil {
+			continue
+		}
+		merged.InputTokens += part.InputTokens
+		merged.OutputTokens += part.OutputTokens
+		merged.TotalTokens += part.TotalTokens
+		merged.ReasoningTokens += part.ReasoningTokens
+		merged.WebSearchRequests += part.WebSearchRequests
+		merged.WebFetchRequests += part.WebFetchRequests
+	}
+	if merged.InputTokens == 0 &&
+		merged.OutputTokens == 0 &&
+		merged.TotalTokens == 0 &&
+		merged.ReasoningTokens == 0 &&
+		merged.WebSearchRequests == 0 &&
+		merged.WebFetchRequests == 0 {
+		return nil
+	}
+	return merged
+}
+
+func buildChatConversationInput(messages []ChatMessage) string {
+	lines := make([]string, 0, len(messages))
+	for _, message := range messages {
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		role := strings.ToLower(strings.TrimSpace(message.Role))
+		switch role {
+		case "assistant":
+			lines = append(lines, "Ina: "+content)
+		default:
+			lines = append(lines, "User: "+content)
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func buildChatInput(messages []ChatMessage, appContext map[string]any) string {
+	conversation := buildChatConversationInput(messages)
+	if len(appContext) == 0 {
+		return conversation
+	}
+
+	contextJSON, err := json.Marshal(appContext)
+	if err != nil {
+		return conversation
+	}
+
+	if strings.TrimSpace(conversation) == "" {
+		return "app_context:\n" + string(contextJSON)
+	}
+
+	return "app_context:\n" + string(contextJSON) + "\n\nconversation:\n" + conversation
+}
+
+func buildChatSearchQuery(messages []ChatMessage) string {
+	for idx := len(messages) - 1; idx >= 0; idx-- {
+		message := messages[idx]
+		if !strings.EqualFold(strings.TrimSpace(message.Role), "user") {
+			continue
+		}
+		content := strings.TrimSpace(message.Content)
+		if content != "" {
+			return content
+		}
+	}
+	return ""
+}
+
+func shouldUseWebSearchForChatQuery(query string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(query))
+	if normalized == "" {
+		return false
+	}
+
+	trimmed := strings.Trim(normalized, " \t\r\n.!?,;:-_\"'()[]{}")
+	if trimmed == "" {
+		return false
+	}
+
+	casualMessages := map[string]struct{}{
+		"hi": {}, "hey": {}, "hello": {}, "moin": {}, "servus": {}, "hallo": {}, "hey buddy": {},
+		"danke": {}, "thanks": {}, "thank you": {}, "ok": {}, "okay": {}, "cool": {}, "nice": {},
+	}
+	if _, casual := casualMessages[trimmed]; casual {
+		return false
+	}
+
+	researchSignals := []string{
+		"search", "web", "online", "latest", "current", "today", "news", "source", "website", "internet",
+		"suche", "such", "web", "online", "aktuell", "heute", "nachrichten", "quelle", "website", "internet",
+	}
+	for _, signal := range researchSignals {
+		if strings.Contains(normalized, signal) {
+			return true
+		}
+	}
+
+	questionSignals := []string{
+		"when ", "where ", "which latest", "which current", "who is currently ",
+		"wann ", "wo spielt", "welche aktuellen", "welcher aktuelle", "welches aktuelle", "wer ist aktuell ",
+	}
+	for _, signal := range questionSignals {
+		if strings.Contains(normalized, signal) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func maybeAugmentInputWithOllamaWebContext(client *http.Client, provider, apiKey, query, input string, onRaw func(string) error) (string, *AIUsage, error) {
+	if !strings.EqualFold(strings.TrimSpace(provider), "ollama") {
+		return input, nil, nil
+	}
+
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return input, nil, nil
+	}
+
+	if strings.TrimSpace(apiKey) == "" {
+		_ = emitAIRaw(onRaw, "OLLAMA WEB SEARCH", `{"status":"skipped","reason":"missing_api_key"}`)
+		return input, nil, nil
+	}
+
+	contextJSON, webUsage, err := buildOllamaWebContext(client, apiKey, query, onRaw)
+	if err != nil {
+		_ = emitAIRaw(onRaw, "OLLAMA WEB SEARCH ERROR", err.Error())
+		return input, webUsage, nil
+	}
+	if strings.TrimSpace(contextJSON) == "" {
+		return input, webUsage, nil
+	}
+
+	return "web_context:\n" + contextJSON + "\n\nrequest_input:\n" + input, webUsage, nil
+}
+
+func ChatWithAIStream(settings AISettings, req ChatRequest, emit func(AIStreamEvent) error) (*ChatResult, error) {
+	cfg, err := resolveAIConfig(settings, generateTimeoutForProvider(settings.Provider))
 	if err != nil {
 		return nil, err
 	}
 
-	outputText, transport, err := generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(settings.ParseItemPrompt, req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput, buildParseJSONSchema())
+	input := buildChatInput(req.Messages, req.AppContext)
+	if input == "" {
+		return nil, fmt.Errorf("At least one chat message is required")
+	}
+
+	var imageInput *AIImageInput
+	hasImageAttachment := strings.TrimSpace(req.TempImageID) != ""
+	supportsVision := aiSettingsSupportsVision(settings)
+	if hasImageAttachment && supportsVision {
+		imageInput, _ = loadAIImageInput(req.TempImageID)
+	}
+	if hasImageAttachment && imageInput == nil && !supportsVision {
+		input += "\n\nsystem_context:\nThe user attached an image, but the active AI profile is configured as text-only and cannot inspect images. Tell the user briefly that this model cannot see images and that they should enable a vision-capable Ollama model in the AI settings if they want image analysis."
+	}
+
+	webQuery := buildChatSearchQuery(req.Messages)
+	effectiveAllowWebSearch := req.AllowWebSearch && imageInput == nil && shouldUseWebSearchForChatQuery(webQuery)
+	instructions := buildChatInstructions(settings.ChatPrompt, effectiveAllowWebSearch, req.Locale, cfg.Provider)
+	contextMap := map[string]any{
+		"profile_id":   settings.ProfileID,
+		"profile_name": settings.ProfileName,
+	}
+	if len(req.AppContext) > 0 {
+		contextMap["app_context"] = req.AppContext
+	}
+
+	var webUsage *AIUsage
+	if req.AllowWebSearch && imageInput == nil && strings.EqualFold(cfg.Provider, "ollama") {
+		if effectiveAllowWebSearch {
+			input, webUsage, err = maybeAugmentInputWithOllamaWebContext(cfg.Client, cfg.Provider, settings.APIKey, webQuery, input, func(raw string) error {
+				if emit != nil {
+					return emit(AIStreamEvent{Type: "raw", Message: raw})
+				}
+				return nil
+			})
+			if err != nil {
+				return nil, normalizeAIRequestError(err)
+			}
+		} else if emit != nil {
+			_ = emit(AIStreamEvent{Type: "raw", Message: `OLLAMA WEB SEARCH
+{"status":"skipped","reason":"no_web_intent"}`})
+		}
+	}
+
+	if imageInput == nil && !effectiveAllowWebSearch {
+		var outputBuilder strings.Builder
+		var streamUsage *AIUsage
+		streamErr := generateViaChatCompletionsStream(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, instructions, input, nil, func(delta string) error {
+			outputBuilder.WriteString(delta)
+			if emit != nil {
+				return emit(AIStreamEvent{Type: "delta", Delta: delta})
+			}
+			return nil
+		}, func(usage AIUsage) error {
+			streamUsage = &usage
+			return nil
+		}, func(raw string) error {
+			if emit != nil {
+				return emit(AIStreamEvent{Type: "raw", Message: raw})
+			}
+			return nil
+		})
+		if streamErr == nil {
+			message := strings.TrimSpace(outputBuilder.String())
+			if message != "" {
+				return &ChatResult{
+					AssistantMessage: message,
+					Transport:        "chat.completions",
+					Model:            cfg.Model,
+					Provider:         cfg.Provider,
+					Usage:            mergeAIUsage(webUsage, streamUsage),
+					Context:          contextMap,
+				}, nil
+			}
+		}
+		if streamErr != nil && emit != nil {
+			_ = emit(AIStreamEvent{Type: "note", Message: "Falling back to a non-streaming response."})
+		}
+	}
+
+	outputText, transport, usage, err := generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, instructions, input, effectiveAllowWebSearch, imageInput, nil, func(raw string) error {
+		if emit != nil {
+			return emit(AIStreamEvent{Type: "raw", Message: raw})
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	return finalizeParseItemIntentResult(outputText, transport, cfg.Model, cfg.Provider, req, parseCtx.SelectedCategoryID, parseCtx.SelectedCategoryName, parseCtx.FilteredProperties)
+	return &ChatResult{
+		AssistantMessage: strings.TrimSpace(outputText),
+		Transport:        transport,
+		Model:            cfg.Model,
+		Provider:         cfg.Provider,
+		Usage:            mergeAIUsage(webUsage, usage),
+		Context:          contextMap,
+	}, nil
+}
+
+func PlanInventoryLookup(settings AISettings, req ChatRequest) (*InventoryLookupPlan, error) {
+	cfg, err := resolveAIConfig(settings, generateTimeoutForProvider(settings.Provider))
+	if err != nil {
+		return nil, err
+	}
+
+	input := buildChatInput(req.Messages, req.AppContext)
+	if strings.TrimSpace(input) == "" {
+		return nil, nil
+	}
+
+	outputText, _, _, err := generateAIText(
+		cfg.Client,
+		cfg.BaseURL,
+		cfg.Provider,
+		cfg.Model,
+		settings.APIKey,
+		buildInventoryLookupPlannerInstructions(req.Locale, cfg.Provider),
+		input,
+		false,
+		nil,
+		buildInventoryLookupPlanJSONSchema(),
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	jsonText := extractFirstJSONObject(outputText)
+	if strings.TrimSpace(jsonText) == "" {
+		return nil, nil
+	}
+
+	var plan InventoryLookupPlan
+	if err := json.Unmarshal([]byte(jsonText), &plan); err != nil {
+		return nil, err
+	}
+
+	normalizeInventoryLookupPlan(&plan)
+	if !plan.NeedsLookup || plan.Request == nil {
+		return nil, nil
+	}
+	return &plan, nil
+}
+
+func ParseItemIntent(settings AISettings, req ParseItemIntentRequest) (*ParseItemIntentResult, error) {
+	if strings.TrimSpace(req.Prompt) == "" {
+		return nil, fmt.Errorf("Prompt is required")
+	}
+	cfg, err := resolveAIConfig(settings, generateTimeoutForProvider(settings.Provider))
+	if err != nil {
+		return nil, err
+	}
+	parseCtx, err := prepareParseContext(req, aiSettingsSupportsVision(settings))
+	if err != nil {
+		return nil, err
+	}
+
+	input := parseCtx.ContextJSON
+	var webUsage *AIUsage
+	if req.AllowWebSearch && strings.EqualFold(cfg.Provider, "ollama") {
+		input, webUsage, err = maybeAugmentInputWithOllamaWebContext(cfg.Client, cfg.Provider, settings.APIKey, req.Prompt, parseCtx.ContextJSON, nil)
+		if err != nil {
+			return nil, normalizeAIRequestError(err)
+		}
+	}
+
+	outputText, transport, usage, err := generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(settings.ParseItemPrompt, req.AllowWebSearch, req.Locale, req.IdentifyOnly, cfg.Provider), input, req.AllowWebSearch, parseCtx.ImageInput, buildParseJSONSchema(), nil)
+	if err != nil {
+		return nil, err
+	}
+	result, err := finalizeParseItemIntentResult(outputText, transport, cfg.Model, cfg.Provider, req, parseCtx.SelectedCategoryID, parseCtx.SelectedCategoryName, parseCtx.FilteredProperties)
+	if err != nil {
+		return nil, err
+	}
+	result.Usage = mergeAIUsage(webUsage, usage)
+	return result, nil
 }
 
 func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit func(AIStreamEvent) error) (*ParseItemIntentResult, error) {
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, fmt.Errorf("Prompt is required")
 	}
-	cfg, err := resolveAIConfig(settings, aiGenerateTimeout)
+	cfg, err := resolveAIConfig(settings, generateTimeoutForProvider(settings.Provider))
 	if err != nil {
 		return nil, err
 	}
-	parseCtx, err := prepareParseContext(req)
+	parseCtx, err := prepareParseContext(req, aiSettingsSupportsVision(settings))
 	if err != nil {
 		return nil, err
+	}
+
+	input := parseCtx.ContextJSON
+	var webUsage *AIUsage
+	if req.AllowWebSearch && strings.EqualFold(cfg.Provider, "ollama") {
+		input, webUsage, err = maybeAugmentInputWithOllamaWebContext(cfg.Client, cfg.Provider, settings.APIKey, req.Prompt, parseCtx.ContextJSON, func(raw string) error {
+			if emit != nil {
+				return emit(AIStreamEvent{Type: "raw", Message: raw})
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, normalizeAIRequestError(err)
+		}
 	}
 
 	if emit != nil {
@@ -401,14 +1003,23 @@ func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit
 	var outputText string
 	var transport string
 	hadStreamDelta := false
+	var usage *AIUsage
 
 	if cfg.Provider != "openai" && parseCtx.ImageInput == nil {
 		var builder strings.Builder
-		streamErr := generateViaChatCompletionsStream(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(settings.ParseItemPrompt, req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, buildParseJSONSchema(), func(delta string) error {
+		streamErr := generateViaChatCompletionsStream(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(settings.ParseItemPrompt, req.AllowWebSearch, req.Locale, req.IdentifyOnly, cfg.Provider), input, buildParseJSONSchema(), func(delta string) error {
 			hadStreamDelta = true
 			builder.WriteString(delta)
 			if emit != nil {
 				return emit(AIStreamEvent{Type: "delta", Delta: delta})
+			}
+			return nil
+		}, func(nextUsage AIUsage) error {
+			usage = &nextUsage
+			return nil
+		}, func(raw string) error {
+			if emit != nil {
+				return emit(AIStreamEvent{Type: "raw", Message: raw})
 			}
 			return nil
 		})
@@ -419,7 +1030,12 @@ func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit
 	}
 
 	if strings.TrimSpace(outputText) == "" {
-		outputText, transport, err = generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(settings.ParseItemPrompt, req.AllowWebSearch, req.Locale, req.IdentifyOnly), parseCtx.ContextJSON, req.AllowWebSearch, parseCtx.ImageInput, buildParseJSONSchema())
+		outputText, transport, usage, err = generateAIText(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey, buildParseInstructions(settings.ParseItemPrompt, req.AllowWebSearch, req.Locale, req.IdentifyOnly, cfg.Provider), input, req.AllowWebSearch, parseCtx.ImageInput, buildParseJSONSchema(), func(raw string) error {
+			if emit != nil {
+				return emit(AIStreamEvent{Type: "raw", Message: raw})
+			}
+			return nil
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -434,6 +1050,7 @@ func ParseItemIntentStream(settings AISettings, req ParseItemIntentRequest, emit
 	if err != nil {
 		return nil, err
 	}
+	result.Usage = mergeAIUsage(webUsage, usage)
 	if emit != nil {
 		if len(result.Questions) > 0 {
 			if err := emit(AIStreamEvent{Type: "note", Message: "Ich habe einen ersten Entwurf. Ein paar Details brauche ich noch von dir."}); err != nil {
@@ -500,7 +1117,7 @@ func SuggestCategoryProperties(settings AISettings, req SuggestCategoryPropertie
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, fmt.Errorf("Prompt is required")
 	}
-	cfg, err := resolveAIConfig(settings, aiGenerateTimeout)
+	cfg, err := resolveAIConfig(settings, generateTimeoutForProvider(settings.Provider))
 	if err != nil {
 		return nil, err
 	}
@@ -516,31 +1133,52 @@ func SuggestCategoryProperties(settings AISettings, req SuggestCategoryPropertie
 	if err != nil {
 		return nil, err
 	}
+	input := string(contextJSON)
 
-	outputText, transport, err := generateAIText(
+	rawDebugParts := make([]string, 0, 4)
+	var webUsage *AIUsage
+	if req.AllowWebSearch && strings.EqualFold(cfg.Provider, "ollama") {
+		input, webUsage, err = maybeAugmentInputWithOllamaWebContext(cfg.Client, cfg.Provider, settings.APIKey, req.Prompt, input, func(raw string) error {
+			rawDebugParts = append(rawDebugParts, raw)
+			return nil
+		})
+		if err != nil {
+			return nil, wrapAIDebugError(normalizeAIRequestError(err), strings.Join(rawDebugParts, "\n\n"), nil)
+		}
+	}
+	outputText, transport, usage, err := generateAIText(
 		cfg.Client,
 		cfg.BaseURL,
 		cfg.Provider,
 		cfg.Model,
 		settings.APIKey,
-		buildCategoryPropertyInstructions(settings.CategoryPropertyPrompt, req.AllowWebSearch, req.Locale),
-		string(contextJSON),
+		buildCategoryPropertyInstructions(settings.CategoryPropertyPrompt, req.AllowWebSearch, req.Locale, cfg.Provider),
+		input,
 		req.AllowWebSearch,
 		nil,
 		buildCategoryPropertyJSONSchema(),
+		func(raw string) error {
+			rawDebugParts = append(rawDebugParts, raw)
+			return nil
+		},
 	)
 	if err != nil {
-		return nil, err
+		return nil, wrapAIDebugError(err, strings.Join(rawDebugParts, "\n\n"), mergeAIUsage(webUsage, usage))
 	}
-
-	return finalizeCategoryPropertySuggestions(outputText, transport, cfg.Model, cfg.Provider, req)
+	result, err := finalizeCategoryPropertySuggestions(outputText, transport, cfg.Model, cfg.Provider, req)
+	if err != nil {
+		return nil, wrapAIDebugError(err, strings.Join(rawDebugParts, "\n\n"), mergeAIUsage(webUsage, usage))
+	}
+	result.Usage = mergeAIUsage(webUsage, usage)
+	result.RawDebug = strings.TrimSpace(strings.Join(rawDebugParts, "\n\n"))
+	return result, nil
 }
 
 func SuggestPropertyEnhancement(settings AISettings, req SuggestPropertyEnhancementRequest) (*SuggestPropertyEnhancementResult, error) {
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, fmt.Errorf("Prompt is required")
 	}
-	cfg, err := resolveAIConfig(settings, aiGenerateTimeout)
+	cfg, err := resolveAIConfig(settings, generateTimeoutForProvider(settings.Provider))
 	if err != nil {
 		return nil, err
 	}
@@ -557,24 +1195,45 @@ func SuggestPropertyEnhancement(settings AISettings, req SuggestPropertyEnhancem
 	if err != nil {
 		return nil, err
 	}
+	input := string(contextJSON)
 
-	outputText, transport, err := generateAIText(
+	rawDebugParts := make([]string, 0, 4)
+	var webUsage *AIUsage
+	if req.AllowWebSearch && strings.EqualFold(cfg.Provider, "ollama") {
+		input, webUsage, err = maybeAugmentInputWithOllamaWebContext(cfg.Client, cfg.Provider, settings.APIKey, req.Prompt, input, func(raw string) error {
+			rawDebugParts = append(rawDebugParts, raw)
+			return nil
+		})
+		if err != nil {
+			return nil, wrapAIDebugError(normalizeAIRequestError(err), strings.Join(rawDebugParts, "\n\n"), nil)
+		}
+	}
+	outputText, transport, usage, err := generateAIText(
 		cfg.Client,
 		cfg.BaseURL,
 		cfg.Provider,
 		cfg.Model,
 		settings.APIKey,
-		buildPropertyEnhancementInstructions(settings.PropertyEnhancementPrompt, req.AllowWebSearch, req.Locale),
-		string(contextJSON),
+		buildPropertyEnhancementInstructions(settings.PropertyEnhancementPrompt, req.AllowWebSearch, req.Locale, cfg.Provider),
+		input,
 		req.AllowWebSearch,
 		nil,
 		buildPropertyEnhancementJSONSchema(),
+		func(raw string) error {
+			rawDebugParts = append(rawDebugParts, raw)
+			return nil
+		},
 	)
 	if err != nil {
-		return nil, err
+		return nil, wrapAIDebugError(err, strings.Join(rawDebugParts, "\n\n"), mergeAIUsage(webUsage, usage))
 	}
-
-	return finalizePropertyEnhancement(outputText, transport, cfg.Model, cfg.Provider, req)
+	result, err := finalizePropertyEnhancement(outputText, transport, cfg.Model, cfg.Provider, req)
+	if err != nil {
+		return nil, wrapAIDebugError(err, strings.Join(rawDebugParts, "\n\n"), mergeAIUsage(webUsage, usage))
+	}
+	result.Usage = mergeAIUsage(webUsage, usage)
+	result.RawDebug = strings.TrimSpace(strings.Join(rawDebugParts, "\n\n"))
+	return result, nil
 }
 
 func loadAIImageInput(tempImageID string) (*AIImageInput, bool) {
@@ -613,8 +1272,45 @@ func uniqueNormalizedTokens(value string) []string {
 	return tokens
 }
 
+func DefaultChatPromptTemplate() string {
+	return DefaultChatPromptTemplateForProvider("openai")
+}
+
+func DefaultChatPromptTemplateForProvider(provider string) string {
+	base := `You are Ina ("Intelligence Neuronatic Assistant"), the AI assistant inside item+, an inventory and collection management system.
+
+You talk to the user naturally inside the app.
+
+Rules:
+- be concise, warm, and directly useful
+- focus on the actionable part of the user's message
+- ignore small talk, mood, weather, and unrelated side remarks unless they change the task
+- when the user asks about an item, collection, category, or property, stay grounded in the context they gave you
+- ask a short follow-up question when key information is missing
+- prefer saying "I don't know yet" over inventing facts
+- if the user only acknowledges or thanks you, respond briefly and naturally
+- assume this chat is read-only unless item+ explicitly provides a tool or result that proves an action can be performed from here
+- do not offer actions such as returning items, extending due dates, sending reminders, editing stock, creating reservations, exporting data, or changing records unless the chat explicitly has that capability
+- if a useful next step would require an app action that the chat cannot perform, say that plainly and suggest checking it in the app instead of pretending you can do it here
+- do not write like a report
+- do not use headings such as "Open questions", "Notes", or "Status" unless the user explicitly wants that style
+- if an image is attached, use it as context when helpful`
+
+	if strings.EqualFold(strings.TrimSpace(provider), "ollama") {
+		return base + `
+- keep replies extra direct and concrete
+- avoid long preambles and avoid repeating the whole request back to the user
+- if you are unsure, ask one short question instead of filling gaps with guesses`
+	}
+	return base
+}
+
 func DefaultParseItemPromptTemplate() string {
-	return `You work inside item+, an inventory and collection management system.
+	return DefaultParseItemPromptTemplateForProvider("openai")
+}
+
+func DefaultParseItemPromptTemplateForProvider(provider string) string {
+	base := `You work inside item+, an inventory and collection management system.
 Your assistant name is Ina ("Intelligence Neuronatic Assistant").
 
 You receive:
@@ -647,9 +1343,235 @@ Rules:
 - when you refer to yourself, call yourself Ina
 - do not use headings such as "Open questions", "Notes", or "Status"
 - if you need clarification, ask naturally inside assistant_message`
+
+	if strings.EqualFold(strings.TrimSpace(provider), "ollama") {
+		return base + `
+- be more conservative with technical details when the exact edition, revision, or platform is unclear
+- keep missing values empty instead of guessing from partial context
+- prefer one short clarification question over broad speculation
+- do not merge original releases, ports, remasters, or later editions unless the user explicitly combines them`
+	}
+	return base
 }
 
-func buildParseInstructions(basePrompt string, allowWebSearch bool, locale string, identifyOnly bool) string {
+func DefaultCategoryPropertyPromptTemplate() string {
+	return DefaultCategoryPropertyPromptTemplateForProvider("openai")
+}
+
+func DefaultCategoryPropertyPromptTemplateForProvider(provider string) string {
+	base := `You work inside item+, an inventory and collection management system.
+Your assistant name is Ina ("Intelligence Neuronatic Assistant").
+
+You receive:
+- an explicit_task
+- one category
+- existing_properties that already exist in that category
+
+Your job:
+- carry out the explicit_task
+- use category and existing_properties only as context
+
+Rules:
+- explicit_task is authoritative
+- do only what explicit_task asks for
+- do not turn a narrow request into a full category optimization
+- if explicit_task asks for one focused property or one focused change, return only that
+- suggest multiple properties only when explicit_task clearly asks for a broader set
+- focus on the actionable part of the message
+- ignore small talk, mood, weather, and other irrelevant side remarks unless they change the task
+- avoid duplicates of existing_properties
+- keep property names concise and reusable
+- use only these property types:
+  text, textblock, number, boolean, date, time, select, multiselect, rating, dimensions, age_rating, condition, priority, weight
+- prefer select or multiselect with concrete options when a fixed list is genuinely useful
+- prefer multiselect when multiple options can apply at once
+- prefer select when only one option is usually chosen
+- use number with unit for measurable values
+- use weight only for physical weight
+- use condition and priority only when they genuinely help
+- set show_in_list true only for genuinely useful scannable properties
+- display_width must be one of: third, half, full
+- if explicit_task is ambiguous, ask a short question instead of expanding scope
+- write assistant_message like a short natural reply to the user
+- assistant_message must sound conversational, not like a report
+- when you refer to yourself, call yourself Ina
+- do not use headings such as "Open questions", "Notes", "Status", or bullet labels unless the user asked for that style
+- if you need clarification, ask naturally inside assistant_message
+- if the message only contains acknowledgement or casual chatter, respond briefly and naturally in assistant_message and leave properties unchanged
+- keep notes short and factual`
+
+	if strings.EqualFold(strings.TrimSpace(provider), "ollama") {
+		return base + `
+- keep the scope especially tight
+- if the task sounds like a single property addition or one focused correction, return exactly that and nothing broader`
+	}
+	return base
+}
+
+func DefaultPropertyEnhancementPromptTemplate() string {
+	return DefaultPropertyEnhancementPromptTemplateForProvider("openai")
+}
+
+func DefaultPropertyEnhancementPromptTemplateForProvider(provider string) string {
+	base := `You work inside item+, an inventory and collection management system.
+Your assistant name is Ina ("Intelligence Neuronatic Assistant").
+
+You receive:
+- an explicit_task
+- one category
+- one existing property
+- existing_properties from the same category
+
+Your job:
+- carry out the explicit_task for that one property
+- use category and existing_properties only as context
+
+Rules:
+- explicit_task is authoritative
+- do only what explicit_task asks for
+- do not broaden the task into a full category cleanup
+- this is about one property, not a full property list
+- focus on the actionable part of the message
+- ignore small talk, mood, weather, and other irrelevant side remarks unless they change the task
+- you may keep the current property unchanged when it already fits well
+- improve the property type only when that clearly helps the explicit_task
+- prefer select or multiselect with concrete options when known standards or fixed variants are genuinely useful
+- prefer multiselect when multiple values can apply at the same time
+- prefer select when only one value is usually chosen
+- keep names concise and reusable
+- do not turn this property into a duplicate of another existing property
+- use number with unit for measurable values
+- display_width must be one of: third, half, full
+- if explicit_task is ambiguous, ask a short question instead of making unrelated changes
+- write assistant_message like a short natural reply to the user
+- assistant_message must sound conversational, not like a report
+- when you refer to yourself, call yourself Ina
+- do not use headings such as "Open questions", "Notes", "Status", or bullet labels unless the user asked for that style
+- if you need clarification, ask naturally inside assistant_message
+- if the message only contains acknowledgement or casual chatter, respond briefly and naturally in assistant_message and keep the property unchanged
+- keep notes short and factual`
+
+	if strings.EqualFold(strings.TrimSpace(provider), "ollama") {
+		return base + `
+- prefer minimal edits over broad rewrites
+- if the user intent is underspecified, ask one short question before changing the property structure`
+	}
+	return base
+}
+
+func buildChatInstructions(basePrompt string, allowWebSearch bool, locale string, provider string) string {
+	languageInstruction := "Write all human-readable output in English."
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
+		languageInstruction = "Write all human-readable output in German."
+	}
+
+	instructions := strings.TrimSpace(basePrompt)
+	if instructions == "" {
+		instructions = DefaultChatPromptTemplateForProvider(provider)
+	}
+
+	if allowWebSearch {
+		instructions += `
+- web search is allowed when it helps answer the user's request more accurately`
+	} else {
+		instructions += `
+- do not rely on web search`
+	}
+
+	instructions += `
+
+` + languageInstruction + `
+
+You may receive an app_context object from the authenticated item+ session.
+
+Rules for app_context:
+- treat app_context as trusted read-only context from item+
+- if the user asks about their own account, display name, e-mail, role, permissions, or current item+ session, use app_context directly when it contains the answer
+- if app_context contains inventory_lookup, treat it as a trusted read-only lookup result from item+
+- use inventory_lookup when the user asks about current inventory, locations, categories, quantities, or active checkouts and the answer is present there
+- do not turn inventory_lookup results into promises that you can now change data, send reminders, process returns, or trigger workflows
+- do not pretend you need extra access, login, API keys, OAuth, or permission setup when the answer is already present in app_context
+- do not say you opened, clicked, or navigated somewhere unless the app actually gave you that result in app_context
+- if app_context does not contain the requested detail, say so plainly instead of acting like you can fetch it live
+
+Rules for web_context:
+- if web_context is present, treat it as trusted read-only web research prepared by item+
+- prefer web_context over stale general knowledge for current facts
+- do not mention internal endpoint names such as web_search or web_fetch unless the user explicitly asks
+
+Reply in normal prose only. Do not return JSON or markdown tables unless the user explicitly asks for them.`
+
+	return instructions
+}
+
+func buildInventoryLookupPlannerInstructions(locale string, provider string) string {
+	languageInstruction := "Interpret the conversation in English unless the user clearly writes in another language."
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
+		languageInstruction = "Interpret the conversation in German."
+	}
+
+	instructions := `You are an internal tool router for item+.
+
+You are in planning mode for one internal read-only tool called inventory.lookup.
+
+Decide whether Ina needs inventory.lookup before answering.
+
+Use inventory.lookup only when the answer depends on current item+ data that may change over time, for example:
+- which items exist
+- quantities or stock levels
+- locations or categories of current items
+- which items are currently checked out
+- who currently has a checkout
+
+Do not use inventory.lookup when:
+- app_context already contains the answer
+- the user is just chatting, thanking, greeting, or asking for general knowledge
+- the user is asking to change data rather than inspect it
+
+Always use inventory.lookup when the user asks about current or live app data such as:
+- what exists right now
+- how many items are in a place
+- what is currently checked out
+- who currently has an item
+- whether something is overdue
+- anything with wording like currently, right now, gerade, aktuell, momentan
+
+The tool can search read-only inventory data with these fields:
+- kind: "items" or "checkouts"
+- realm: "all", "archive", or "collection"
+- search: free-text search for item content
+- location_name: optional location filter by name
+- category_name: optional category filter by name
+- user_name: optional checkout-user filter by name
+- status: optional status filter
+- stock_state: optional item stock filter such as "low_stock" or "out_of_stock"
+- limit: result size, usually 5 to 10
+
+Examples:
+- "What does Oli currently have checked out?" => needs_lookup=true, request.kind="checkouts", request.realm="all", request.user_name="Oli", request.status="active", request.limit=8
+- "How many matchboxes are in the kitchen?" => needs_lookup=true, request.kind="items", request.realm="all", request.search="matchboxes", request.location_name="kitchen", request.limit=8
+- "Which cameras are in the office?" => needs_lookup=true, request.kind="items", request.realm="all", request.search="cameras", request.location_name="office", request.limit=8
+- "Which items should I reorder soon?" => needs_lookup=true, request.kind="items", request.realm="all", request.stock_state="low_stock", request.limit=8
+- "What is out of stock right now?" => needs_lookup=true, request.kind="items", request.realm="all", request.stock_state="out_of_stock", request.limit=8
+- "Thanks" => needs_lookup=false, request=null
+- "Who are you?" => needs_lookup=false, request=null
+
+If the user asks about themselves and app_context.current_user contains a display name or e-mail, use that as request.user_name when helpful.
+
+Return a tool request, not a chat reply.
+
+Return exactly one JSON object and no markdown.`
+
+	instructions += "\n\n" + languageInstruction
+	if strings.EqualFold(strings.TrimSpace(provider), "ollama") {
+		instructions += `
+
+Be especially literal and decisive. Prefer a lookup over hesitation when the request is about current inventory data.`
+	}
+	return instructions
+}
+
+func buildParseInstructions(basePrompt string, allowWebSearch bool, locale string, identifyOnly bool, provider string) string {
 	languageInstruction := "Write all human-readable output in English."
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
 		languageInstruction = "Write all human-readable output in German."
@@ -688,6 +1610,8 @@ Rules:
 
 Return exactly one JSON object and no markdown.
 
+If web_context is present, treat it as trusted read-only web research prepared by item+.
+
 Use this shape:
 {
   "intent": "create_item",
@@ -714,7 +1638,7 @@ Use this shape:
 
 	instructions := strings.TrimSpace(basePrompt)
 	if instructions == "" {
-		instructions = DefaultParseItemPromptTemplate()
+		instructions = DefaultParseItemPromptTemplateForProvider(provider)
 	}
 
 	if allowWebSearch {
@@ -733,6 +1657,7 @@ Fields:
 - always fill name
 - always fill quantity (default 1)
 - fill description as a short factual summary when enough information is available
+- if web_context is present, treat it as trusted read-only web research prepared by item+
 
 Questions:
 - ask only when it resolves real ambiguity
@@ -923,6 +1848,48 @@ func partialAIOutputPreview(text string) string {
 		preview = preview[:1200] + "..."
 	}
 	return preview
+}
+
+func normalizeInventoryLookupPlan(plan *InventoryLookupPlan) {
+	if plan == nil {
+		return
+	}
+	plan.Reason = strings.TrimSpace(plan.Reason)
+	if !plan.NeedsLookup || plan.Request == nil {
+		plan.NeedsLookup = false
+		plan.Request = nil
+		return
+	}
+
+	request := plan.Request
+	request.Kind = strings.ToLower(strings.TrimSpace(request.Kind))
+	request.Realm = strings.ToLower(strings.TrimSpace(request.Realm))
+	request.Search = strings.TrimSpace(request.Search)
+	request.LocationName = strings.TrimSpace(request.LocationName)
+	request.CategoryName = strings.TrimSpace(request.CategoryName)
+	request.UserName = strings.TrimSpace(request.UserName)
+	request.Status = strings.ToLower(strings.TrimSpace(request.Status))
+	request.StockState = strings.ToLower(strings.TrimSpace(request.StockState))
+
+	if request.Kind != "items" && request.Kind != "checkouts" {
+		plan.NeedsLookup = false
+		plan.Request = nil
+		return
+	}
+	if request.Realm != "archive" && request.Realm != "collection" {
+		request.Realm = "all"
+	}
+	switch request.StockState {
+	case "", "low_stock", "out_of_stock":
+	default:
+		request.StockState = ""
+	}
+	if request.Limit <= 0 {
+		request.Limit = 8
+	}
+	if request.Limit > 20 {
+		request.Limit = 20
+	}
 }
 
 func extractAITextFromRawJSON(raw []byte) string {
@@ -1129,19 +2096,27 @@ func testResponsesAPI(client *http.Client, baseURL, provider, model, apiKey stri
 	}, resp.StatusCode, nil
 }
 
-func generateAIText(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, allowWebSearch bool, imageInput *AIImageInput, responseSchema map[string]any) (string, string, error) {
-	text, statusCode, err := generateViaResponses(client, baseURL, provider, model, apiKey, instructions, input, allowWebSearch, imageInput)
-	if err == nil {
-		return text, "responses", nil
-	}
-	if provider != "openai" && statusCode == http.StatusNotFound && imageInput == nil {
-		text, err = generateViaChatCompletions(client, baseURL, provider, model, apiKey, instructions, input, responseSchema)
+func generateAIText(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, allowWebSearch bool, imageInput *AIImageInput, responseSchema map[string]any, onRaw func(string) error) (string, string, *AIUsage, error) {
+	if provider != "openai" && imageInput != nil {
+		text, usage, err := generateViaChatCompletions(client, baseURL, provider, model, apiKey, instructions, input, imageInput, responseSchema, onRaw)
 		if err == nil {
-			return text, "chat.completions", nil
+			return text, "chat.completions", usage, nil
 		}
-		return "", "", err
+		return "", "", usage, normalizeAIRequestError(err)
 	}
-	return "", "", normalizeAIRequestError(err)
+
+	text, statusCode, usage, err := generateViaResponses(client, baseURL, provider, model, apiKey, instructions, input, allowWebSearch, imageInput, responseSchema != nil, onRaw)
+	if err == nil {
+		return text, "responses", usage, nil
+	}
+	if provider != "openai" && statusCode == http.StatusNotFound {
+		text, usage, err = generateViaChatCompletions(client, baseURL, provider, model, apiKey, instructions, input, imageInput, responseSchema, onRaw)
+		if err == nil {
+			return text, "chat.completions", usage, nil
+		}
+		return "", "", usage, normalizeAIRequestError(err)
+	}
+	return "", "", usage, normalizeAIRequestError(err)
 }
 
 func normalizeAIRequestError(err error) error {
@@ -1158,12 +2133,239 @@ func normalizeAIRequestError(err error) error {
 	if strings.Contains(strings.ToLower(err.Error()), "client.timeout exceeded while awaiting headers") {
 		return fmt.Errorf("Die KI-Antwort hat zu lange gedauert. Bitte versuche es erneut oder reduziere die Anfrage etwas.")
 	}
+	lowerErr := strings.ToLower(err.Error())
+	if strings.Contains(lowerErr, "http 504") || strings.Contains(lowerErr, "gateway timeout") {
+		return fmt.Errorf("Die KI-Antwort hat zu lange gedauert. Bitte versuche es erneut oder reduziere die Anfrage etwas.")
+	}
 	return err
 }
 
-func generateViaResponses(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, allowWebSearch bool, imageInput *AIImageInput) (string, int, error) {
+func wrapAIDebugError(err error, rawDebug string, usage *AIUsage) error {
+	if err == nil {
+		return nil
+	}
+	trimmedRaw := strings.TrimSpace(rawDebug)
+	if trimmedRaw == "" && usage == nil {
+		return err
+	}
+	return &AIDebugError{
+		Err:      err,
+		RawDebug: trimmedRaw,
+		Usage:    usage,
+	}
+}
+
+func buildOllamaWebContext(client *http.Client, apiKey, query string, onRaw func(string) error) (string, *AIUsage, error) {
+	webUsage := &AIUsage{}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return "", nil, nil
+	}
+
+	webUsage.WebSearchRequests++
+	searchResults, err := performOllamaWebSearch(client, apiKey, query, onRaw)
+	if err != nil {
+		return "", webUsage, err
+	}
+	if len(searchResults) == 0 {
+		return "", webUsage, nil
+	}
+
+	urlsToFetch := collectOllamaWebFetchURLs(query, searchResults)
+	fetchedPages := make([]map[string]any, 0, len(urlsToFetch))
+	for _, url := range urlsToFetch {
+		webUsage.WebFetchRequests++
+		page, fetchErr := performOllamaWebFetch(client, apiKey, url, onRaw)
+		if fetchErr != nil {
+			if err := emitAIRaw(onRaw, "OLLAMA WEB FETCH ERROR", fetchErr.Error()); err != nil {
+				return "", webUsage, err
+			}
+			continue
+		}
+		fetchedPages = append(fetchedPages, map[string]any{
+			"url":     url,
+			"title":   strings.TrimSpace(page.Title),
+			"content": trimAIText(page.Content, ollamaWebFetchContentChars),
+			"links":   trimAISlice(page.Links, ollamaWebFetchMaxLinks),
+		})
+	}
+
+	contextPayload := map[string]any{
+		"provider": "ollama_web_search",
+		"query":    query,
+		"results":  summarizeOllamaWebSearchResults(searchResults),
+	}
+	if len(fetchedPages) > 0 {
+		contextPayload["fetched_pages"] = fetchedPages
+	}
+
+	bytes, err := json.Marshal(contextPayload)
+	if err != nil {
+		return "", webUsage, err
+	}
+	return string(bytes), webUsage, nil
+}
+
+func performOllamaWebSearch(client *http.Client, apiKey, query string, onRaw func(string) error) ([]ollamaWebSearchResult, error) {
+	payload := ollamaWebSearchRequest{
+		Query:      query,
+		MaxResults: ollamaWebSearchMaxResults,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	if err := emitAIRaw(onRaw, "REQUEST /web_search", string(body)); err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, ollamaWebSearchBaseURL+"/web_search", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := emitAIRaw(onRaw, fmt.Sprintf("RESPONSE /web_search HTTP %d", resp.StatusCode), string(raw)); err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("Ollama web search failed with HTTP %d", resp.StatusCode)
+	}
+
+	var parsed ollamaWebSearchResponse
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, err
+	}
+	return parsed.Results, nil
+}
+
+func performOllamaWebFetch(client *http.Client, apiKey, url string, onRaw func(string) error) (*ollamaWebFetchResponse, error) {
+	payload := ollamaWebFetchRequest{URL: url}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	if err := emitAIRaw(onRaw, "REQUEST /web_fetch", string(body)); err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, ollamaWebSearchBaseURL+"/web_fetch", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := emitAIRaw(onRaw, fmt.Sprintf("RESPONSE /web_fetch HTTP %d", resp.StatusCode), string(raw)); err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("Ollama web fetch failed with HTTP %d", resp.StatusCode)
+	}
+
+	var parsed ollamaWebFetchResponse
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}
+
+func summarizeOllamaWebSearchResults(results []ollamaWebSearchResult) []map[string]any {
+	summary := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		url := strings.TrimSpace(result.URL)
+		title := strings.TrimSpace(result.Title)
+		content := trimAIText(result.Content, ollamaWebSearchExcerptChars)
+		if url == "" && title == "" && content == "" {
+			continue
+		}
+		summary = append(summary, map[string]any{
+			"title":   title,
+			"url":     url,
+			"content": content,
+		})
+	}
+	return summary
+}
+
+func collectOllamaWebFetchURLs(query string, results []ollamaWebSearchResult) []string {
+	urls := make([]string, 0, ollamaWebFetchMaxPages)
+	seen := map[string]struct{}{}
+	for _, candidate := range extractURLsFromText(query) {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		urls = append(urls, candidate)
+		if len(urls) >= ollamaWebFetchMaxPages {
+			return urls
+		}
+	}
+	for _, result := range results {
+		candidate := strings.TrimSpace(result.URL)
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		urls = append(urls, candidate)
+		if len(urls) >= ollamaWebFetchMaxPages {
+			return urls
+		}
+	}
+	return urls
+}
+
+func extractURLsFromText(text string) []string {
+	re := regexp.MustCompile(`https?://[^\s<>"')]+`)
+	return re.FindAllString(text, -1)
+}
+
+func trimAIText(text string, maxChars int) string {
+	text = strings.TrimSpace(text)
+	if maxChars <= 0 || len(text) <= maxChars {
+		return text
+	}
+	return strings.TrimSpace(text[:maxChars]) + "..."
+}
+
+func trimAISlice(values []string, limit int) []string {
+	if limit <= 0 || len(values) <= limit {
+		return values
+	}
+	return append([]string{}, values[:limit]...)
+}
+
+func generateViaResponses(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, allowWebSearch bool, imageInput *AIImageInput, enforceJSON bool, onRaw func(string) error) (string, int, *AIUsage, error) {
 	requestInput := input
-	if provider == "openai" && !strings.Contains(strings.ToLower(requestInput), "json") {
+	if enforceJSON && provider == "openai" && !strings.Contains(strings.ToLower(requestInput), "json") {
 		requestInput += "\n\nReturn valid JSON only."
 	}
 
@@ -1188,7 +2390,7 @@ func generateViaResponses(client *http.Client, baseURL, provider, model, apiKey,
 		"max_output_tokens": aiResponsesMaxOutputTokens,
 		"store":             false,
 	}
-	if provider == "openai" && !allowWebSearch {
+	if enforceJSON && provider == "openai" && !allowWebSearch {
 		payload["text"] = map[string]any{
 			"format": map[string]any{
 				"type": "json_object",
@@ -1204,37 +2406,44 @@ func generateViaResponses(client *http.Client, baseURL, provider, model, apiKey,
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", 0, err
+		return "", 0, nil, err
+	}
+	if err := emitAIRaw(onRaw, "REQUEST /responses", string(body)); err != nil {
+		return "", 0, nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, baseURL+"/responses", bytes.NewReader(body))
 	if err != nil {
-		return "", 0, err
+		return "", 0, nil, err
 	}
 	applyAIHeaders(req, provider, apiKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", 0, err
+		return "", 0, nil, err
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", resp.StatusCode, err
+		return "", resp.StatusCode, nil, err
+	}
+	if err := emitAIRaw(onRaw, fmt.Sprintf("RESPONSE /responses HTTP %d", resp.StatusCode), string(raw)); err != nil {
+		return "", resp.StatusCode, nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var apiErr openAIResponse
 		if json.Unmarshal(raw, &apiErr) == nil && apiErr.Error != nil && strings.TrimSpace(apiErr.Error.Message) != "" {
-			return "", resp.StatusCode, errors.New(apiErr.Error.Message)
+			return "", resp.StatusCode, nil, errors.New(apiErr.Error.Message)
 		}
-		return "", resp.StatusCode, fmt.Errorf("AI request failed with HTTP %d", resp.StatusCode)
+		return "", resp.StatusCode, nil, fmt.Errorf("AI request failed with HTTP %d", resp.StatusCode)
 	}
 
 	var parsed openAIResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return "", resp.StatusCode, err
+		return "", resp.StatusCode, nil, err
 	}
+	usage := usageFromOpenAIResponse(parsed)
 	outputText := strings.TrimSpace(parsed.OutputText)
 	if outputText == "" {
 		for _, item := range parsed.Output {
@@ -1254,19 +2463,30 @@ func generateViaResponses(client *http.Client, baseURL, provider, model, apiKey,
 	}
 	if outputText == "" {
 		if parsed.IncompleteDetails != nil && strings.TrimSpace(parsed.IncompleteDetails.Reason) == "max_output_tokens" {
-			return "", resp.StatusCode, fmt.Errorf("AI response hit the output limit before a readable result was returned")
+			return "", resp.StatusCode, usage, fmt.Errorf("AI response hit the output limit before a readable result was returned")
 		}
-		return "", resp.StatusCode, fmt.Errorf("Provider returned no readable output text. Raw response: %s", partialAIOutputPreview(string(raw)))
+		return "", resp.StatusCode, usage, fmt.Errorf("Provider returned no readable output text. Raw response: %s", partialAIOutputPreview(string(raw)))
 	}
-	return outputText, resp.StatusCode, nil
+	return outputText, resp.StatusCode, usage, nil
 }
 
-func generateViaChatCompletions(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, responseSchema map[string]any) (string, error) {
+func generateViaChatCompletions(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, imageInput *AIImageInput, responseSchema map[string]any, onRaw func(string) error) (string, *AIUsage, error) {
+	userMessage := map[string]any{
+		"role":    "user",
+		"content": input,
+	}
+	if imageInput != nil {
+		dataURL := fmt.Sprintf("data:%s;base64,%s", imageInput.MimeType, base64.StdEncoding.EncodeToString(imageInput.Data))
+		userMessage["content"] = []map[string]any{
+			{"type": "text", "text": input},
+			{"type": "image_url", "image_url": map[string]any{"url": dataURL}},
+		}
+	}
 	payload := map[string]any{
 		"model": model,
-		"messages": []map[string]string{
+		"messages": []map[string]any{
 			{"role": "system", "content": instructions},
-			{"role": "user", "content": input},
+			userMessage,
 		},
 		"stream":      false,
 		"max_tokens":  aiChatCompletionsMaxTokens,
@@ -1284,44 +2504,50 @@ func generateViaChatCompletions(client *http.Client, baseURL, provider, model, a
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return "", nil, err
+	}
+	if err := emitAIRaw(onRaw, "REQUEST /chat/completions", string(body)); err != nil {
+		return "", nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	applyAIHeaders(req, provider, apiKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", nil, err
+	}
+	if err := emitAIRaw(onRaw, fmt.Sprintf("RESPONSE /chat/completions HTTP %d", resp.StatusCode), string(raw)); err != nil {
+		return "", nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var apiErr chatCompletionResponse
 		if json.Unmarshal(raw, &apiErr) == nil && apiErr.Error != nil && strings.TrimSpace(apiErr.Error.Message) != "" {
-			return "", errors.New(apiErr.Error.Message)
+			return "", nil, errors.New(apiErr.Error.Message)
 		}
-		return "", fmt.Errorf("AI request failed with HTTP %d", resp.StatusCode)
+		return "", nil, fmt.Errorf("AI request failed with HTTP %d", resp.StatusCode)
 	}
 
 	var parsed chatCompletionResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if len(parsed.Choices) == 0 {
-		return "", fmt.Errorf("Model returned no choices")
+		return "", usageFromChatCompletionResponse(parsed), fmt.Errorf("Model returned no choices")
 	}
-	return strings.TrimSpace(parsed.Choices[0].Message.Content), nil
+	return strings.TrimSpace(parsed.Choices[0].Message.Content), usageFromChatCompletionResponse(parsed), nil
 }
 
-func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, responseSchema map[string]any, onDelta func(string) error) error {
+func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, responseSchema map[string]any, onDelta func(string) error, onUsage func(AIUsage) error, onRaw func(string) error) error {
 	payload := map[string]any{
 		"model": model,
 		"messages": []map[string]string{
@@ -1346,6 +2572,9 @@ func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, mo
 	if err != nil {
 		return err
 	}
+	if err := emitAIRaw(onRaw, "REQUEST /chat/completions (stream)", string(body)); err != nil {
+		return err
+	}
 
 	req, err := http.NewRequest(http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
@@ -1365,6 +2594,9 @@ func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, mo
 		if readErr != nil {
 			return readErr
 		}
+		if err := emitAIRaw(onRaw, fmt.Sprintf("RESPONSE /chat/completions (stream) HTTP %d", resp.StatusCode), string(raw)); err != nil {
+			return err
+		}
 		var apiErr chatCompletionResponse
 		if json.Unmarshal(raw, &apiErr) == nil && apiErr.Error != nil && strings.TrimSpace(apiErr.Error.Message) != "" {
 			return errors.New(apiErr.Error.Message)
@@ -1378,7 +2610,14 @@ func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, mo
 				Content string `json:"content"`
 			} `json:"delta"`
 		} `json:"choices"`
-		Error *struct {
+		Usage *struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
+		PromptEvalCount int `json:"prompt_eval_count"`
+		EvalCount       int `json:"eval_count"`
+		Error           *struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
@@ -1396,6 +2635,11 @@ func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, mo
 			if payload == "" {
 				continue
 			}
+			if onRaw != nil {
+				if cbErr := onRaw(payload); cbErr != nil {
+					return cbErr
+				}
+			}
 			if payload == "[DONE]" {
 				return io.EOF
 			}
@@ -1405,6 +2649,18 @@ func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, mo
 			}
 			if chunk.Error != nil && strings.TrimSpace(chunk.Error.Message) != "" {
 				return errors.New(strings.TrimSpace(chunk.Error.Message))
+			}
+			if onUsage != nil {
+				usage := usageFromChatCompletionResponse(chatCompletionResponse{
+					Usage:           chunk.Usage,
+					PromptEvalCount: chunk.PromptEvalCount,
+					EvalCount:       chunk.EvalCount,
+				})
+				if usage != nil {
+					if cbErr := onUsage(*usage); cbErr != nil {
+						return cbErr
+					}
+				}
 			}
 			for _, choice := range chunk.Choices {
 				if choice.Delta.Content == "" {
@@ -1723,50 +2979,35 @@ func buildPropertyEnhancementJSONSchema() map[string]any {
 	}
 }
 
-func DefaultCategoryPropertyPromptTemplate() string {
-	return `You work inside item+, an inventory and collection management system.
-Your assistant name is Ina ("Intelligence Neuronatic Assistant").
-
-You receive:
-- an explicit_task
-- one category
-- existing_properties that already exist in that category
-
-Your job:
-- carry out the explicit_task
-- use category and existing_properties only as context
-
-Rules:
-- explicit_task is authoritative
-- do only what explicit_task asks for
-- do not turn a narrow request into a full category optimization
-- if explicit_task asks for one focused property or one focused change, return only that
-- suggest multiple properties only when explicit_task clearly asks for a broader set
-- focus on the actionable part of the message
-- ignore small talk, mood, weather, and other irrelevant side remarks unless they change the task
-- avoid duplicates of existing_properties
-- keep property names concise and reusable
-- use only these property types:
-  text, textblock, number, boolean, date, time, select, multiselect, rating, dimensions, age_rating, condition, priority, weight
-- prefer select or multiselect with concrete options when a fixed list is genuinely useful
-- prefer multiselect when multiple options can apply at once
-- prefer select when only one option is usually chosen
-- use number with unit for measurable values
-- use weight only for physical weight
-- use condition and priority only when they genuinely help
-- set show_in_list true only for genuinely useful scannable properties
-- display_width must be one of: third, half, full
-- if explicit_task is ambiguous, ask a short question instead of expanding scope
-- write assistant_message like a short natural reply to the user
-- assistant_message must sound conversational, not like a report
-- when you refer to yourself, call yourself Ina
-- do not use headings such as "Open questions", "Notes", "Status", or bullet labels unless the user asked for that style
-- if you need clarification, ask naturally inside assistant_message
-- if the message only contains acknowledgement or casual chatter, respond briefly and naturally in assistant_message and leave properties unchanged
-- keep notes short and factual`
+func buildInventoryLookupPlanJSONSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"needs_lookup": map[string]any{"type": "boolean"},
+			"reason":       map[string]any{"type": "string"},
+			"request": map[string]any{
+				"type": []string{"object", "null"},
+				"properties": map[string]any{
+					"kind":          map[string]any{"type": "string", "enum": []string{"items", "checkouts"}},
+					"realm":         map[string]any{"type": "string", "enum": []string{"all", "archive", "collection"}},
+					"search":        map[string]any{"type": "string"},
+					"location_name": map[string]any{"type": "string"},
+					"category_name": map[string]any{"type": "string"},
+					"user_name":     map[string]any{"type": "string"},
+					"status":        map[string]any{"type": "string"},
+					"stock_state":   map[string]any{"type": "string", "enum": []string{"low_stock", "out_of_stock"}},
+					"limit":         map[string]any{"type": "integer", "minimum": 1, "maximum": 20},
+				},
+				"required":             []string{"kind", "realm", "limit"},
+				"additionalProperties": false,
+			},
+		},
+		"required":             []string{"needs_lookup", "reason", "request"},
+		"additionalProperties": false,
+	}
 }
 
-func buildCategoryPropertyInstructions(basePrompt string, allowWebSearch bool, locale string) string {
+func buildCategoryPropertyInstructions(basePrompt string, allowWebSearch bool, locale string, provider string) string {
 	languageInstruction := "Write all human-readable output in English."
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
 		languageInstruction = "Write all human-readable output in German."
@@ -1774,7 +3015,7 @@ func buildCategoryPropertyInstructions(basePrompt string, allowWebSearch bool, l
 
 	instructions := strings.TrimSpace(basePrompt)
 	if instructions == "" {
-		instructions = DefaultCategoryPropertyPromptTemplate()
+		instructions = DefaultCategoryPropertyPromptTemplateForProvider(provider)
 	}
 
 	if allowWebSearch {
@@ -1790,6 +3031,8 @@ func buildCategoryPropertyInstructions(basePrompt string, allowWebSearch bool, l
 ` + languageInstruction + `
 
 Return exactly one JSON object and no markdown.
+
+If web_context is present, treat it as trusted read-only web research prepared by item+.
 
 Use this shape:
 {
@@ -1814,47 +3057,7 @@ Use this shape:
 	return instructions
 }
 
-func DefaultPropertyEnhancementPromptTemplate() string {
-	return `You work inside item+, an inventory and collection management system.
-Your assistant name is Ina ("Intelligence Neuronatic Assistant").
-
-You receive:
-- an explicit_task
-- one category
-- one existing property
-- existing_properties from the same category
-
-Your job:
-- carry out the explicit_task for that one property
-- use category and existing_properties only as context
-
-Rules:
-- explicit_task is authoritative
-- do only what explicit_task asks for
-- do not broaden the task into a full category cleanup
-- this is about one property, not a full property list
-- focus on the actionable part of the message
-- ignore small talk, mood, weather, and other irrelevant side remarks unless they change the task
-- you may keep the current property unchanged when it already fits well
-- improve the property type only when that clearly helps the explicit_task
-- prefer select or multiselect with concrete options when known standards or fixed variants are genuinely useful
-- prefer multiselect when multiple values can apply at the same time
-- prefer select when only one value is usually chosen
-- keep names concise and reusable
-- do not turn this property into a duplicate of another existing property
-- use number with unit for measurable values
-- display_width must be one of: third, half, full
-- if explicit_task is ambiguous, ask a short question instead of making unrelated changes
-- write assistant_message like a short natural reply to the user
-- assistant_message must sound conversational, not like a report
-- when you refer to yourself, call yourself Ina
-- do not use headings such as "Open questions", "Notes", "Status", or bullet labels unless the user asked for that style
-- if you need clarification, ask naturally inside assistant_message
-- if the message only contains acknowledgement or casual chatter, respond briefly and naturally in assistant_message and keep the property unchanged
-- keep notes short and factual`
-}
-
-func buildPropertyEnhancementInstructions(basePrompt string, allowWebSearch bool, locale string) string {
+func buildPropertyEnhancementInstructions(basePrompt string, allowWebSearch bool, locale string, provider string) string {
 	languageInstruction := "Write all human-readable output in English."
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "de") {
 		languageInstruction = "Write all human-readable output in German."
@@ -1862,7 +3065,7 @@ func buildPropertyEnhancementInstructions(basePrompt string, allowWebSearch bool
 
 	instructions := strings.TrimSpace(basePrompt)
 	if instructions == "" {
-		instructions = DefaultPropertyEnhancementPromptTemplate()
+		instructions = DefaultPropertyEnhancementPromptTemplateForProvider(provider)
 	}
 
 	if allowWebSearch {
@@ -1878,6 +3081,8 @@ func buildPropertyEnhancementInstructions(basePrompt string, allowWebSearch bool
 ` + languageInstruction + `
 
 Return exactly one JSON object and no markdown.
+
+If web_context is present, treat it as trusted read-only web research prepared by item+.
 
 Use this shape:
 {

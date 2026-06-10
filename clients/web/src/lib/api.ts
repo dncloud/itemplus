@@ -140,29 +140,49 @@ export interface ExternalSourceBrowseResult {
   entries: ExternalSourceBrowseEntry[];
 }
 
-export interface AISettings {
-  provider: "openai" | "ollama" | "openai_compatible";
+export interface AIProfile {
+  id: string;
+  name: string;
+  provider: "openai" | "ollama";
   model: string;
   base_url: string;
   enabled: boolean;
+  supports_vision: boolean;
   has_api_key: boolean;
+  api_key_preview?: string;
+  chat_prompt: string;
   parse_item_prompt: string;
   category_property_prompt: string;
   property_enhancement_prompt: string;
+  chat_prompt_default: string;
   parse_item_prompt_default: string;
   category_property_prompt_default: string;
   property_enhancement_prompt_default: string;
 }
 
-export interface AISettingsPayload {
-  provider: "openai" | "ollama" | "openai_compatible";
+export interface AISettings {
+  active_profile_id: string;
+  profiles: AIProfile[];
+}
+
+export interface AIProfilePayload {
+  id: string;
+  name: string;
+  provider: "openai" | "ollama";
   model: string;
   base_url: string;
   api_key?: string;
   enabled: boolean;
+  supports_vision: boolean;
+  chat_prompt: string;
   parse_item_prompt: string;
   category_property_prompt: string;
   property_enhancement_prompt: string;
+}
+
+export interface AISettingsPayload {
+  active_profile_id: string;
+  profiles: AIProfilePayload[];
 }
 
 export interface AIConnectionTestResult {
@@ -172,6 +192,21 @@ export interface AIConnectionTestResult {
   output_text?: string;
   response_id?: string;
   request_id?: string;
+}
+
+export interface AIModelOption {
+  id: string;
+  owned_by?: string;
+  created?: number;
+}
+
+export interface AIUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  reasoning_tokens?: number;
+  web_search_requests?: number;
+  web_fetch_requests?: number;
 }
 
 export interface AIParseItemIntentResult {
@@ -192,6 +227,7 @@ export interface AIParseItemIntentResult {
   transport?: string;
   model?: string;
   provider?: string;
+  usage?: AIUsage;
   context?: Record<string, unknown>;
 }
 
@@ -222,9 +258,11 @@ export interface AICategoryPropertySuggestionResult {
   notes: string[];
   properties: AIPropertyProposal[];
   raw_prompt?: string;
+  raw_debug?: string;
   transport?: string;
   model?: string;
   provider?: string;
+  usage?: AIUsage;
   context?: Record<string, unknown>;
 }
 
@@ -236,17 +274,40 @@ export interface AIPropertyEnhancementSuggestionResult {
   notes: string[];
   property: AIPropertyProposal;
   raw_prompt?: string;
+  raw_debug?: string;
   transport?: string;
   model?: string;
   provider?: string;
+  usage?: AIUsage;
   context?: Record<string, unknown>;
 }
 
 export interface AIParseStreamEvent {
-  type: "status" | "note" | "request" | "delta" | "result" | "error" | "done";
+  type: "status" | "note" | "request" | "delta" | "raw" | "result" | "error" | "done";
   message?: string;
   delta?: string;
   result?: AIParseItemIntentResult;
+}
+
+export interface AIChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AIChatResult {
+  assistant_message: string;
+  transport?: string;
+  model?: string;
+  provider?: string;
+  usage?: AIUsage;
+  context?: Record<string, unknown>;
+}
+
+export interface AIChatStreamEvent {
+  type: "status" | "note" | "delta" | "raw" | "error" | "done";
+  message?: string;
+  delta?: string;
+  result?: AIChatResult;
 }
 
 class Api {
@@ -348,7 +409,12 @@ class Api {
   resetBranding = () => this.del<BrandingSettings>("/admin/branding");
   getAISettings = () => this.get<AISettings>("/admin/ai-settings");
   updateAISettings = (data: AISettingsPayload) => this.put<AISettings>("/admin/ai-settings", data);
-  testAISettings = (data: AISettingsPayload) => this.post<AIConnectionTestResult>("/admin/ai-settings/test", data);
+  testAISettings = (data: AIProfilePayload) => this.post<AIConnectionTestResult>("/admin/ai-settings/test", data);
+  listAIModels = (data: AIProfilePayload) => this.post<{ models: AIModelOption[] }>("/admin/ai-settings/models", data);
+  chatWithAIStream = async (
+    data: { messages: AIChatMessage[]; locale?: string; allow_web_search?: boolean; temp_image_id?: string },
+    onEvent: (event: AIChatStreamEvent) => void,
+  ) => this.handleStream("/ai/chat/stream", data, onEvent as (event: AIParseStreamEvent) => void);
   parseItemIntent = (data: { realm: "archive" | "collection"; prompt: string; barcode?: string; temp_image_id?: string; locale?: string; selected_category_id?: number; allow_web_search?: boolean; identify_only?: boolean }) => this.post<AIParseItemIntentResult>("/ai/parse-item-intent", data);
   parseItemIntentStream = async (
     data: { realm: "archive" | "collection"; prompt: string; barcode?: string; temp_image_id?: string; locale?: string; selected_category_id?: number; allow_web_search?: boolean; identify_only?: boolean },
@@ -378,6 +444,7 @@ class Api {
   getOverview = () => this.get<StatsOverview>("/stats/overview");
   getInventoryStats = () => this.get<{ warnings: InventoryWarning[] }>("/stats/inventory");
   getLocationStats = () => this.get<{ warnings: LocationWarning[] }>("/stats/locations");
+  getAIUsageStats = () => this.get<AIUsageStats>("/stats/ai-usage");
 
   // -- Realm CRUD --
   getItems = (
@@ -677,6 +744,34 @@ export interface Vendor {
 export interface StatsOverview {
   archive: RealmStats;
   collection: RealmStats;
+}
+
+export interface AIUsageStats {
+  hour: AIUsageStatsPeriod;
+  day: AIUsageStatsPeriod;
+  week: AIUsageStatsPeriod;
+  month: AIUsageStatsPeriod;
+  total: AIUsageStatsPeriod;
+}
+
+export interface AIUsageStatsPeriod {
+  label: "hour" | "day" | "week" | "month" | "total";
+  since: string;
+  buckets: AIUsageStatsBucket[];
+}
+
+export interface AIUsageStatsBucket {
+  bucket: string;
+  provider: "openai" | "ollama" | string;
+  requests: number;
+  successful_requests: number;
+  failed_requests: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  reasoning_tokens: number;
+  web_search_requests: number;
+  web_fetch_requests: number;
 }
 
 type ItemWire = Item & {

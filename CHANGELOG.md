@@ -38,6 +38,30 @@
 - Added temporary-image retrieval for AI uploads so freshly captured photos can be rendered directly in the chat instead of only being referenced indirectly by the AI request.
 - Improved wording and localization across the Ina surfaces, including German umlauts in visible UI copy, quieter button labels such as `Senden`, and more neutral suggestion headings that fit the conversational flow better.
 
+### AI update
+- Reworked the AI settings area around explicit OpenAI and Ollama profiles, including active-profile selection, per-profile prompts, clearer model/provider controls, optional Ollama API keys for cloud web search, and masked stored-key indicators.
+- Added model discovery for OpenAI-compatible `/v1/models` endpoints so available models can be fetched from Settings instead of being typed manually every time.
+- Added an Ollama vision-capability toggle so local text-only models do not receive image payloads, while vision-capable models can still be used for photo-based item identification.
+- Added a dedicated Chat page for testing the active Ina profile outside item and category workflows, with persistent session history, inline scrolling, markdown rendering, model/token badges, optional web search, attachments, and a dynamic chat composer.
+- Added raw AI stream/debug output and token usage badges to the general chat, category AI flow, and item-create AI flow, making local Ollama and OpenAI behavior easier to compare while tuning prompts.
+- Added AI usage tracking in the database for requests, input/output/total tokens, web-search usage, provider, model, feature area, status, and latency.
+- Added the AI usage dashboard under its own main-menu section, including separate OpenAI/Ollama views, fixed time buckets for hour/day/week/month, a total view, request charts, token charts, and provider-level summaries.
+- Added read-only inventory context for Ina so chat answers can use current items, quantities, locations, checkouts, categories, descriptions, and property values without granting write access.
+- Tightened the free chat web-search trigger so everyday greetings or inventory questions no longer get treated as web-search requests unless the user clearly asks for current or external information.
+- Improved AI response rendering with markdown support, calmer animated “Denke nach” states, animated new assistant messages, and previously-seen chat messages that reopen instantly instead of replaying the effect.
+- Cleaned up old/static AI helper text and unused ballast so category, property, and item AI flows rely more on the configured prompts and live conversation context.
+- Added OpenAI/Ollama provider distinction throughout AI settings, chat badges, raw output, and usage statistics.
+
+### Web app polish and navigation
+- Moved Settings and Logout out of the sidebar account block and into compact header icons, leaving the main menu cleaner.
+- Added a dedicated AI menu section with links for usage and chat/testing surfaces.
+- Improved light-mode chat styling so Ina conversations remain readable outside dark mode.
+- Recolored external SFTP storage settings with an emerald accent for selected sources, authentication choices, active toggles, and save actions, matching the storage domain instead of the generic blue settings accent.
+
+### Attachments and external storage
+- Fixed SFTP-backed video previews by serving external SFTP attachment streams through range-aware HTTP content serving, restoring browser playback, seeking, and metadata loading for MP4 and other video files.
+- Silenced expected SFTP request-cancel noise during video seeking so aborted browser range requests no longer appear as real SFTP stream errors in the server log.
+
 ## 1.2.4 - 2026-05-31
 
 ### AI, categories, and item creation

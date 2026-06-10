@@ -193,7 +193,7 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
   const pendingDelete = deleteFlow.pending?.id ?? null;
 
   useEffect(() => {
-    const unsubScanned = wsClient.on("barcode.scanned", (data) => {
+    const unsubScanned = wsClient.on("barcode.scanned", () => {
       setBarcodeCapturePending(false);
     });
 

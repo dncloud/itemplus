@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"path"
 	"strings"
@@ -26,10 +25,11 @@ type SFTPSourceConfig struct {
 }
 
 type SFTPFileStream struct {
-	file      io.ReadCloser
+	file      *sftp.File
 	sftp      *sftp.Client
 	sshClient *ssh.Client
 	Size      int64
+	ModTime   time.Time
 }
 
 type SFTPHostKeyInfo struct {
@@ -48,6 +48,10 @@ type SFTPDirectoryEntry struct {
 
 func (s *SFTPFileStream) Read(p []byte) (int, error) {
 	return s.file.Read(p)
+}
+
+func (s *SFTPFileStream) Seek(offset int64, whence int) (int64, error) {
+	return s.file.Seek(offset, whence)
 }
 
 func (s *SFTPFileStream) Close() error {
@@ -116,8 +120,10 @@ func OpenSFTPFileStream(ctx context.Context, source SFTPSourceConfig, attachment
 	}
 
 	size := int64(-1)
+	modTime := time.Time{}
 	if stat, err := file.Stat(); err == nil {
 		size = stat.Size()
+		modTime = stat.ModTime()
 	}
 
 	return &SFTPFileStream{
@@ -125,6 +131,7 @@ func OpenSFTPFileStream(ctx context.Context, source SFTPSourceConfig, attachment
 		sftp:      sftpClient,
 		sshClient: sshClient,
 		Size:      size,
+		ModTime:   modTime,
 	}, nil
 }
 

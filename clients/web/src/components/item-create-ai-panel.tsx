@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import clsx from "clsx";
 import Link from "next/link";
-import { CameraIcon, ChevronRightIcon, QrCodeIcon, SparklesIcon } from "@heroicons/react/24/outline";
+import { CameraIcon, ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, QrCodeIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import {
+  AIDrawerTabs,
+  AIDrawerChatMessage,
+  AIRawDebugPanel,
+  AIUsageBadges,
   AIInfoDrawer,
   BarcodeDraftNotice,
 } from "@/components/item-create-ai-sections";
-import type { Category, Item } from "@/lib/api";
+import type { AIUsage, Category, Item } from "@/lib/api";
 import { Field, TWPSelect } from "@/components/item-create-ui";
 
 type TranslateFn = (key: string, vars?: Record<string, string | number>) => string;
@@ -28,102 +32,6 @@ type AIContextSuggestion = {
   value: string;
   onApply: () => void;
 };
-
-function AnimatedAIText({
-  content,
-  animate = false,
-  pending = false,
-  onAnimationDone,
-}: {
-  content: string;
-  animate?: boolean;
-  pending?: boolean;
-  onAnimationDone?: () => void;
-}) {
-  const [visibleLength, setVisibleLength] = useState(animate ? 0 : content.length);
-
-  useEffect(() => {
-    if (pending) {
-      setVisibleLength(0);
-      return;
-    }
-    if (!animate) {
-      setVisibleLength(content.length);
-      return;
-    }
-
-    setVisibleLength(0);
-    let index = 0;
-    const timer = window.setInterval(() => {
-      index += 1;
-      setVisibleLength(Math.min(index, content.length));
-      if (index >= content.length) {
-        window.clearInterval(timer);
-        onAnimationDone?.();
-      }
-    }, 12);
-    return () => window.clearInterval(timer);
-  }, [animate, content, onAnimationDone, pending]);
-
-  if (pending) {
-    return (
-      <span className="ai-thinking-text">
-        {content}
-      </span>
-    );
-  }
-
-  const visibleText = content.slice(0, visibleLength);
-  return (
-    <p className={`whitespace-pre-wrap ${animate ? "text-white [text-shadow:0_0_10px_rgba(96,165,250,0.2)]" : ""}`}>
-      {visibleText}
-      {animate && visibleLength < content.length ? <span className="ml-0.5 inline-block h-4 w-[1px] animate-pulse bg-blue-300 align-middle" /> : null}
-    </p>
-  );
-}
-
-function AIChatMessage({
-  role,
-  name,
-  content,
-  imageUrl,
-  pending = false,
-  animate = false,
-  onAnimationDone,
-}: {
-  role: "user" | "assistant";
-  name: string;
-  content: string;
-  imageUrl?: string;
-  pending?: boolean;
-  animate?: boolean;
-  onAnimationDone?: () => void;
-}) {
-  const isUser = role === "user";
-  return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={`flex max-w-[88%] flex-col gap-2 ${isUser ? "items-end" : "items-start"}`}>
-        <p className="px-1 text-xs font-medium uppercase tracking-[0.08em] text-gray-400">{name}</p>
-        <div className={clsx("rounded-2xl px-4 py-3 text-sm", isUser ? "bg-blue-500 text-white" : "border border-white/10 bg-white/5 text-gray-200")}>
-          {isUser ? (
-            <div className="space-y-3">
-              {imageUrl ? (
-                <img
-                  src={imageUrl}
-                  alt=""
-                  className="max-h-56 w-auto rounded-xl border border-white/10 object-cover"
-                />
-              ) : null}
-              {content ? <p className="whitespace-pre-wrap">{content}</p> : null}
-            </div>
-          ) : (
-            <AnimatedAIText content={content} animate={animate} pending={pending} onAnimationDone={onAnimationDone} />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function ItemCreateHeader({
   t,
@@ -242,6 +150,11 @@ export function ItemCreateAIPanel({
   aiChatSuggestions,
   markAssistantMessageSeen,
   endAIDrawerSession,
+  modelBadge,
+  allowWebSearch,
+  onAllowWebSearchChange,
+  rawDebugLog,
+  lastUsage,
 }: {
   t: TranslateFn;
   editItem: Partial<Item>;
@@ -265,10 +178,35 @@ export function ItemCreateAIPanel({
   aiChatSuggestions: AIContextSuggestion[];
   markAssistantMessageSeen: (id: string) => void;
   endAIDrawerSession: () => void;
+  modelBadge: string | null;
+  allowWebSearch: boolean;
+  onAllowWebSearchChange: (value: boolean) => void;
+  rawDebugLog: string;
+  lastUsage: AIUsage | null;
 }) {
   const [messageDraft, setMessageDraft] = useState("");
+  const [basicsExpandedOverride, setBasicsExpandedOverride] = useState(false);
+  const [activeTab, setActiveTab] = useState<"chat" | "raw">("chat");
   const hasAIInfo = hasVisibleSuggestions || aiAssistBusy || aiChat.length > 0;
   const aiAssistantName = t("items.aiAssistantName");
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
+  const categoryName = categories.find((category) => category.id === editItem.category_id)?.name || "";
+  const basicsSummary = [editItem.name?.trim(), categoryName].filter(Boolean).join(" • ") || t("items.aiInfoTitle");
+  const basicsExpanded = !hasAIInfo || basicsExpandedOverride;
+
+  useEffect(() => {
+    const textarea = composerRef.current;
+    if (!textarea) return;
+    textarea.style.height = "0px";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [messageDraft]);
+
+  useEffect(() => {
+    const container = messagesRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }, [aiChat, aiChatSuggestions, hasVisibleSuggestions]);
 
   const handleSend = () => {
     const nextMessage = messageDraft;
@@ -294,10 +232,27 @@ export function ItemCreateAIPanel({
         open={aiDrawerOpen}
         onClose={closeAIDrawer}
         title={t("items.aiInfoTitle")}
-        subtitle={t("items.aiInfoSubtitle")}
+        bodyClassName="mt-6 flex min-h-0 flex-1 flex-col gap-4 px-4 sm:px-6"
       >
-        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-          <div className="space-y-4">
+        <div className="shrink-0 rounded-xl border border-gray-200 bg-white dark:border-white/10 dark:bg-white/5">
+          {hasAIInfo ? (
+            <button
+              type="button"
+              onClick={() => setBasicsExpandedOverride((current) => !current)}
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+            >
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400">{t("items.modalBasicsTitle")}</p>
+                <p className="truncate text-sm text-gray-900 dark:text-white">{basicsSummary}</p>
+              </div>
+              {basicsExpanded ? (
+                <ChevronUpIcon className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
+              ) : (
+                <ChevronDownIcon className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
+              )}
+            </button>
+          ) : null}
+          <div className={clsx("space-y-4 px-4 py-4", hasAIInfo && !basicsExpanded && "hidden")}>
             <Field
               label={t("items.name")}
               value={editItem.name || ""}
@@ -326,103 +281,133 @@ export function ItemCreateAIPanel({
           </div>
         </div>
 
-        {aiChat.length > 0 ? (
-          <div className="space-y-5">
-            {aiChat.map((message) => (
-              <div key={message.id} className="space-y-3">
-                <AIChatMessage
-                  role={message.role}
-                  name={message.role === "user" ? aiUserName : aiAssistantName}
-                  content={message.content}
-                  imageUrl={message.imageUrl}
-                  pending={message.pending}
-                  animate={message.animate}
-                  onAnimationDone={message.role === "assistant" ? () => markAssistantMessageSeen(message.id) : undefined}
-                />
-                {message.role === "assistant" && aiSuggestionAnchorMessageId === message.id && aiChatSuggestions.length > 0 ? (
-                  <div className="flex justify-start">
-                    <div className="flex w-full max-w-[88%] flex-col gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-white">{t("categories.aiTitle")}</p>
-                        <button
-                          type="button"
-                          onClick={applyAllAISuggestions}
-                          className="inline-flex items-center rounded-md bg-white/10 px-3 py-2 text-sm font-medium text-emerald-100 ring-1 ring-inset ring-white/10 hover:bg-white/20"
-                        >
-                          {t("items.aiApplyAll")}
-                        </button>
-                      </div>
-                      <div className="space-y-2">
-                        {aiChatSuggestions.map((suggestion) => (
-                          <div
-                            key={suggestion.id}
-                            className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-black/10 px-3 py-3"
-                          >
-                            <div className="min-w-0 space-y-1">
-                              <p className="text-xs font-medium uppercase tracking-[0.08em] text-emerald-200/80">
-                                {suggestion.label}
-                              </p>
-                              <p className="whitespace-pre-wrap text-sm text-emerald-50">{suggestion.value}</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={suggestion.onApply}
-                              className="shrink-0 rounded-md bg-white/10 px-3 py-2 text-xs font-medium text-emerald-100 ring-1 ring-inset ring-white/10 hover:bg-white/20"
-                            >
-                              {t("common.apply")}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <AIDrawerTabs t={t} activeTab={activeTab} onChange={setActiveTab} />
 
-        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-          <label className="mb-2 block text-sm font-medium text-white">{t("items.aiMessageLabel")}</label>
+        {activeTab === "chat" ? (
+          <div ref={messagesRef} className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
+            <div className="space-y-5 pb-2">
+              {aiChat.length > 0 ? (
+                <>
+                  {aiChat.map((message) => (
+                    <div key={message.id} className="space-y-3">
+                      <AIDrawerChatMessage
+                        role={message.role}
+                        name={message.role === "user" ? aiUserName : aiAssistantName}
+                        content={message.content}
+                        imageUrl={message.imageUrl}
+                        pending={message.pending}
+                        animate={message.animate}
+                        onAnimationDone={message.role === "assistant" ? () => markAssistantMessageSeen(message.id) : undefined}
+                      />
+                      {message.role === "assistant" && aiSuggestionAnchorMessageId === message.id && aiChatSuggestions.length > 0 ? (
+                        <div className="flex justify-start">
+                          <div className="flex w-full max-w-[88%] flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-emerald-900 dark:text-white">{t("categories.aiTitle")}</p>
+                              <button
+                                type="button"
+                                onClick={applyAllAISuggestions}
+                                className="inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-100 dark:bg-white/10 dark:text-emerald-100 dark:ring-white/10 dark:hover:bg-white/20"
+                              >
+                                {t("items.aiApplyAll")}
+                              </button>
+                            </div>
+                            <div className="space-y-2">
+                              {aiChatSuggestions.map((suggestion) => (
+                                <div
+                                  key={suggestion.id}
+                                  className="flex items-start justify-between gap-3 rounded-xl border border-emerald-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-black/10"
+                                >
+                                  <div className="min-w-0 space-y-1">
+                                    <p className="text-xs font-medium uppercase tracking-[0.08em] text-emerald-700/80 dark:text-emerald-200/80">
+                                      {suggestion.label}
+                                    </p>
+                                    <p className="whitespace-pre-wrap text-sm text-emerald-900 dark:text-emerald-50">{suggestion.value}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={suggestion.onApply}
+                                    className="shrink-0 rounded-md bg-emerald-100 px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-200 dark:bg-white/10 dark:text-emerald-100 dark:hover:bg-white/20"
+                                  >
+                                    {t("common.apply")}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-gray-300 px-5 py-6 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">
+                  {t("items.aiInfoEmpty")}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
+            <AIRawDebugPanel t={t} rawDebug={rawDebugLog} />
+          </div>
+        )}
+
+        <div className="shrink-0 rounded-2xl border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-gray-950/20">
           <textarea
+            ref={composerRef}
             value={messageDraft}
             onChange={(event) => setMessageDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
-            rows={2}
-            className="block min-h-[84px] w-full resize-none rounded-2xl bg-black/20 px-4 py-2.5 text-sm text-white outline outline-1 -outline-offset-1 outline-white/10 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-500"
+            rows={1}
+            className="min-h-[44px] w-full resize-none overflow-hidden bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-500 dark:text-white"
           />
-          <div className="mt-4 flex justify-end gap-3">
-            {hasAIInfo ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setMessageDraft("");
-                  endAIDrawerSession();
-                }}
-                className="mr-auto inline-flex items-center rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-gray-300 transition hover:bg-white/5 hover:text-white"
-              >
-                {t("categories.aiEndSession")}
-              </button>
-            ) : null}
-            {canPhotoLookup ? (
-              <button
-                type="button"
-                onClick={requestPhotoLookup}
-                disabled={photoLookupPending}
-                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-gray-300 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <CameraIcon className="h-4 w-4" />
-                {photoLookupPending ? t("items.aiPhotoSending") : t("items.aiPhotoAction")}
-              </button>
-            ) : null}
+          <div className="mt-2">
+            <AIUsageBadges t={t} modelBadge={modelBadge} usage={lastUsage} />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 pt-3 dark:border-white/10">
+            <div className="flex flex-wrap items-center gap-2">
+              {hasAIInfo ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessageDraft("");
+                    endAIDrawerSession();
+                  }}
+                  className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"
+                >
+                  {t("categories.aiEndSession")}
+                </button>
+              ) : null}
+              <label className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-200">
+                <input
+                  type="checkbox"
+                  checked={allowWebSearch}
+                  onChange={(event) => onAllowWebSearchChange(event.target.checked)}
+                  className="accent-blue-500"
+                />
+                {t("chat.allowWebSearch")}
+              </label>
+              {canPhotoLookup ? (
+                <button
+                  type="button"
+                  onClick={requestPhotoLookup}
+                  disabled={photoLookupPending}
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"
+                >
+                  <CameraIcon className="h-4 w-4" />
+                  {photoLookupPending ? t("items.aiPhotoSending") : t("items.aiPhotoAction")}
+                </button>
+              ) : null}
+            </div>
             <button
               type="button"
               onClick={handleSend}
               disabled={aiAssistBusy}
-              className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <SparklesIcon className="h-4 w-4" />
-              {aiAssistBusy ? t("items.aiAssistRunning") : t("categories.aiSend")}
+              {aiAssistBusy ? t("items.aiAssistRunning") : t("common.send")}
             </button>
           </div>
         </div>

@@ -67,6 +67,7 @@ func RegisterAdminRoutes(g *gin.RouterGroup) {
 	g.GET("/ai-settings", adminGetAISettings)
 	g.PUT("/ai-settings", adminUpdateAISettings)
 	g.POST("/ai-settings/test", adminTestAISettings)
+	g.POST("/ai-settings/models", adminListAIModels)
 	registerExternalSourceRoutes(g)
 }
 

@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { api, type Category, type Property } from "@/lib/api";
+import { api, type AIProfile, type AIUsage, type Category, type Property } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import {
   DndContext,
@@ -16,7 +16,7 @@ import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-ki
 import { PlusIcon, ChevronRightIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import { useRouter } from "next/navigation";
 import { useDeleteFlow, ConfirmDelete } from "@/components/confirm-delete";
-import { AIInfoDrawer } from "@/components/item-create-ai-sections";
+import { AIDrawerChatMessage, AIDrawerTabs, AIRawDebugPanel, AIInfoDrawer, AIUsageBadges } from "@/components/item-create-ai-sections";
 import {
   CategoryAIProposalPanel,
   CategoryInlineForm,
@@ -52,99 +52,6 @@ function createChatId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function AnimatedAIText({
-  content,
-  animate = false,
-  pending = false,
-  onAnimationDone,
-}: {
-  content: string;
-  animate?: boolean;
-  pending?: boolean;
-  onAnimationDone?: () => void;
-}) {
-  const [visibleLength, setVisibleLength] = useState(animate ? 0 : content.length);
-
-  useEffect(() => {
-    if (pending) {
-      setVisibleLength(0);
-      return;
-    }
-    if (!animate) {
-      setVisibleLength(content.length);
-      return;
-    }
-
-    setVisibleLength(0);
-    let index = 0;
-    const timer = window.setInterval(() => {
-      index += 1;
-      setVisibleLength(Math.min(index, content.length));
-      if (index >= content.length) {
-        window.clearInterval(timer);
-        onAnimationDone?.();
-      }
-    }, 12);
-    return () => window.clearInterval(timer);
-  }, [animate, content, onAnimationDone, pending]);
-
-  if (pending) {
-    return (
-      <span className="ai-thinking-text">
-        {content}
-      </span>
-    );
-  }
-
-  const visibleText = content.slice(0, visibleLength);
-  return (
-    <p
-      className={`whitespace-pre-wrap ${animate ? "text-white [text-shadow:0_0_10px_rgba(96,165,250,0.2)]" : ""}`}
-    >
-      {visibleText}
-      {animate && visibleLength < content.length ? <span className="ml-0.5 inline-block h-4 w-[1px] animate-pulse bg-blue-300 align-middle" /> : null}
-    </p>
-  );
-}
-
-function AIChatMessage({
-  role,
-  name,
-  content,
-  pending = false,
-  animate = false,
-  onAnimationDone,
-}: {
-  role: "user" | "assistant";
-  name: string;
-  content: string;
-  pending?: boolean;
-  animate?: boolean;
-  onAnimationDone?: () => void;
-}) {
-  const isUser = role === "user";
-  return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-[88%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-2`}>
-        <p className="px-1 text-xs font-medium uppercase tracking-[0.08em] text-gray-400">{name}</p>
-        <div
-          className={`rounded-2xl px-4 py-3 text-sm ${
-            isUser
-              ? "bg-blue-500 text-white"
-              : "border border-white/10 bg-white/5 text-gray-200"
-          }`}
-        >
-          {isUser ? (
-            <p className="whitespace-pre-wrap">{content}</p>
-          ) : (
-            <AnimatedAIText content={content} animate={animate} pending={pending} onAnimationDone={onAnimationDone} />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function CategoriesPage() {
   const { realm, locale, fmtDateTime, t, can, currentUserLabel, setAiAssistantBusy, setAiAssistantPanelController } = useApp();
   const router = useRouter();
@@ -156,23 +63,36 @@ export default function CategoriesPage() {
   const [editProp, setEditProp] = useState<Partial<Property> | null>(null);
   const [isNewProp, setIsNewProp] = useState(false);
   const [categoryAIBusy, setCategoryAIBusy] = useState(false);
-  const [categoryAIStatus, setCategoryAIStatus] = useState<string | null>(null);
+  const [, setCategoryAIStatus] = useState<string | null>(null);
   const [categoryAIResult, setCategoryAIResult] = useState<AICategoryPropertySuggestionResult | null>(null);
   const [categoryAIInstructions, setCategoryAIInstructions] = useState("");
   const [categoryAIDrawerOpen, setCategoryAIDrawerOpen] = useState(false);
   const [categoryAIChat, setCategoryAIChat] = useState<AIChatEntry[]>([]);
+  const [categoryAITab, setCategoryAITab] = useState<"chat" | "raw">("chat");
+  const [categoryAIRawDebug, setCategoryAIRawDebug] = useState("");
+  const [categoryAIUsage, setCategoryAIUsage] = useState<AIUsage | null>(null);
   const [propertyAIBusy, setPropertyAIBusy] = useState(false);
-  const [propertyAIStatus, setPropertyAIStatus] = useState<string | null>(null);
-  const [propertyAIResult, setPropertyAIResult] = useState<AIPropertyEnhancementSuggestionResult | null>(null);
+  const [, setPropertyAIStatus] = useState<string | null>(null);
+  const [, setPropertyAIResult] = useState<AIPropertyEnhancementSuggestionResult | null>(null);
   const [propertyAIInstructions, setPropertyAIInstructions] = useState("");
   const [propertyAIDrawerOpen, setPropertyAIDrawerOpen] = useState(false);
   const [propertyAIChat, setPropertyAIChat] = useState<AIChatEntry[]>([]);
+  const [propertyAITab, setPropertyAITab] = useState<"chat" | "raw">("chat");
+  const [propertyAIRawDebug, setPropertyAIRawDebug] = useState("");
+  const [propertyAIUsage, setPropertyAIUsage] = useState<AIUsage | null>(null);
+  const [activeAIProfile, setActiveAIProfile] = useState<AIProfile | null>(null);
+  const [aiAllowWebSearch, setAiAllowWebSearch] = useState(true);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const canWriteCategories = can("categories.write");
   const canDeleteCategories = can("categories.delete");
   const canReadItems = can("items.read");
   const aiUserName = currentUserLabel || t("categories.aiUserFallback");
   const aiAssistantName = t("categories.aiAssistantName");
+  const modelBadge = activeAIProfile ? `${activeAIProfile.provider === "ollama" ? "Ollama" : "OpenAI"} · ${activeAIProfile.model}` : null;
+  const categoryComposerRef = useRef<HTMLTextAreaElement | null>(null);
+  const propertyComposerRef = useRef<HTMLTextAreaElement | null>(null);
+  const categoryMessagesRef = useRef<HTMLDivElement | null>(null);
+  const propertyMessagesRef = useRef<HTMLDivElement | null>(null);
 
   const markCategoryChatEntrySeen = useCallback((id: string) => {
     setCategoryAIChat((current) => current.map((entry) => (entry.id === id && entry.animate ? { ...entry, animate: false } : entry)));
@@ -190,6 +110,15 @@ export default function CategoriesPage() {
       setCategories(await fetchCategoriesPageData());
     } catch {}
     loadingRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    void api.getAISettings()
+      .then((settings) => {
+        const profile = settings.profiles.find((entry) => entry.id === settings.active_profile_id) || settings.profiles[0] || null;
+        setActiveAIProfile(profile);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -215,6 +144,9 @@ export default function CategoriesPage() {
     setCategoryAIInstructions("");
     setCategoryAIDrawerOpen(false);
     setCategoryAIChat([]);
+    setCategoryAITab("chat");
+    setCategoryAIRawDebug("");
+    setCategoryAIUsage(null);
   }, [editCat?.id, isNew]);
 
   useEffect(() => {
@@ -224,12 +156,41 @@ export default function CategoriesPage() {
     setPropertyAIInstructions("");
     setPropertyAIDrawerOpen(false);
     setPropertyAIChat([]);
+    setPropertyAITab("chat");
+    setPropertyAIRawDebug("");
+    setPropertyAIUsage(null);
   }, [editProp?.id, isNewProp]);
 
   useEffect(() => {
     setAiAssistantBusy(categoryAIBusy || propertyAIBusy);
     return () => setAiAssistantBusy(false);
   }, [categoryAIBusy, propertyAIBusy, setAiAssistantBusy]);
+
+  useEffect(() => {
+    const textarea = categoryComposerRef.current;
+    if (!textarea) return;
+    textarea.style.height = "0px";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [categoryAIInstructions]);
+
+  useEffect(() => {
+    const textarea = propertyComposerRef.current;
+    if (!textarea) return;
+    textarea.style.height = "0px";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [propertyAIInstructions]);
+
+  useEffect(() => {
+    const container = categoryMessagesRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }, [categoryAIChat, categoryAIResult]);
+
+  useEffect(() => {
+    const container = propertyMessagesRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }, [propertyAIChat]);
 
   const endCategoryAISession = useCallback(() => {
     setCategoryAIBusy(false);
@@ -238,6 +199,9 @@ export default function CategoriesPage() {
     setCategoryAIInstructions("");
     setCategoryAIChat([]);
     setCategoryAIDrawerOpen(false);
+    setCategoryAITab("chat");
+    setCategoryAIRawDebug("");
+    setCategoryAIUsage(null);
   }, []);
 
   const endPropertyAISession = useCallback(() => {
@@ -247,6 +211,9 @@ export default function CategoriesPage() {
     setPropertyAIInstructions("");
     setPropertyAIChat([]);
     setPropertyAIDrawerOpen(false);
+    setPropertyAITab("chat");
+    setPropertyAIRawDebug("");
+    setPropertyAIUsage(null);
   }, []);
 
   useEffect(() => {
@@ -410,6 +377,8 @@ export default function CategoriesPage() {
     }
     setCategoryAIBusy(true);
     setCategoryAIStatus(null);
+    setCategoryAIRawDebug("");
+    setCategoryAIUsage(null);
     setCategoryAIDrawerOpen(true);
     try {
       const result = await api.suggestCategoryProperties({
@@ -417,9 +386,11 @@ export default function CategoriesPage() {
         category_id: editCat.id,
         locale,
         prompt,
-        allow_web_search: true,
+        allow_web_search: aiAllowWebSearch,
       });
       setCategoryAIResult(result);
+      setCategoryAIRawDebug(result.raw_debug || "");
+      setCategoryAIUsage(result.usage || null);
       const nextStatus =
         result.properties.length > 0 ? t("categories.aiSuggestionsReady") : t("categories.aiNoSuggestions");
       setCategoryAIStatus(nextStatus);
@@ -431,6 +402,9 @@ export default function CategoriesPage() {
       );
     } catch (error) {
       setCategoryAIResult(null);
+      const aiError = error as Error & { raw_debug?: string; usage?: AIUsage | null };
+      if (typeof aiError.raw_debug === "string") setCategoryAIRawDebug(aiError.raw_debug);
+      if (aiError.usage) setCategoryAIUsage(aiError.usage);
       const failure = error instanceof Error ? error.message : t("categories.aiFailed");
       setCategoryAIStatus(failure);
       setCategoryAIChat((current) =>
@@ -535,6 +509,8 @@ export default function CategoriesPage() {
     }
     setPropertyAIBusy(true);
     setPropertyAIStatus(null);
+    setPropertyAIRawDebug("");
+    setPropertyAIUsage(null);
     setPropertyAIDrawerOpen(true);
     try {
       const result = await api.suggestPropertyEnhancement({
@@ -543,9 +519,11 @@ export default function CategoriesPage() {
         property_id: editProp.id,
         locale,
         prompt,
-        allow_web_search: true,
+        allow_web_search: aiAllowWebSearch,
       });
       setPropertyAIResult(result);
+      setPropertyAIRawDebug(result.raw_debug || "");
+      setPropertyAIUsage(result.usage || null);
       applyPropertyAIResult(result);
       const nextStatus = t("categories.aiPropertyEnhanced");
       setPropertyAIStatus(nextStatus);
@@ -557,6 +535,9 @@ export default function CategoriesPage() {
       );
     } catch (error) {
       setPropertyAIResult(null);
+      const aiError = error as Error & { raw_debug?: string; usage?: AIUsage | null };
+      if (typeof aiError.raw_debug === "string") setPropertyAIRawDebug(aiError.raw_debug);
+      if (aiError.usage) setPropertyAIUsage(aiError.usage);
       const failure = error instanceof Error ? error.message : t("categories.aiFailed");
       setPropertyAIStatus(failure);
       setPropertyAIChat((current) =>
@@ -932,76 +913,98 @@ export default function CategoriesPage() {
         onClose={() => setCategoryAIDrawerOpen(false)}
         title={t("categories.aiInfoTitle")}
         subtitle={t("categories.aiInfoSubtitle")}
+        bodyClassName="mt-6 flex min-h-0 flex-1 flex-col gap-4 px-4 sm:px-6"
       >
-        <div className="space-y-4">
-          {categoryAIChat.map((entry) => (
-            <AIChatMessage
-              key={entry.id}
-              role={entry.role}
-              name={entry.role === "user" ? aiUserName : aiAssistantName}
-              content={entry.content}
-              pending={entry.pending}
-              animate={entry.animate}
-              onAnimationDone={entry.role === "assistant" ? () => markCategoryChatEntrySeen(entry.id) : undefined}
-            />
-          ))}
+        <AIDrawerTabs t={t} activeTab={categoryAITab} onChange={setCategoryAITab} />
 
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-            <label className="mb-2 block text-sm font-medium text-white">{t("categories.aiMessageLabel")}</label>
-            <textarea
-              value={categoryAIInstructions}
-              onChange={(event) => setCategoryAIInstructions(event.target.value)}
-              onKeyDown={handleCategoryComposerKeyDown}
-              rows={2}
-              placeholder={categoryAIChat.length > 0 ? t("categories.aiReplyPlaceholder") : t("categories.aiInstructionsPlaceholder")}
-              className="block min-h-[84px] w-full resize-none rounded-2xl bg-black/20 px-4 py-2.5 text-sm text-white outline outline-1 -outline-offset-1 outline-white/10 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-500"
-            />
-            <div className="mt-4 flex justify-end">
+        {categoryAITab === "chat" ? (
+          <div ref={categoryMessagesRef} className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
+            <div className="space-y-5 pb-2">
+              {categoryAIChat.map((entry) => (
+                <AIDrawerChatMessage
+                  key={entry.id}
+                  role={entry.role}
+                  name={entry.role === "user" ? aiUserName : aiAssistantName}
+                  content={entry.content}
+                  pending={entry.pending}
+                  animate={entry.animate}
+                  onAnimationDone={entry.role === "assistant" ? () => markCategoryChatEntrySeen(entry.id) : undefined}
+                />
+              ))}
+
+              {!categoryAIBusy && categoryAIChat.length === 0 && !(categoryAIResult?.properties.length || 0) ? (
+                <div className="rounded-2xl border border-dashed border-gray-300 px-5 py-6 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">
+                  {t("categories.aiInfoEmpty")}
+                </div>
+              ) : null}
+
+              <CategoryAIProposalPanel
+                proposals={categoryAIResult?.properties || []}
+                busy={false}
+                status={null}
+                notes={[]}
+                questions={[]}
+                propertyTypes={propertyTypes}
+                onApplyOne={(proposal) => {
+                  void applyCategoryAIProperty(proposal);
+                }}
+                onApplyAll={() => {
+                  void applyAllCategoryAISuggestions();
+                }}
+                t={t}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
+            <AIRawDebugPanel t={t} rawDebug={categoryAIRawDebug} />
+          </div>
+        )}
+
+        <div className="shrink-0 rounded-2xl border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-gray-950/20">
+          <textarea
+            ref={categoryComposerRef}
+            value={categoryAIInstructions}
+            onChange={(event) => setCategoryAIInstructions(event.target.value)}
+            onKeyDown={handleCategoryComposerKeyDown}
+            rows={1}
+            className="min-h-[44px] w-full resize-none overflow-hidden bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-500 dark:text-white"
+          />
+          <div className="mt-2">
+            <AIUsageBadges t={t} modelBadge={modelBadge} usage={categoryAIUsage} />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 pt-3 dark:border-white/10">
+            <div className="flex flex-wrap items-center gap-2">
               {categoryAIChat.length > 0 ? (
                 <button
                   type="button"
                   onClick={endCategoryAISession}
-                  className="mr-auto inline-flex items-center rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-gray-300 transition hover:bg-white/5 hover:text-white"
+                  className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"
                 >
                   {t("categories.aiEndSession")}
                 </button>
               ) : null}
-              <button
-                type="button"
-                onClick={() => { void runCategoryAI(); }}
-                disabled={categoryAIBusy}
-                className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <SparklesIcon className="h-4 w-4" />
-                {categoryAIBusy
-                  ? t("categories.aiRunning")
-                  : t("categories.aiSend")}
-              </button>
+              <label className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-200">
+                <input
+                  type="checkbox"
+                  checked={aiAllowWebSearch}
+                  onChange={(event) => setAiAllowWebSearch(event.target.checked)}
+                  className="accent-blue-500"
+                />
+                {t("chat.allowWebSearch")}
+              </label>
             </div>
+            <button
+              type="button"
+              onClick={() => { void runCategoryAI(); }}
+              disabled={categoryAIBusy}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <SparklesIcon className="h-4 w-4" />
+              {categoryAIBusy ? t("categories.aiRunning") : t("common.send")}
+            </button>
           </div>
         </div>
-
-        {!categoryAIBusy && categoryAIChat.length === 0 && !(categoryAIResult?.properties.length || 0) ? (
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-gray-300">
-            {t("categories.aiInfoEmpty")}
-          </div>
-        ) : null}
-
-        <CategoryAIProposalPanel
-          proposals={categoryAIResult?.properties || []}
-          busy={false}
-          status={null}
-          notes={[]}
-          questions={[]}
-          propertyTypes={propertyTypes}
-          onApplyOne={(proposal) => {
-            void applyCategoryAIProperty(proposal);
-          }}
-          onApplyAll={() => {
-            void applyAllCategoryAISuggestions();
-          }}
-          t={t}
-        />
       </AIInfoDrawer>
 
       <AIInfoDrawer
@@ -1009,68 +1012,89 @@ export default function CategoriesPage() {
         onClose={() => setPropertyAIDrawerOpen(false)}
         title={t("categories.aiPropertyInfoTitle")}
         subtitle={t("categories.aiPropertyInfoSubtitle")}
+        bodyClassName="mt-6 flex min-h-0 flex-1 flex-col gap-4 px-4 sm:px-6"
       >
-        <div className="space-y-4">
-          {propertyAIChat.map((entry) => (
-            <AIChatMessage
-              key={entry.id}
-              role={entry.role}
-              name={entry.role === "user" ? aiUserName : aiAssistantName}
-              content={entry.content}
-              pending={entry.pending}
-              animate={entry.animate}
-              onAnimationDone={entry.role === "assistant" ? () => markPropertyChatEntrySeen(entry.id) : undefined}
-            />
-          ))}
+        <AIDrawerTabs t={t} activeTab={propertyAITab} onChange={setPropertyAITab} />
 
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4">
-            <label className="mb-2 block text-sm font-medium text-white">{t("categories.aiMessageLabel")}</label>
-            <textarea
-              value={propertyAIInstructions}
-              onChange={(event) => setPropertyAIInstructions(event.target.value)}
-              onKeyDown={handlePropertyComposerKeyDown}
-              rows={2}
-              className="block min-h-[84px] w-full resize-none rounded-2xl bg-black/20 px-4 py-2.5 text-sm text-white outline outline-1 -outline-offset-1 outline-white/10 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-500"
-            />
-            <div className="mt-4 flex justify-end">
+        {propertyAITab === "chat" ? (
+          <div ref={propertyMessagesRef} className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
+            <div className="space-y-5 pb-2">
+              {propertyAIChat.map((entry) => (
+                <AIDrawerChatMessage
+                  key={entry.id}
+                  role={entry.role}
+                  name={entry.role === "user" ? aiUserName : aiAssistantName}
+                  content={entry.content}
+                  pending={entry.pending}
+                  animate={entry.animate}
+                  onAnimationDone={entry.role === "assistant" ? () => markPropertyChatEntrySeen(entry.id) : undefined}
+                />
+              ))}
+
+              {!propertyAIBusy && propertyAIChat.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-gray-300 px-5 py-6 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">
+                  {t("categories.aiInfoEmpty")}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
+            <AIRawDebugPanel t={t} rawDebug={propertyAIRawDebug} />
+          </div>
+        )}
+
+        <div className="shrink-0 rounded-2xl border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-gray-950/20">
+          <textarea
+            ref={propertyComposerRef}
+            value={propertyAIInstructions}
+            onChange={(event) => setPropertyAIInstructions(event.target.value)}
+            onKeyDown={handlePropertyComposerKeyDown}
+            rows={1}
+            className="min-h-[44px] w-full resize-none overflow-hidden bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-500 dark:text-white"
+          />
+          <div className="mt-2">
+            <AIUsageBadges t={t} modelBadge={modelBadge} usage={propertyAIUsage} />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 pt-3 dark:border-white/10">
+            <div className="flex flex-wrap items-center gap-2">
               {propertyAIChat.length > 0 ? (
                 <button
                   type="button"
                   onClick={endPropertyAISession}
-                  className="mr-auto inline-flex items-center rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-gray-300 transition hover:bg-white/5 hover:text-white"
+                  className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"
                 >
                   {t("categories.aiEndSession")}
                 </button>
               ) : null}
-              <button
-                type="button"
-                onClick={() => {
-                  if (!editCat?.id || !editCat.name?.trim()) return;
-                  void runPropertyAI({
-                    id: editCat.id,
-                    name: editCat.name,
-                    description: editCat.description || "",
-                  });
-                }}
-                disabled={propertyAIBusy}
-                className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <SparklesIcon className="h-4 w-4" />
-                {propertyAIBusy
-                  ? t("categories.aiRunning")
-                  : propertyAIResult?.needs_confirmation
-                    ? t("categories.aiAnswerAndRerun")
-                    : t("categories.aiSend")}
-              </button>
+              <label className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-200">
+                <input
+                  type="checkbox"
+                  checked={aiAllowWebSearch}
+                  onChange={(event) => setAiAllowWebSearch(event.target.checked)}
+                  className="accent-blue-500"
+                />
+                {t("chat.allowWebSearch")}
+              </label>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!editCat?.id || !editCat.name?.trim()) return;
+                void runPropertyAI({
+                  id: editCat.id,
+                  name: editCat.name,
+                  description: editCat.description || "",
+                });
+              }}
+              disabled={propertyAIBusy}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <SparklesIcon className="h-4 w-4" />
+              {propertyAIBusy ? t("categories.aiRunning") : t("common.send")}
+            </button>
           </div>
         </div>
-
-        {!propertyAIBusy && propertyAIChat.length === 0 ? (
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-gray-300">
-            {t("categories.aiInfoEmpty")}
-          </div>
-        ) : null}
       </AIInfoDrawer>
 
       {/* Confirm Delete */}

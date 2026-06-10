@@ -93,7 +93,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         setSidebarOpen={setSidebarOpen}
         setRealm={setRealm}
         setTheme={setTheme}
-        logout={logoutAppSession}
         routerPush={(href) => router.push(href)}
         sidebarOpen={sidebarOpen}
       />
@@ -109,6 +108,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         showPrinterStatus={showPrintFeatures && (isAdmin || can("print"))}
         onOpenSidebar={() => setSidebarOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
+        onLogout={logoutAppSession}
       />
 
       <main id="page-content" className="flex max-w-full flex-auto flex-col">

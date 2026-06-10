@@ -332,12 +332,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return iosSessions.some((session) => session.is_online === true || session.is_online === 1) ? "connected" : "disconnected";
   }, []);
 
-  const refreshIOSBridgeStatus = useCallback(async (): Promise<"connected" | "disconnected"> => {
-    const nextStatus = resolveIOSBridgeStatus(await fetchDeviceSessions());
-    setIosBridgeStatus(nextStatus);
-    return nextStatus;
-  }, [fetchDeviceSessions, resolveIOSBridgeStatus]);
-
   const refreshPrinterBridgeStatus = useCallback(async (
     iosStatus?: "connected" | "disconnected",
     sessions?: Array<Record<string, unknown>>,

@@ -1,6 +1,7 @@
 import type {
+  AIProfile,
+  AIProfilePayload,
   AISettings,
-  AISettingsPayload,
   ExternalSource,
   ExternalSourcePayload,
   LabelTemplate,
@@ -9,11 +10,19 @@ import type {
 
 export type LabelTemplateDraft = LabelTemplatePayload;
 export type ExternalSourceDraft = ExternalSourcePayload;
-export type AISettingsDraft = AISettingsPayload & {
+
+export type AIProfileDraft = AIProfilePayload & {
   has_api_key: boolean;
+  api_key_preview?: string;
+  chat_prompt_default: string;
   parse_item_prompt_default: string;
   category_property_prompt_default: string;
   property_enhancement_prompt_default: string;
+};
+
+export type AISettingsDraft = {
+  active_profile_id: string;
+  profiles: AIProfileDraft[];
 };
 
 export function createEmptyTemplateDraft(): LabelTemplateDraft {
@@ -104,71 +113,104 @@ export function draftFromExternalSource(source: ExternalSource): ExternalSourceD
   };
 }
 
-export function createEmptyAIDraft(): AISettingsDraft {
+export function defaultAIBaseURL(provider: AIProfileDraft["provider"]): string {
+  if (provider === "ollama") return "http://localhost:11434/v1";
+  return "https://api.openai.com/v1";
+}
+
+export function defaultAIModel(provider: AIProfileDraft["provider"]): string {
+  if (provider === "ollama") return "gpt-oss:20b";
+  return "gpt-5-mini";
+}
+
+export function isAIKeyOptional(provider: AIProfileDraft["provider"]): boolean {
+  return provider === "ollama";
+}
+
+export function createEmptyAIProfileDraft(provider: AIProfileDraft["provider"] = "ollama", index = 1): AIProfileDraft {
   return {
-    provider: "ollama",
-    model: "llama3.2",
-    base_url: "http://localhost:11434/v1",
+    id: `profile-${index}`,
+    name: provider === "ollama" ? `Ollama ${index}` : `OpenAI ${index}`,
+    provider,
+    model: defaultAIModel(provider),
+    base_url: defaultAIBaseURL(provider),
     api_key: "",
-    enabled: false,
+    enabled: provider === "openai",
+    supports_vision: provider === "openai",
     has_api_key: false,
+    api_key_preview: "",
+    chat_prompt: "",
     parse_item_prompt: "",
     category_property_prompt: "",
     property_enhancement_prompt: "",
+    chat_prompt_default: "",
     parse_item_prompt_default: "",
     category_property_prompt_default: "",
     property_enhancement_prompt_default: "",
   };
 }
 
-export function defaultAIBaseURL(provider: AISettingsDraft["provider"]): string {
-  if (provider === "ollama") return "http://localhost:11434/v1";
-  return "https://api.openai.com/v1";
-}
-
-export function defaultAIModel(provider: AISettingsDraft["provider"]): string {
-  if (provider === "ollama") return "llama3.2";
-  if (provider === "openai_compatible") return "";
-  return "gpt-5-mini";
-}
-
-export function isAIKeyOptional(provider: AISettingsDraft["provider"]): boolean {
-  return provider === "ollama";
+export function createEmptyAIDraft(): AISettingsDraft {
+  const first = createEmptyAIProfileDraft("openai", 1);
+  return {
+    active_profile_id: first.id,
+    profiles: [first],
+  };
 }
 
 export function createProviderDraft(
-  provider: AISettingsDraft["provider"],
-  previous?: AISettingsDraft,
-): AISettingsDraft {
+  provider: AIProfileDraft["provider"],
+  previous?: AIProfileDraft,
+  index = 1,
+): AIProfileDraft {
+  const next = createEmptyAIProfileDraft(provider, index);
   return {
-    provider,
-    model: defaultAIModel(provider),
-    base_url: defaultAIBaseURL(provider),
+    ...next,
+    id: previous?.id || next.id,
+    name: previous?.name || next.name,
     api_key: previous?.api_key || "",
-    enabled: previous?.enabled ?? false,
+    enabled: previous?.enabled ?? next.enabled,
+    supports_vision: provider === "openai" ? true : previous?.provider === provider ? previous.supports_vision : false,
     has_api_key: previous?.has_api_key ?? false,
+    api_key_preview: previous?.api_key_preview ?? "",
+    chat_prompt: previous?.chat_prompt ?? "",
     parse_item_prompt: previous?.parse_item_prompt ?? "",
     category_property_prompt: previous?.category_property_prompt ?? "",
     property_enhancement_prompt: previous?.property_enhancement_prompt ?? "",
+    chat_prompt_default: previous?.chat_prompt_default ?? "",
     parse_item_prompt_default: previous?.parse_item_prompt_default ?? "",
     category_property_prompt_default: previous?.category_property_prompt_default ?? "",
     property_enhancement_prompt_default: previous?.property_enhancement_prompt_default ?? "",
   };
 }
 
-export function draftFromAISettings(settings: AISettings): AISettingsDraft {
+export function draftFromAIProfile(profile: AIProfile): AIProfileDraft {
   return {
-    provider: settings.provider,
-    model: settings.model,
-    base_url: settings.base_url,
+    id: profile.id,
+    name: profile.name,
+    provider: profile.provider,
+    model: profile.model,
+    base_url: profile.base_url,
     api_key: "",
-    enabled: settings.enabled,
-    has_api_key: settings.has_api_key,
-    parse_item_prompt: settings.parse_item_prompt,
-    category_property_prompt: settings.category_property_prompt,
-    property_enhancement_prompt: settings.property_enhancement_prompt,
-    parse_item_prompt_default: settings.parse_item_prompt_default,
-    category_property_prompt_default: settings.category_property_prompt_default,
-    property_enhancement_prompt_default: settings.property_enhancement_prompt_default,
+    enabled: profile.enabled,
+    supports_vision: profile.supports_vision,
+    has_api_key: profile.has_api_key,
+    api_key_preview: profile.api_key_preview || "",
+    chat_prompt: profile.chat_prompt,
+    parse_item_prompt: profile.parse_item_prompt,
+    category_property_prompt: profile.category_property_prompt,
+    property_enhancement_prompt: profile.property_enhancement_prompt,
+    chat_prompt_default: profile.chat_prompt_default,
+    parse_item_prompt_default: profile.parse_item_prompt_default,
+    category_property_prompt_default: profile.category_property_prompt_default,
+    property_enhancement_prompt_default: profile.property_enhancement_prompt_default,
+  };
+}
+
+export function draftFromAISettings(settings: AISettings): AISettingsDraft {
+  const profiles = settings.profiles.map(draftFromAIProfile);
+  return {
+    active_profile_id: settings.active_profile_id || profiles[0]?.id || "",
+    profiles,
   };
 }

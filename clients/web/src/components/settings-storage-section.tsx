@@ -5,6 +5,9 @@ import { CircleStackIcon } from "@heroicons/react/24/outline";
 import type { ExternalSourceDraft } from "@/components/settings-drafts";
 import { ChoiceTile, SettingsCard, StatusMessage, ToggleRow } from "@/components/settings-ui";
 
+const storagePrimaryButtonClass =
+  "inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500";
+
 export function SettingsStorageSection({
   t,
   externalSources,
@@ -22,7 +25,6 @@ export function SettingsStorageSection({
   deleteExternalSource,
   inputClass,
   monoTextareaClass,
-  primaryButtonClass,
   secondaryButtonClass,
   dangerButtonClass,
 }: {
@@ -42,7 +44,6 @@ export function SettingsStorageSection({
   deleteExternalSource: () => void;
   inputClass: string;
   monoTextareaClass: string;
-  primaryButtonClass: string;
   secondaryButtonClass: string;
   dangerButtonClass: string;
 }) {
@@ -72,7 +73,7 @@ export function SettingsStorageSection({
                 onClick={() => {
                   setSelectedExternalSourceId(source.id);
                 }}
-                className={`w-full rounded-lg border p-4 text-left transition ${selectedExternalSourceId === source.id ? "border-blue-400 bg-blue-50 ring-1 ring-blue-200 dark:border-blue-600 dark:bg-blue-900/20 dark:ring-blue-900" : "border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600"}`}
+                className={`w-full rounded-lg border p-4 text-left transition ${selectedExternalSourceId === source.id ? "border-emerald-400 bg-emerald-50 ring-1 ring-emerald-200 dark:border-emerald-500 dark:bg-emerald-500/10 dark:ring-emerald-500/20" : "border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600"}`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
@@ -127,11 +128,13 @@ export function SettingsStorageSection({
                     active={externalSourceDraft.auth_type === "password"}
                     onClick={() => setExternalSourceDraft({ ...externalSourceDraft, auth_type: "password", private_key: "" })}
                     title={t("settings.externalSourceAuthPassword")}
+                    accent="emerald"
                   />
                   <ChoiceTile
                     active={externalSourceDraft.auth_type === "ssh_key"}
                     onClick={() => setExternalSourceDraft({ ...externalSourceDraft, auth_type: "ssh_key", password: "" })}
                     title={t("settings.externalSourceAuthKey")}
+                    accent="emerald"
                   />
                 </div>
               </div>
@@ -176,6 +179,7 @@ export function SettingsStorageSection({
                 description={t("settings.externalSourceActiveHint")}
                 checked={!!externalSourceDraft.is_active}
                 onToggle={() => setExternalSourceDraft({ ...externalSourceDraft, is_active: !externalSourceDraft.is_active })}
+                accent="emerald"
               />
 
               <div className="flex flex-wrap items-center gap-2">
@@ -185,7 +189,7 @@ export function SettingsStorageSection({
                 <button onClick={testExternalSource} disabled={!!externalSourceBusy} className={`${secondaryButtonClass} disabled:opacity-50`}>
                   {externalSourceBusy === "test" ? t("settings.externalSourceTesting") : t("settings.externalSourceTestConnection")}
                 </button>
-                <button onClick={saveExternalSource} className={primaryButtonClass}>
+                <button onClick={saveExternalSource} className={storagePrimaryButtonClass}>
                   {selectedExternalSourceId === "new" ? t("settings.createExternalSource") : t("common.save")}
                 </button>
                 {selectedExternalSource ? <button onClick={deleteExternalSource} className={dangerButtonClass}>{t("common.delete")}</button> : null}

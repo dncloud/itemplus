@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   DropdownChevron,
   flatSelectedBadgeCls,
@@ -33,13 +33,6 @@ export function SelectDropdown({
   const wrapperRef = useDismissibleDropdown(open, () => setOpen(false));
   const isCustomValue = !!value && !options.includes(value);
 
-  useEffect(() => {
-    if (!isCustomValue) {
-      setShowCustomInput(false);
-      setCustomValue("");
-    }
-  }, [isCustomValue]);
-
   const applyCustomValue = () => {
     const trimmed = customValue.trim();
     if (!trimmed) return;
@@ -68,6 +61,8 @@ export function SelectDropdown({
                 type="button"
                 onClick={() => {
                   onChange(selected ? "" : option);
+                  setShowCustomInput(false);
+                  setCustomValue("");
                   setOpen(false);
                 }}
                 className={selectOptionCls}
@@ -147,15 +142,13 @@ export function MultiSelectDropdown({
   const wrapperRef = useDismissibleDropdown(open, () => setOpen(false));
   const customValues = values.filter((value) => !options.includes(value));
 
-  useEffect(() => {
-    if (customValues.length === 0) {
+  const toggleValue = (option: string) => {
+    const nextValues = values.includes(option) ? values.filter((entry) => entry !== option) : [...values, option];
+    onChange(nextValues);
+    if (nextValues.filter((entry) => !options.includes(entry)).length === 0) {
       setShowCustomInput(false);
       setCustomValue("");
     }
-  }, [customValues.length]);
-
-  const toggleValue = (option: string) => {
-    onChange(values.includes(option) ? values.filter((entry) => entry !== option) : [...values, option]);
   };
 
   const applyCustomValue = () => {

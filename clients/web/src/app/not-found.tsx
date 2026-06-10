@@ -119,6 +119,19 @@ function startGame(best = 0): RescueGame {
   };
 }
 
+function loadStoredBestScore() {
+  if (typeof window === "undefined") {
+    return 0;
+  }
+  try {
+    const storedBest = window.localStorage.getItem("itemplus_404_best");
+    const parsedBest = storedBest ? Number.parseInt(storedBest, 10) : 0;
+    return Number.isFinite(parsedBest) && parsedBest > 0 ? parsedBest : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function finishGame(game: RescueGame): RescueGame {
   return {
     ...game,
@@ -201,7 +214,7 @@ export default function NotFound() {
   const { t, isAdmin } = useApp();
   const [secretProgress, setSecretProgress] = useState(0);
   const [secretUnlocked, setSecretUnlocked] = useState(false);
-  const [game, setGame] = useState<RescueGame>(() => deterministicGame());
+  const [game, setGame] = useState<RescueGame>(() => deterministicGame(loadStoredBestScore()));
   const [godModeUntil, setGodModeUntil] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [, setCheatBuffer] = useState("");
@@ -211,18 +224,6 @@ export default function NotFound() {
   const godModeRemainingClock = `${String(Math.floor(godModeRemainingSeconds / 60)).padStart(2, "0")}:${String(
     godModeRemainingSeconds % 60,
   ).padStart(2, "0")}`;
-
-  useEffect(() => {
-    try {
-      const storedBest = window.localStorage.getItem("itemplus_404_best");
-      const parsedBest = storedBest ? Number.parseInt(storedBest, 10) : 0;
-      if (Number.isFinite(parsedBest) && parsedBest > 0) {
-        setGame((current) => ({ ...current, best: parsedBest }));
-      }
-    } catch {
-      // Ignore local storage access in restrictive browsers.
-    }
-  }, []);
 
   useEffect(() => {
     if (!secretUnlocked || game.status !== "playing") {
@@ -238,7 +239,6 @@ export default function NotFound() {
 
   useEffect(() => {
     if (!godModeActive) {
-      setCheatBuffer("");
       return undefined;
     }
 
@@ -249,6 +249,7 @@ export default function NotFound() {
     const timeoutId = window.setTimeout(() => {
       setNowMs(Date.now());
       setGodModeUntil(0);
+      setCheatBuffer("");
     }, Math.max(0, godModeUntil - Date.now()));
 
     return () => {

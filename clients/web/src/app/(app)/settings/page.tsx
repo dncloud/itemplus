@@ -5,7 +5,7 @@ import {
   Cog6ToothIcon,
 } from "@heroicons/react/24/outline";
 import { useApp } from "@/lib/app-context";
-import { api, type ExternalSource, type LabelTemplate, type LabelTemplateMeta, type PrinterStatus, type User } from "@/lib/api";
+import { api, type AIModelOption, type ExternalSource, type LabelTemplate, type LabelTemplateMeta, type PrinterStatus, type User } from "@/lib/api";
 import { SettingsAppSection } from "@/components/settings-app-section";
 import { SettingsAISection } from "@/components/settings-ai-section";
 import { SettingsBrandingSection } from "@/components/settings-branding-section";
@@ -19,14 +19,11 @@ import {
   createEmptyAIDraft,
   createEmptyExternalSourceDraft,
   createEmptyTemplateDraft,
-  createProviderDraft,
-  defaultAIBaseURL,
-  defaultAIModel,
   draftFromExternalSource,
   draftFromAISettings,
   draftFromTemplate,
-  isAIKeyOptional,
   type AISettingsDraft,
+  type AIProfileDraft,
   type ExternalSourceDraft,
   type LabelTemplateDraft,
 } from "@/components/settings-drafts";
@@ -52,6 +49,7 @@ import {
   deleteExternalSourceDraft,
   deleteTemplateDraft,
   exportBackupBundleBlob,
+  fetchAIModelsDraft,
   fetchDefaultTSPLPreview,
   fetchExternalSourceHostKeyDraft,
   fetchLocationHealth,
@@ -96,8 +94,10 @@ export default function SettingsPage() {
   const [externalSourceBusy, setExternalSourceBusy] = useState<"hostkey" | "test" | null>(null);
   const [brandingStatus, setBrandingStatus] = useState<string | null>(null);
   const [aiDraft, setAiDraft] = useState<AISettingsDraft>(createEmptyAIDraft());
+  const [selectedAIProfileId, setSelectedAIProfileId] = useState("");
   const [aiStatus, setAiStatus] = useState<string | null>(null);
   const [aiTesting, setAiTesting] = useState(false);
+  const [aiModelsLoading, setAiModelsLoading] = useState(false);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
   const [backupBusy, setBackupBusy] = useState<"export" | "recover" | null>(null);
   const [recoverFile, setRecoverFile] = useState<File | null>(null);
@@ -136,6 +136,7 @@ export default function SettingsPage() {
         }
         if (data.aiDraft && !aiDraftTouchedRef.current) {
           setAiDraft(data.aiDraft);
+          setSelectedAIProfileId(data.aiDraft.active_profile_id || data.aiDraft.profiles[0]?.id || "");
         }
       })
       .catch(() => {})
@@ -202,6 +203,12 @@ export default function SettingsPage() {
       setExternalSourceDraft(draftFromExternalSource(selected));
     }
   }, [selectedExternalSourceId, externalSources]);
+
+  useEffect(() => {
+    if (!selectedAIProfileId && aiDraft.profiles.length > 0) {
+      setSelectedAIProfileId(aiDraft.active_profile_id || aiDraft.profiles[0]?.id || "");
+    }
+  }, [aiDraft.active_profile_id, aiDraft.profiles, selectedAIProfileId]);
 
   const checkLocations = async () => {
     try {
@@ -387,7 +394,9 @@ export default function SettingsPage() {
     try {
       const saved = await saveAISettingsDraft(aiDraft);
       aiDraftTouchedRef.current = false;
-      setAiDraft(draftFromAISettings(saved));
+      const nextDraft = draftFromAISettings(saved);
+      setAiDraft(nextDraft);
+      setSelectedAIProfileId(nextDraft.active_profile_id || nextDraft.profiles[0]?.id || "");
       flashStatus(setAiStatus, t("settings.aiSaved"));
     } catch (err) {
       setAiStatus(messageFromError(err, t("settings.aiSaveFailed")));
@@ -398,12 +407,29 @@ export default function SettingsPage() {
     setAiStatus(null);
     setAiTesting(true);
     try {
-      const result = await testAISettingsDraft(aiDraft);
+      const selectedProfile =
+        aiDraft.profiles.find((profile) => profile.id === selectedAIProfileId) ||
+        aiDraft.profiles[0];
+      if (!selectedProfile) throw new Error(t("settings.aiSaveFailed"));
+      const result = await testAISettingsDraft(selectedProfile as AIProfileDraft);
       setAiStatus(result.output_text?.trim() ? `${t("settings.aiTestSucceeded")}: ${result.output_text.trim()}` : t("settings.aiTestSucceeded"));
     } catch (err) {
       setAiStatus(messageFromError(err, t("settings.aiTestFailed")));
     } finally {
       setAiTesting(false);
+    }
+  };
+
+  const loadAIModels = async (profile: AIProfileDraft): Promise<AIModelOption[]> => {
+    setAiStatus(null);
+    setAiModelsLoading(true);
+    try {
+      return await fetchAIModelsDraft(profile);
+    } catch (err) {
+      setAiStatus(messageFromError(err, t("settings.aiModelsLoadFailed")));
+      throw err;
+    } finally {
+      setAiModelsLoading(false);
     }
   };
 
@@ -739,7 +765,6 @@ export default function SettingsPage() {
               deleteExternalSource={() => { void deleteExternalSource(); }}
               inputClass={settingsInputClass}
               monoTextareaClass={settingsMonoTextareaClass}
-              primaryButtonClass={settingsPrimaryButtonClass}
               secondaryButtonClass={settingsSecondaryButtonClass}
               dangerButtonClass={settingsDangerButtonClass}
             />
@@ -750,14 +775,14 @@ export default function SettingsPage() {
               t={t}
               aiDraft={aiDraft}
               setAiDraft={updateAiDraft}
+              selectedProfileId={selectedAIProfileId}
+              setSelectedProfileId={setSelectedAIProfileId}
               aiTesting={aiTesting}
+              aiModelsLoading={aiModelsLoading}
               aiStatus={aiStatus}
               saveAISettings={saveAISettings}
               testAISettings={testAISettings}
-              defaultAIModel={defaultAIModel}
-              defaultAIBaseURL={defaultAIBaseURL}
-              isAIKeyOptional={isAIKeyOptional}
-              createProviderDraft={createProviderDraft}
+              loadAIModels={loadAIModels}
               inputClass={settingsInputClass}
               primaryButtonClass={settingsPrimaryButtonClass}
               secondaryButtonClass={settingsSecondaryButtonClass}

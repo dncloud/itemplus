@@ -2,7 +2,8 @@
 
 import type { ComponentType } from "react";
 import clsx from "clsx";
-import { Bars3Icon, DevicePhoneMobileIcon, MagnifyingGlassIcon, PrinterIcon, SparklesIcon } from "@heroicons/react/24/outline";
+import Link from "next/link";
+import { ArrowRightStartOnRectangleIcon, Bars3Icon, Cog6ToothIcon, DevicePhoneMobileIcon, MagnifyingGlassIcon, PrinterIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import { useApp } from "@/lib/app-context";
 
 export function AppShellLoading() {
@@ -33,6 +34,7 @@ export function AppShellHeader({
   showPrinterStatus,
   onOpenSidebar,
   onOpenSearch,
+  onLogout,
 }: {
   t: (key: string) => string;
   iosBridgeStatus: "connected" | "disconnected";
@@ -44,6 +46,7 @@ export function AppShellHeader({
   showPrinterStatus: boolean;
   onOpenSidebar: () => void;
   onOpenSearch: () => void;
+  onLogout: () => Promise<void>;
 }) {
   return (
     <header id="page-header" className="sticky top-0 z-40">
@@ -108,6 +111,23 @@ export function AppShellHeader({
                 t={t}
               />
             ) : null}
+            <Link
+              href="/settings"
+              title={t("nav.settings")}
+              aria-label={t("nav.settings")}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
+            >
+              <Cog6ToothIcon className="size-4 shrink-0" />
+            </Link>
+            <button
+              type="button"
+              onClick={() => void onLogout()}
+              title={t("nav.logout")}
+              aria-label={t("nav.logout")}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-red-50 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+            >
+              <ArrowRightStartOnRectangleIcon className="size-4 shrink-0" />
+            </button>
           </div>
         </div>
       </div>

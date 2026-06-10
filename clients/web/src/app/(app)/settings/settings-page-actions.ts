@@ -1,6 +1,6 @@
-import { api, type AIConnectionTestResult, type AISettings, type AISettingsPayload, type ExternalSource, type ExternalSourcePayload, type LabelTemplate, type LabelTemplatePayload, type PrinterStatus } from "@/lib/api";
+import { api, type AIConnectionTestResult, type AIModelOption, type AIProfilePayload, type AISettings, type AISettingsPayload, type ExternalSource, type ExternalSourcePayload, type LabelTemplate, type LabelTemplatePayload, type PrinterStatus } from "@/lib/api";
 import { parseTSPLPreview } from "@/components/tspl-template-preview";
-import type { AISettingsDraft, ExternalSourceDraft, LabelTemplateDraft } from "@/components/settings-drafts";
+import type { AIProfileDraft, AISettingsDraft, ExternalSourceDraft, LabelTemplateDraft } from "@/components/settings-drafts";
 
 export type LocationHealthResult = {
   issues: { realm: string; id: number; name: string; type: string }[];
@@ -114,16 +114,27 @@ export async function testExternalSourceDraft(externalSourceDraft: ExternalSourc
   return api.testExternalSourceConnection(buildExternalSourcePayload(externalSourceDraft));
 }
 
-export function buildAISettingsPayload(aiDraft: AISettingsDraft): AISettingsPayload {
+export function buildAIProfilePayload(aiDraft: AIProfileDraft): AIProfilePayload {
   return {
+    id: aiDraft.id,
+    name: aiDraft.name.trim(),
     provider: aiDraft.provider,
     model: aiDraft.model.trim(),
     base_url: aiDraft.base_url.trim(),
     api_key: (aiDraft.api_key || "").trim(),
     enabled: aiDraft.enabled,
+    supports_vision: aiDraft.supports_vision,
+    chat_prompt: aiDraft.chat_prompt.trim(),
     parse_item_prompt: aiDraft.parse_item_prompt.trim(),
     category_property_prompt: aiDraft.category_property_prompt.trim(),
     property_enhancement_prompt: aiDraft.property_enhancement_prompt.trim(),
+  };
+}
+
+export function buildAISettingsPayload(aiDraft: AISettingsDraft): AISettingsPayload {
+  return {
+    active_profile_id: aiDraft.active_profile_id,
+    profiles: aiDraft.profiles.map(buildAIProfilePayload),
   };
 }
 
@@ -131,8 +142,13 @@ export async function saveAISettingsDraft(aiDraft: AISettingsDraft): Promise<AIS
   return api.updateAISettings(buildAISettingsPayload(aiDraft));
 }
 
-export async function testAISettingsDraft(aiDraft: AISettingsDraft): Promise<AIConnectionTestResult> {
-  return api.testAISettings(buildAISettingsPayload(aiDraft));
+export async function testAISettingsDraft(aiDraft: AIProfileDraft): Promise<AIConnectionTestResult> {
+  return api.testAISettings(buildAIProfilePayload(aiDraft));
+}
+
+export async function fetchAIModelsDraft(aiDraft: AIProfileDraft): Promise<AIModelOption[]> {
+  const result = await api.listAIModels(buildAIProfilePayload(aiDraft));
+  return result.models;
 }
 
 export async function exportBackupBundleBlob() {

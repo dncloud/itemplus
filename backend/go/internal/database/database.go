@@ -299,6 +299,30 @@ func schemaStatementsBase() []string {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+
+		// AI usage events
+		`CREATE TABLE IF NOT EXISTS ai_usage_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER,
+			profile_id TEXT,
+			profile_name TEXT,
+			provider TEXT,
+			model TEXT,
+			feature TEXT NOT NULL,
+			transport TEXT,
+			success BOOLEAN DEFAULT 1,
+			error TEXT,
+			input_tokens INTEGER DEFAULT 0,
+			output_tokens INTEGER DEFAULT 0,
+			total_tokens INTEGER DEFAULT 0,
+			reasoning_tokens INTEGER DEFAULT 0,
+			web_search_requests INTEGER DEFAULT 0,
+			web_fetch_requests INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_usage_events_created_at ON ai_usage_events(created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_usage_events_feature ON ai_usage_events(feature)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_usage_events_provider_model ON ai_usage_events(provider, model)`,
 	}
 
 	// Per-realm tables
@@ -331,6 +355,7 @@ func LogicalTableNames() []string {
 		"qr_login_tokens",
 		"magic_link_tokens",
 		"checkout_requests",
+		"ai_usage_events",
 	}
 	for _, realm := range []string{"archive", "collection"} {
 		tables = append(tables,
@@ -356,6 +381,7 @@ func BackupTableNames() []string {
 		"label_templates",
 		"external_sources",
 		"checkout_requests",
+		"ai_usage_events",
 	}
 	for _, realm := range []string{"archive", "collection"} {
 		tables = append(tables,

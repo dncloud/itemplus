@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -964,7 +963,7 @@ func getAttachmentContent(realm string) gin.HandlerFunc {
 				c.JSON(http.StatusBadGateway, gin.H{"detail": "External source is unavailable"})
 				return
 			}
-			stream, err := storage.OpenSFTPFileStream(context.Background(), storage.SFTPSourceConfig{
+			stream, err := storage.OpenSFTPFileStream(c.Request.Context(), storage.SFTPSourceConfig{
 				Host:         src.Host,
 				Port:         src.Port,
 				Username:     src.Username,
@@ -975,6 +974,10 @@ func getAttachmentContent(realm string) gin.HandlerFunc {
 				BasePath:     src.BasePath,
 			}, *att.ExternalPath)
 			if err != nil {
+				if isRequestCanceled(c, err) {
+					c.Abort()
+					return
+				}
 				log.Printf("SFTP stream error for attachment %s: %v", attID, err)
 				c.JSON(http.StatusBadGateway, gin.H{"detail": describeSFTPAttachmentError(err)})
 				return
@@ -982,14 +985,12 @@ func getAttachmentContent(realm string) gin.HandlerFunc {
 			defer stream.Close()
 
 			setAttachmentHeaders(c, att.Filename)
-			if stream.Size >= 0 {
-				c.Header("Content-Length", strconv.FormatInt(stream.Size, 10))
-			}
 			contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(att.Filename)))
 			if contentType == "" {
 				contentType = "application/octet-stream"
 			}
-			c.DataFromReader(http.StatusOK, stream.Size, contentType, stream, nil)
+			c.Header("Content-Type", contentType)
+			http.ServeContent(c.Writer, c.Request, att.Filename, stream.ModTime, stream)
 			return
 		default:
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "Unsupported attachment backend"})
@@ -1831,6 +1832,14 @@ func stringValue(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+func isRequestCanceled(c *gin.Context, err error) bool {
+	if c.Request != nil && c.Request.Context().Err() != nil {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "operation was canceled") || strings.Contains(msg, "context canceled") || strings.Contains(msg, "request canceled")
 }
 
 func describeSFTPAttachmentError(err error) string {

@@ -15,9 +15,20 @@ export async function parseApiError(res: Response) {
   const error = new Error(err.detail || `HTTP ${res.status}`) as Error & {
     code?: string;
     active_checkouts?: number;
+    raw_debug?: string;
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      total_tokens?: number;
+      reasoning_tokens?: number;
+    };
+    status?: number;
   };
   if (typeof err.code === "string") error.code = err.code;
   if (typeof err.active_checkouts === "number") error.active_checkouts = err.active_checkouts;
+  if (typeof err.raw_debug === "string") error.raw_debug = err.raw_debug;
+  if (err.usage && typeof err.usage === "object") error.usage = err.usage;
+  error.status = res.status;
   return error;
 }
 

@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   api,
+  type AIProfile,
   type AIParseItemIntentResult,
   type AIParseStreamEvent,
+  type AIUsage,
   type Category,
   type Item,
   type ItemComponent,
@@ -117,6 +119,10 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   const [aiChat, setAiChat] = useState<AIChatEntry[]>([]);
   const [aiSuggestionAnchorMessageId, setAiSuggestionAnchorMessageId] = useState<string | null>(null);
   const [aiLiveText, setAiLiveText] = useState("");
+  const [aiRawDebugLog, setAiRawDebugLog] = useState("");
+  const [aiLastUsage, setAiLastUsage] = useState<AIUsage | null>(null);
+  const [activeAIProfile, setActiveAIProfile] = useState<AIProfile | null>(null);
+  const [aiAllowWebSearch, setAiAllowWebSearch] = useState(true);
   const [barcodeCapturePending, setBarcodeCapturePending] = useState(false);
   const [photoLookupPending, setPhotoLookupPending] = useState(false);
   const [lastBarcodeLookupCode, setLastBarcodeLookupCode] = useState<string | null>(null);
@@ -138,6 +144,19 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     );
   }, []);
   const aiUserName = currentUserLabel || t("items.aiUserFallback");
+  const modelBadge = useMemo(() => {
+    if (!activeAIProfile) return null;
+    return `${activeAIProfile.provider === "ollama" ? "Ollama" : "OpenAI"} · ${activeAIProfile.model}`;
+  }, [activeAIProfile]);
+
+  useEffect(() => {
+    void api.getAISettings()
+      .then((settings) => {
+        const profile = settings.profiles.find((entry) => entry.id === settings.active_profile_id) || settings.profiles[0] || null;
+        setActiveAIProfile(profile);
+      })
+      .catch(() => {});
+  }, []);
 
   const loadSourceItem = useCallback(async () => {
     if (!isEditMode || !itemId) return;
@@ -296,6 +315,8 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     setAiSuggestedItem({});
     setAiSuggestedPropValues({});
     setAiLiveText("");
+    setAiRawDebugLog("");
+    setAiLastUsage(null);
     setAiDrawerOpen(true);
     setAiChat((current) => [
       ...current,
@@ -319,8 +340,12 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
         },
         (event: AIParseStreamEvent) => {
           if (event.type === "delta" && event.delta) setAiLiveText((prev) => prev + event.delta);
+          if (event.type === "raw" && event.message) {
+            setAiRawDebugLog((prev) => `${prev}${prev ? "\n" : ""}${event.message}`);
+          }
           if (event.type === "result" && event.result) {
             streamedResult = event.result;
+            setAiLastUsage(event.result.usage || null);
             const nextState = collectAISuggestions(event.result);
             const visibleSuggestionCount =
               countVisibleSuggestedFields(nextState.suggestedItem, editItem, valuesEqual) +
@@ -361,29 +386,29 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     async (message: string) => {
       const trimmedMessage = message.trim();
       if (!trimmedMessage) {
-        await runAIAssist();
+        await runAIAssist(undefined, aiAllowWebSearch);
         return;
       }
       setAiChat((current) => [...current, { id: createChatId("item-ai-user"), role: "user", content: trimmedMessage }]);
       const conversationContext = buildConversationContext(aiChat, trimmedMessage);
-      await runAIAssist(buildAIAssistPrompt(conversationContext));
+      await runAIAssist(buildAIAssistPrompt(conversationContext), aiAllowWebSearch);
     },
-    [aiChat, buildAIAssistPrompt, buildConversationContext, runAIAssist],
+    [aiAllowWebSearch, aiChat, buildAIAssistPrompt, buildConversationContext, runAIAssist],
   );
 
-  const applySuggestedField = <K extends keyof Item>(field: K) => {
+  const applySuggestedField = useCallback(<K extends keyof Item>(field: K) => {
     const result = applySuggestedItemFieldState(editItem, aiSuggestedItem, field);
     if (!result.changed) return;
     setEditItem(result.nextItem);
     setAiSuggestedItem(result.nextSuggestedItem);
-  };
+  }, [aiSuggestedItem, editItem]);
 
-  const applySuggestedProperty = (propertyId: string) => {
+  const applySuggestedProperty = useCallback((propertyId: string) => {
     const result = applySuggestedPropertyValueState(propValues, aiSuggestedPropValues, propertyId);
     if (!result.changed) return;
     setPropValues(result.nextPropValues);
     setAiSuggestedPropValues(result.nextSuggestedPropValues);
-  };
+  }, [aiSuggestedPropValues, propValues]);
 
   const applyAllAISuggestions = () => {
     const result = applyAllSuggestedValues(editItem, propValues, aiSuggestedItem, aiSuggestedPropValues);
@@ -455,12 +480,12 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
           buildAIAssistPrompt,
           buildBarcodeLookupPrompt,
         });
-        void runAIAssist(prompt, true, tempImageID, {
+        void runAIAssist(prompt, aiAllowWebSearch, tempImageID, {
           identifyOnly: !(editItem.name?.trim() && typeof editItem.category_id === "number"),
         });
       },
     });
-  }, [barcodeDraft?.code, buildAIAssistPrompt, buildBarcodeLookupPrompt, editItem.category_id, editItem.name, runAIAssist, t]);
+  }, [aiAllowWebSearch, barcodeDraft?.code, buildAIAssistPrompt, buildBarcodeLookupPrompt, editItem.category_id, editItem.name, runAIAssist, t]);
 
   useEffect(() => {
     const code = barcodeDraft?.code?.trim();
@@ -468,8 +493,8 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     if ((editItem.name || "").trim()) return;
     if (lastBarcodeLookupCode === code) return;
     setLastBarcodeLookupCode(code);
-    void runAIAssist(buildBarcodeLookupPrompt(code), true, undefined, { identifyOnly: true });
-  }, [barcodeDraft?.code, buildBarcodeLookupPrompt, editItem.name, lastBarcodeLookupCode, runAIAssist]);
+    void runAIAssist(buildBarcodeLookupPrompt(code), aiAllowWebSearch, undefined, { identifyOnly: true });
+  }, [aiAllowWebSearch, barcodeDraft?.code, buildBarcodeLookupPrompt, editItem.name, lastBarcodeLookupCode, runAIAssist]);
 
   const { suggestedCategoryName, hasVisibleSuggestions } = useMemo(
     () =>
@@ -571,7 +596,6 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     valuesEqual,
     applySuggestedField,
     applySuggestedProperty,
-    formatSuggestionValue,
     t,
   ]);
 
@@ -643,6 +667,11 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
         aiSuggestionAnchorMessageId={aiSuggestionAnchorMessageId}
         aiChatSuggestions={aiChatSuggestions}
         markAssistantMessageSeen={markAssistantMessageSeen}
+        modelBadge={modelBadge}
+        allowWebSearch={aiAllowWebSearch}
+        onAllowWebSearchChange={setAiAllowWebSearch}
+        rawDebugLog={aiRawDebugLog}
+        lastUsage={aiLastUsage}
         endAIDrawerSession={() => {
           setAiDrawerOpen(false);
           setAiAssistStatus(null);
@@ -651,6 +680,8 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
           setAiSuggestionAnchorMessageId(null);
           setAiChat([]);
           setAiLiveText("");
+          setAiRawDebugLog("");
+          setAiLastUsage(null);
         }}
       />
 
