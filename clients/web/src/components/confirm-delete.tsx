@@ -96,7 +96,7 @@ export function useDeleteFlow(opts: {
         realm: opts.realm,
       });
       setPending({ id, name, type: entityType });
-      setTimeout(() => setPending((p) => p?.id === id ? null : p), 30000);
+      setTimeout(() => setPending((p) => (p?.id === id && p.type === entityType ? null : p)), 30000);
     } else {
       // Skip iOS, go straight to name confirmation
       setConfirm({ id, name, type: entityType });

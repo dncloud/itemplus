@@ -6,6 +6,7 @@ import { useApp } from "@/lib/app-context";
 import type { Item, Property } from "@/lib/api";
 import { ALL_AGE_RATINGS, CONDITIONS, PRIORITIES, PRIORITY_BADGE_CLASS } from "@/components/property-field";
 import { MarkdownView } from "@/components/markdown";
+import { formatSelectCountValue } from "@/lib/property-options";
 
 function formatTimeDuration(value: string, locale: string) {
   const match = value.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -371,6 +372,8 @@ function PropDisplay({ prop, val: rawVal }: { prop: Property; val: unknown }) {
     }
     case "number":
       return <div>{label}<p className="text-xs text-gray-500 dark:text-gray-400">{String(val)}{unitSuffix}</p></div>;
+    case "select":
+      return <div>{label}<p className="text-xs text-gray-500 dark:text-gray-400">{formatSelectCountValue(val, locale)}{unitSuffix}</p></div>;
     case "time":
       return <div>{label}<p className="text-xs text-gray-500 dark:text-gray-400">{formatTimeDuration(String(val), locale)}</p></div>;
     case "textblock":

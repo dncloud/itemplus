@@ -61,6 +61,7 @@ export default function CategoriesPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
   const [editProp, setEditProp] = useState<Partial<Property> | null>(null);
+  const [propertyAICategory, setPropertyAICategory] = useState<Pick<Category, "id" | "name" | "description"> | null>(null);
   const [isNewProp, setIsNewProp] = useState(false);
   const [categoryAIBusy, setCategoryAIBusy] = useState(false);
   const [, setCategoryAIStatus] = useState<string | null>(null);
@@ -159,6 +160,7 @@ export default function CategoriesPage() {
     setPropertyAITab("chat");
     setPropertyAIRawDebug("");
     setPropertyAIUsage(null);
+    if (!editProp?.id) setPropertyAICategory(null);
   }, [editProp?.id, isNewProp]);
 
   useEffect(() => {
@@ -253,15 +255,32 @@ export default function CategoriesPage() {
     return () => setAiAssistantPanelController(null);
   }, [setAiAssistantPanelController]);
 
-  const loadProps = async (catId: number) => {
+  const loadProps = useCallback(async (catId: number) => {
     setProperties(await fetchCategoryProperties(catId));
-  };
+  }, []);
 
   const deleteFlow = useDeleteFlow({
     realm,
-    onDeleted: useCallback(() => {
-      load();
-    }, [load]),
+    onDeleted: useCallback((entityId: number, entityType: string) => {
+      if (entityType === "property") {
+        setProperties((current) => current.filter((property) => property.id !== entityId));
+        setEditProp((current) => (current?.id === entityId ? null : current));
+        setIsNewProp(false);
+        if (expanded) void loadProps(expanded);
+        return;
+      }
+      if (entityType === "category") {
+        if (expanded === entityId) {
+          setExpanded(null);
+          setProperties([]);
+        }
+        setCategories((current) => current.filter((category) => category.id !== entityId));
+        setEditCat((current) => (current?.id === entityId ? null : current));
+        void load();
+        return;
+      }
+      void load();
+    }, [expanded, load, loadProps]),
   });
 
   const propertyTypes = getPropertyTypes(t);
@@ -550,21 +569,26 @@ export default function CategoriesPage() {
     }
   };
 
-  const openPropertyAI = () => {
-    if (isNewProp || !editProp?.id || !editCat?.id) return;
+  const resolvePropertyAICategory = () => (
+    propertyAICategory || (editCat?.id && editCat.name?.trim()
+      ? { id: editCat.id, name: editCat.name, description: editCat.description || "" }
+      : null)
+  );
+
+  const openPropertyAI = (category: Pick<Category, "id" | "name" | "description">) => {
+    if (isNewProp || !editProp?.id || !category.id || !category.name?.trim()) return;
+    setPropertyAICategory(category);
     setPropertyAIDrawerOpen(true);
+    window.setTimeout(() => propertyComposerRef.current?.focus(), 0);
   };
 
   const handlePropertyComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (propertyAIBusy) return;
-      if (!editCat?.id || !editCat.name?.trim()) return;
-      void runPropertyAI({
-        id: editCat.id,
-        name: editCat.name,
-        description: editCat.description || "",
-      });
+      const category = resolvePropertyAICategory();
+      if (!category) return;
+      void runPropertyAI(category);
     }
   };
 
@@ -829,7 +853,7 @@ export default function CategoriesPage() {
                           <h4 className="text-sm/6 font-medium text-gray-900 dark:text-white">{t("categories.properties")}</h4>
                           {canWriteCategories ? (
                             <button
-                              onClick={() => { setEditProp({ name: "", property_type: "text", show_in_list: false }); setIsNewProp(true); }}
+                              onClick={() => { setEditProp({ name: "", property_type: "text", show_in_list: false }); setPropertyAICategory(null); setIsNewProp(true); }}
                               className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"
                               title={t("categories.addProperty")}
                             >
@@ -863,9 +887,11 @@ export default function CategoriesPage() {
                                 onEdit={() => {
                                   if (editProp?.id === prop.id && !isNewProp) {
                                     setEditProp(null);
+                                    setPropertyAICategory(null);
                                     return;
                                   }
                                   setEditProp({ ...prop });
+                                  setPropertyAICategory({ id: cat.id, name: cat.name, description: cat.description || "" });
                                   setIsNewProp(false);
                                 }}
                                 onDelete={() => deleteProp(prop.id)}
@@ -887,7 +913,7 @@ export default function CategoriesPage() {
                                       propertyTypes={propertyTypes}
                                       showAIButton
                                       aiBusy={propertyAIBusy}
-                                      onRunAI={openPropertyAI}
+                                      onRunAI={() => openPropertyAI({ id: cat.id, name: cat.name, description: cat.description || "" })}
                                       t={t}
                                     />
                                   </div>
@@ -1080,12 +1106,9 @@ export default function CategoriesPage() {
             <button
               type="button"
               onClick={() => {
-                if (!editCat?.id || !editCat.name?.trim()) return;
-                void runPropertyAI({
-                  id: editCat.id,
-                  name: editCat.name,
-                  description: editCat.description || "",
-                });
+                const category = resolvePropertyAICategory();
+                if (!category) return;
+                void runPropertyAI(category);
               }}
               disabled={propertyAIBusy}
               className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"

@@ -3,6 +3,7 @@ import {
   extractJSONArrayStrings,
   extractJSONStringValues,
 } from "@/components/item-create-ai-utils";
+import { formatSelectCountValue } from "@/lib/property-options";
 
 type TranslateFn = (key: string, params?: Record<string, string | number>) => string;
 
@@ -67,6 +68,7 @@ export function formatItemSuggestionValue(value: unknown, property?: Property) {
   if (value == null) return "";
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "object") {
+    if (property?.property_type === "select") return formatSelectCountValue(value);
     if (property?.property_type === "weight" && "value" in (value as Record<string, unknown>)) {
       const record = value as Record<string, unknown>;
       return `${record.value}${record.unit ? ` ${record.unit}` : ""}`;

@@ -7,7 +7,7 @@ import { MarkdownEditor } from "@/components/markdown";
 import { CalendarDaysIcon, ClockIcon } from "@heroicons/react/24/outline";
 import { AgeRatingField, ALL_AGE_RATINGS } from "@/components/property-field-age-rating";
 import { MultiSelectDropdown, SelectDropdown } from "@/components/property-field-selects";
-import { getPropertyOptionConfig } from "@/lib/property-options";
+import { buildSelectCountValue, getPropertyOptionConfig, normalizeSelectCountValue } from "@/lib/property-options";
 import {
   CONDITION_BADGE_CLASS,
   CONDITIONS,
@@ -144,18 +144,42 @@ export default function PropertyField({ property: prop, value, onChange }: {
 
     case "select": {
       const optionConfig = getPropertyOptionConfig(prop.options, locale);
+      const selectValue = normalizeSelectCountValue(value);
+      const handleSelectChange = (nextSelected: string) => {
+        onChange(optionConfig.withCount ? buildSelectCountValue(nextSelected, selectValue.count) : nextSelected);
+      };
+      const handleCountChange = (nextCount: number | null) => {
+        onChange(buildSelectCountValue(selectValue.selected, nextCount));
+      };
       return (
         <div>
           {label}
-          <SelectDropdown
-            label={prop.name}
-            value={strVal}
-            options={optionConfig.choices}
-            allowCustom={optionConfig.allowCustom}
-            customLabel={optionConfig.customLabel}
-            customPlaceholder={t("categories.customValuePlaceholder")}
-            onChange={(next) => onChange(next)}
-          />
+          <div className={optionConfig.withCount ? "grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem] sm:items-start" : ""}>
+            <SelectDropdown
+              label={prop.name}
+              value={selectValue.selected}
+              options={optionConfig.choices}
+              allowCustom={optionConfig.allowCustom}
+              customLabel={optionConfig.customLabel}
+              customPlaceholder={t("categories.customValuePlaceholder")}
+              onChange={handleSelectChange}
+            />
+            {optionConfig.withCount ? (
+              <div className="mt-2">
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={selectValue.count ?? ""}
+                  disabled={!selectValue.selected}
+                  onChange={(event) => handleCountChange(event.target.value ? Number(event.target.value) : null)}
+                  placeholder={optionConfig.countLabel}
+                  aria-label={optionConfig.countLabel}
+                  className={inputCls}
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
       );
     }

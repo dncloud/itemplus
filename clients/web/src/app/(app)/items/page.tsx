@@ -187,7 +187,13 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
     onDeleted: useCallback((entityId: number) => {
       setItems((prev) => prev.filter((item) => item.id !== entityId));
       setTotal((prev) => prev - 1);
-    }, []),
+      setPendingRequestsByItem((prev) => {
+        const next = { ...prev };
+        delete next[entityId];
+        return next;
+      });
+      void loadItems();
+    }, [loadItems]),
   });
 
   const pendingDelete = deleteFlow.pending?.id ?? null;

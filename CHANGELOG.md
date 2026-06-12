@@ -1,24 +1,17 @@
 # Changelog
 
-## 1.2.5 - 2026-06-05
+## 1.2.6 - 2026-06-12
 
-### Account deletion and review compliance
-- Added a real account-deletion flow to the iPhone app so users can remove their account directly from Settings instead of being sent to an external support path.
-- Added the same account-deletion flow to the web app Settings area, including an inline confirmation step and clean logout/redirect behavior after a successful delete.
-- Blocked account deletion while a user still has active checkouts, so lending state cannot be broken or silently orphaned by a self-delete.
-- Prevented admin accounts from deleting themselves through the regular account-deletion flow, avoiding accidental lockout of the installation owner or only administrator.
-- Released archive and collection location manager assignments automatically when a non-admin account is deleted, so locations never remain stuck behind a removed manager.
-- Localized account-deletion blockers and related review-facing messaging consistently across the web app and iPhone app.
-
-### Authentication and first-sign-in flow
-- Changed the iPhone Apple sign-in flow so a missing account no longer gets created implicitly on first login.
-- Added an explicit in-app registration confirmation step on iPhone when Apple sign-in succeeds but no item+ account exists yet, making account creation a deliberate user action.
-- Kept the configurable `AUTO_ACTIVATED` server behavior for new users while making the first-run and review flows easier to reason about operationally.
-
-### iPhone app polish
-- Replaced the remaining system-style account prompts in the iPhone app with item+-styled confirmation cards for registration, deletion, and deletion blockers.
-- Improved the scanner presentation with the darker masked preview and quieter cutout treatment refined during App Store review preparation.
-- Prepared the iPhone release track for `1.2.5` with build `12501`.
+### AI update
+- Reworked the AI settings area around explicit OpenAI and Ollama profiles, including active-profile selection, per-profile prompts, clearer model/provider controls, optional Ollama API keys for cloud web search, masked stored-key indicators, and OpenAI model discovery.
+- Added an Ollama vision-capability toggle so local text-only models do not receive image payloads, while vision-capable models can still be used for photo-based item identification.
+- Added a dedicated Chat page for testing the active Ina profile outside item and category workflows, with persistent session history, inline scrolling, markdown rendering, model/token badges, optional web search, attachments, a dynamic composer, and raw stream/debug output.
+- Added AI usage tracking in the database for requests, input/output/total tokens, web-search usage, provider, model, feature area, status, latency, and provider-level summaries.
+- Added the AI usage dashboard under its own main-menu section, including separate OpenAI/Ollama views, fixed time buckets for hour/day/week/month, a total view, request charts, and token charts.
+- Added read-only inventory context for Ina so chat answers can use current items, quantities, locations, checkouts, categories, descriptions, and property values without granting write access.
+- Tightened the free chat web-search trigger so everyday greetings or inventory questions no longer get treated as web-search requests unless the user clearly asks for current or external information.
+- Improved AI response rendering with markdown support, calmer animated “Denke nach” states, animated new assistant messages, and previously-seen chat messages that reopen instantly instead of replaying the effect.
+- Cleaned up old/static AI helper text and unused ballast so category, property, and item AI flows rely more on configured prompts and live conversation context.
 
 ### AI workflows, chat UX, and settings
 - Added editable AI prompt templates in Settings for item parsing, category property suggestions, and property enhancement, so each installation can tune Ina to its own inventory style instead of relying on one fixed built-in prompt.
@@ -38,29 +31,33 @@
 - Added temporary-image retrieval for AI uploads so freshly captured photos can be rendered directly in the chat instead of only being referenced indirectly by the AI request.
 - Improved wording and localization across the Ina surfaces, including German umlauts in visible UI copy, quieter button labels such as `Senden`, and more neutral suggestion headings that fit the conversational flow better.
 
-### AI update
-- Reworked the AI settings area around explicit OpenAI and Ollama profiles, including active-profile selection, per-profile prompts, clearer model/provider controls, optional Ollama API keys for cloud web search, and masked stored-key indicators.
-- Added model discovery for OpenAI-compatible `/v1/models` endpoints so available models can be fetched from Settings instead of being typed manually every time.
-- Added an Ollama vision-capability toggle so local text-only models do not receive image payloads, while vision-capable models can still be used for photo-based item identification.
-- Added a dedicated Chat page for testing the active Ina profile outside item and category workflows, with persistent session history, inline scrolling, markdown rendering, model/token badges, optional web search, attachments, and a dynamic chat composer.
-- Added raw AI stream/debug output and token usage badges to the general chat, category AI flow, and item-create AI flow, making local Ollama and OpenAI behavior easier to compare while tuning prompts.
-- Added AI usage tracking in the database for requests, input/output/total tokens, web-search usage, provider, model, feature area, status, and latency.
-- Added the AI usage dashboard under its own main-menu section, including separate OpenAI/Ollama views, fixed time buckets for hour/day/week/month, a total view, request charts, token charts, and provider-level summaries.
-- Added read-only inventory context for Ina so chat answers can use current items, quantities, locations, checkouts, categories, descriptions, and property values without granting write access.
-- Tightened the free chat web-search trigger so everyday greetings or inventory questions no longer get treated as web-search requests unless the user clearly asks for current or external information.
-- Improved AI response rendering with markdown support, calmer animated “Denke nach” states, animated new assistant messages, and previously-seen chat messages that reopen instantly instead of replaying the effect.
-- Cleaned up old/static AI helper text and unused ballast so category, property, and item AI flows rely more on the configured prompts and live conversation context.
-- Added OpenAI/Ollama provider distinction throughout AI settings, chat badges, raw output, and usage statistics.
-
 ### Web app polish and navigation
 - Moved Settings and Logout out of the sidebar account block and into compact header icons, leaving the main menu cleaner.
 - Added a dedicated AI menu section with links for usage and chat/testing surfaces.
 - Improved light-mode chat styling so Ina conversations remain readable outside dark mode.
 - Recolored external SFTP storage settings with an emerald accent for selected sources, authentication choices, active toggles, and save actions, matching the storage domain instead of the generic blue settings accent.
+- Added optional count fields for select properties, allowing schemas such as `Medium = CD-ROM` plus `Anzahl = 2` without forcing multiselect usage.
+- Added one-click sorting for select and multiselect choices by name, plus an `ID` order button to return to the original saved option order before saving.
+- Fixed iPhone-confirmed deletes so category properties, categories, and items refresh correctly without requiring a manual page reload.
 
 ### Attachments and external storage
 - Fixed SFTP-backed video previews by serving external SFTP attachment streams through range-aware HTTP content serving, restoring browser playback, seeking, and metadata loading for MP4 and other video files.
 - Silenced expected SFTP request-cancel noise during video seeking so aborted browser range requests no longer appear as real SFTP stream errors in the server log.
+
+## 1.2.5 - 2026-06-05
+
+### Account deletion and review compliance
+- Added account deletion to the iPhone app and web app Settings area, including inline confirmation, clean logout/redirect behavior, and App Store review-compliant self-service deletion.
+- Blocked account deletion while a user still has active checkouts and prevented admin accounts from deleting themselves through the regular account-deletion flow.
+- Released archive and collection location manager assignments automatically when a non-admin account is deleted, so locations never remain stuck behind a removed manager.
+- Localized account-deletion blockers and review-facing messaging consistently across the web app and iPhone app.
+
+### Authentication and iPhone release polish
+- Changed the iPhone Apple sign-in flow so missing accounts are no longer created implicitly on first login; users now explicitly confirm registration.
+- Kept the configurable `AUTO_ACTIVATED=true|false` server behavior for new Apple and magic-link users while preserving the first-user admin bootstrap path.
+- Replaced remaining system-style iPhone prompts with item+-styled cards for registration, deletion, and deletion blockers.
+- Improved the scanner presentation with the darker masked preview and quieter cutout treatment refined during App Store review preparation.
+- Prepared the iPhone release track for `1.2.5` with build `12501`.
 
 ## 1.2.4 - 2026-05-31
 

@@ -1,4 +1,5 @@
 import type { Item, Property } from "@/lib/api";
+import { formatSelectCountValue } from "@/lib/property-options";
 
 export function formatTimeDuration(value: string, locale: string) {
   const match = value.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -42,6 +43,7 @@ export function formatPropShort(val: unknown, type: string, locale: string): str
     return `${weight.value} ${weight.unit || "g"}`;
   }
   if (type === "time") return formatTimeDuration(String(val), locale);
+  if (type === "select") return formatSelectCountValue(val, locale);
   if (Array.isArray(val)) return val.join(", ");
   if (typeof val === "object") {
     const obj = val as Record<string, unknown>;

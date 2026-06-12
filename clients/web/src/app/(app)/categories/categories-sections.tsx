@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type React from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
   Bars3Icon,
+  BarsArrowDownIcon,
   ChevronDownIcon,
   CubeIcon,
   EyeIcon,
@@ -442,9 +443,24 @@ function ChoicesEditor({
   const optionConfig = getPropertyOptionConfig(property.options);
   const choices = optionConfig.choices;
   const [newChoice, setNewChoice] = useState("");
+  const initialChoiceOrderRef = useRef<string[]>(choices);
+  const initialChoiceKeyRef = useRef<string | number | undefined>(property.id);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  const updateOptions = (next: { choices?: string[]; allowCustom?: boolean; customLabel?: string }) => {
+  useEffect(() => {
+    if (initialChoiceKeyRef.current !== property.id) {
+      initialChoiceKeyRef.current = property.id;
+      initialChoiceOrderRef.current = choices;
+      return;
+    }
+    for (const choice of choices) {
+      if (!initialChoiceOrderRef.current.includes(choice)) {
+        initialChoiceOrderRef.current.push(choice);
+      }
+    }
+  }, [choices, property.id]);
+
+  const updateOptions = (next: { choices?: string[]; allowCustom?: boolean; customLabel?: string; withCount?: boolean; countLabel?: string }) => {
     const current = getPropertyOptionConfig(property.options);
     onChange({
       ...property,
@@ -452,6 +468,8 @@ function ChoicesEditor({
         choices: next.choices ?? current.choices,
         allow_custom: next.allowCustom ?? current.allowCustom,
         custom_label: next.customLabel ?? current.customLabel,
+        with_count: next.withCount ?? current.withCount,
+        count_label: next.countLabel ?? current.countLabel ?? t("categories.selectCountPlaceholder"),
       },
     });
   };
@@ -461,6 +479,24 @@ function ChoicesEditor({
     if (!trimmed || choices.includes(trimmed)) return;
     updateOptions({ choices: [...choices, trimmed] });
     setNewChoice("");
+  };
+
+  const sortByName = () => {
+    updateOptions({
+      choices: [...choices].sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" })),
+    });
+  };
+
+  const sortByOriginalOrder = () => {
+    const ranks = new Map(initialChoiceOrderRef.current.map((choice, index) => [choice, index]));
+    updateOptions({
+      choices: [...choices].sort((left, right) => {
+        const leftRank = ranks.get(left) ?? Number.MAX_SAFE_INTEGER;
+        const rightRank = ranks.get(right) ?? Number.MAX_SAFE_INTEGER;
+        if (leftRank !== rightRank) return leftRank - rightRank;
+        return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+      }),
+    });
   };
 
   const onDragEnd = (event: DragEndEvent) => {
@@ -509,6 +545,26 @@ function ChoicesEditor({
         <button type="button" onClick={add} className="rounded-lg bg-blue-500 text-white px-3 py-1.5 text-sm font-medium hover:bg-blue-600">
           +
         </button>
+        <button
+          type="button"
+          onClick={sortByName}
+          disabled={choices.length < 2}
+          title={t("categories.sortChoicesByName")}
+          aria-label={t("categories.sortChoicesByName")}
+          className="inline-flex h-[38px] w-[38px] items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"
+        >
+          <BarsArrowDownIcon className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          onClick={sortByOriginalOrder}
+          disabled={choices.length < 2}
+          title={t("categories.sortChoicesById")}
+          aria-label={t("categories.sortChoicesById")}
+          className="inline-flex h-[38px] min-w-[38px] items-center justify-center rounded-lg border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"
+        >
+          ID
+        </button>
       </div>
       <div className="mt-4 space-y-3">
         <label className="flex items-center gap-3 cursor-pointer text-sm/6 font-medium text-gray-900 dark:text-white">
@@ -527,6 +583,28 @@ function ChoicesEditor({
             value={optionConfig.customLabel}
             onChange={(value) => updateOptions({ customLabel: value })}
           />
+        ) : null}
+        {property.property_type === "select" ? (
+          <>
+            <label className="flex items-center gap-3 cursor-pointer text-sm/6 font-medium text-gray-900 dark:text-white">
+              <span>{t("categories.selectCount")}</span>
+              <button
+                type="button"
+                onClick={() => updateOptions({ withCount: !optionConfig.withCount })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${optionConfig.withCount ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${optionConfig.withCount ? "translate-x-6" : "translate-x-1"}`} />
+              </button>
+            </label>
+            {optionConfig.withCount ? (
+              <Field
+                label={t("categories.selectCountLabel")}
+                value={optionConfig.countLabel}
+                onChange={(value) => updateOptions({ countLabel: value })}
+                placeholder={t("categories.selectCountPlaceholder")}
+              />
+            ) : null}
+          </>
         ) : null}
       </div>
     </div>
