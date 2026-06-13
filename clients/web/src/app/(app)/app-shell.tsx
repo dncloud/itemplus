@@ -1,10 +1,14 @@
 "use client";
 
-import type { ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import clsx from "clsx";
 import Link from "next/link";
-import { ArrowRightStartOnRectangleIcon, Bars3Icon, Cog6ToothIcon, DevicePhoneMobileIcon, MagnifyingGlassIcon, PrinterIcon, SparklesIcon } from "@heroicons/react/24/outline";
+import { ArrowRightStartOnRectangleIcon, Bars3Icon, Cog6ToothIcon, DevicePhoneMobileIcon, MagnifyingGlassIcon, PrinterIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import type { UpdateStatus } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+
+const UPDATE_BANNER_DISMISSED_KEY = "itemplus.updateBanner.dismissed";
+const UPDATE_BANNER_NEVER_KEY = "itemplus.updateBanner.never";
 
 export function AppShellLoading() {
   return (
@@ -35,8 +39,9 @@ export function AppShellHeader({
   onOpenSidebar,
   onOpenSearch,
   onLogout,
+  updateStatus,
 }: {
-  t: (key: string) => string;
+  t: (key: string, vars?: Record<string, string | number>) => string;
   iosBridgeStatus: "connected" | "disconnected";
   printerBridgeStatus: "connected" | "disconnected";
   aiAssistantBusy: boolean;
@@ -47,9 +52,60 @@ export function AppShellHeader({
   onOpenSidebar: () => void;
   onOpenSearch: () => void;
   onLogout: () => Promise<void>;
+  updateStatus: UpdateStatus | null;
 }) {
+  const [dismissedUpdateKey, setDismissedUpdateKey] = useState(() => readLocalStorage(UPDATE_BANNER_DISMISSED_KEY));
+  const [neverShowUpdateBanner, setNeverShowUpdateBanner] = useState(() => readLocalStorage(UPDATE_BANNER_NEVER_KEY) === "1");
+  const updateAvailable = !!updateStatus && (updateStatus.release_update_available || updateStatus.commit_update_available);
+  const installed = updateStatus?.installed_version
+    ? `${updateStatus.installed_version}${updateStatus.installed_build ? ` build ${updateStatus.installed_build}` : ""}`
+    : "";
+  const latestRelease = updateStatus?.latest_release_version
+    ? `${updateStatus.latest_release_version}${updateStatus.latest_release_build ? ` build ${updateStatus.latest_release_build}` : ""}`
+    : "";
+  const latest = latestRelease || updateStatus?.latest_commit || "";
+  const downloadedReady = !!updateStatus?.downloaded_path && !!updateStatus.latest_release_build && updateStatus.downloaded_build === updateStatus.latest_release_build;
+  const updateKey = `${installed}|${latest}|${updateStatus?.downloaded_build ?? ""}|${updateStatus?.downloaded_path ?? ""}`;
+  const showUpdateBanner = updateAvailable && !neverShowUpdateBanner && dismissedUpdateKey !== updateKey;
+
+  const dismissUpdateBanner = () => {
+    setDismissedUpdateKey(updateKey);
+    writeLocalStorage(UPDATE_BANNER_DISMISSED_KEY, updateKey);
+  };
+
+  const disableUpdateBanner = () => {
+    setNeverShowUpdateBanner(true);
+    writeLocalStorage(UPDATE_BANNER_NEVER_KEY, "1");
+  };
+
   return (
     <header id="page-header" className="sticky top-0 z-40">
+      {showUpdateBanner ? (
+        <div className="border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-950 dark:border-blue-500/30 dark:bg-[#0f2137] dark:text-blue-100 sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="min-w-0 font-medium">
+              {downloadedReady ? t("update.downloaded") : t("update.available")}
+              {latest ? <span className="ml-2 font-normal opacity-90">{latest}</span> : null}
+              {installed ? <span className="ml-2 text-xs font-normal opacity-70">{t("update.installed", { version: installed })}</span> : null}
+              {downloadedReady ? <span className="block text-xs font-normal opacity-80 sm:inline sm:ml-2">{t("update.downloadedHint")}</span> : null}
+            </p>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {updateStatus?.latest_release_url ? (
+                <a href={updateStatus.latest_release_url} target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">
+                  {t("update.releaseNotes")}
+                </a>
+              ) : null}
+              <button type="button" onClick={disableUpdateBanner} className="rounded-md px-2 py-1 font-medium opacity-80 transition hover:bg-blue-100 hover:opacity-100 dark:hover:bg-blue-400/10">
+                {t("update.never")}
+              </button>
+              <button type="button" onClick={dismissUpdateBanner} className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium opacity-80 transition hover:bg-blue-100 hover:opacity-100 dark:hover:bg-blue-400/10">
+                <XMarkIcon className="size-3.5" />
+                {t("update.dismiss")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 sm:gap-x-6 sm:px-6 dark:border-white/10 dark:bg-gray-900 lg:px-8">
         <button
           type="button"
@@ -133,6 +189,16 @@ export function AppShellHeader({
       </div>
     </header>
   );
+}
+
+function readLocalStorage(key: string) {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(key) ?? "";
+}
+
+function writeLocalStorage(key: string, value: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(key, value);
 }
 
 function ConnectionStatusIcon({

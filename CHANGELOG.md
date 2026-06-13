@@ -2,6 +2,13 @@
 
 ## 1.2.6 - 2026-06-12
 
+### Manual updater
+- Added the separate `itemplus-update` binary for explicit, admin-controlled update checks without adding any automatic external calls to the running item+ server.
+- Added `itemplus-update --check`, which checks the GitHub release and main commit state, compares them with the installed version/build, stores the result locally in the database, and lets the web app show a local update notice.
+- Added `itemplus-update --download`, which downloads the matching server binary for the current platform into a local `updates/` folder and stores the downloaded build, asset name, and path in the database without replacing or restarting anything automatically.
+- Removed the planned `--run` mode before release; item+ deliberately does not self-replace its running server binary. Administrators remain responsible for stopping the service, copying the downloaded binary into place, and starting item+ again.
+- Added a calm update banner in the web app with release notes, installed/available build details, dismiss handling, and a “do not show again” option stored only in the browser.
+
 ### AI update
 - Reworked the AI settings area around explicit OpenAI and Ollama profiles, including active-profile selection, per-profile prompts, clearer model/provider controls, optional Ollama API keys for cloud web search, masked stored-key indicators, and OpenAI model discovery.
 - Added an Ollama vision-capability toggle so local text-only models do not receive image payloads, while vision-capable models can still be used for photo-based item identification.

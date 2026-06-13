@@ -119,6 +119,27 @@ export interface ExternalSourcePayload {
   is_active?: boolean;
 }
 
+export interface UpdateStatus {
+  available?: boolean;
+  checked_at?: string;
+  installed_version?: string;
+  installed_build?: string;
+  latest_release_version?: string;
+  latest_release_build?: string;
+  latest_release_url?: string;
+  latest_release_asset_name?: string;
+  latest_commit?: string;
+  downloaded_at?: string;
+  downloaded_version?: string;
+  downloaded_build?: string;
+  downloaded_path?: string;
+  downloaded_asset_name?: string;
+  release_update_available?: boolean;
+  commit_update_available?: boolean;
+  status?: string;
+  error?: string;
+}
+
 export interface ExternalSourceHostKeyInfo {
   algorithm: string;
   fingerprint_sha256: string;
@@ -404,6 +425,7 @@ class Api {
 
   // -- Auth --
   health = () => this.get<{ status: string; app: string; version: string }>("/health");
+  getUpdateStatus = () => this.get<UpdateStatus>("/update-status");
   getBranding = () => this.get<BrandingSettings>("/branding");
   updateBranding = (data: BrandingSettings) => this.put<BrandingSettings>("/admin/branding", data);
   resetBranding = () => this.del<BrandingSettings>("/admin/branding");

@@ -262,6 +262,7 @@ func main() {
 		handlers.RegisterAIRoutes(api.Group("/ai"))
 		handlers.RegisterPrinterRoutes(api.Group("/print"))
 		handlers.RegisterStatsRoutes(api)
+		handlers.RegisterUpdateStatusRoutes(api)
 		handlers.RegisterAdminRoutes(api.Group("/admin"))
 	}
 

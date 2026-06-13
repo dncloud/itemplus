@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import SearchDialog from "@/components/search-dialog";
+import { api, type UpdateStatus } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { AppShellContainer, AppShellFooter, AppShellHeader, AppShellLoading, AppSidebarOverlay } from "@/app/(app)/app-shell";
 import { AppSidebar } from "@/app/(app)/app-sidebar";
@@ -22,10 +23,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [badges, setBadges] = useState<Record<string, number>>({});
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
 
   const loadBadges = useCallback(async () => {
     setBadges(await loadAppBadges(can));
   }, [can]);
+
+  const loadUpdateStatus = useCallback(async () => {
+    try {
+      setUpdateStatus(await api.getUpdateStatus());
+    } catch {
+      setUpdateStatus(null);
+    }
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -55,6 +65,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (!ready) return;
     void Promise.resolve().then(loadBadges);
   }, [ready, loadBadges]);
+
+  useEffect(() => {
+    if (!ready) return;
+    void Promise.resolve().then(loadUpdateStatus);
+    const interval = setInterval(loadUpdateStatus, 60000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadUpdateStatus();
+      }
+    };
+    window.addEventListener("focus", loadUpdateStatus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", loadUpdateStatus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [ready, loadUpdateStatus]);
 
   useEffect(() => {
     if (!ready) return;
@@ -109,6 +137,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         onOpenSidebar={() => setSidebarOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
         onLogout={logoutAppSession}
+        updateStatus={updateStatus}
       />
 
       <main id="page-content" className="flex max-w-full flex-auto flex-col">

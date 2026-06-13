@@ -108,6 +108,16 @@ const en: Dict = {
     settings: "Settings",
     logout: "Sign out",
   },
+  update: {
+    available: "Update available",
+    installed: "Installed: {version}",
+    latest: "Available: {version}",
+    downloaded: "Update downloaded",
+    downloadedHint: "Stop the server, copy the new binary into place, then start item+ again. Have fun.",
+    releaseNotes: "Release notes",
+    dismiss: "Later",
+    never: "Do not show again",
+  },
   realm: {
     archive: "Archive",
     collection: "Collection",
@@ -1044,6 +1054,16 @@ const de: Dict = {
     users: "Benutzer",
     settings: "Einstellungen",
     logout: "Abmelden",
+  },
+  update: {
+    available: "Update verfügbar",
+    installed: "Installiert: {version}",
+    latest: "Verfügbar: {version}",
+    downloaded: "Update heruntergeladen",
+    downloadedHint: "Stoppe den Server, kopiere die neue Binary an die richtige Stelle und starte item+ wieder. Have fun.",
+    releaseNotes: "Release Notes",
+    dismiss: "Später",
+    never: "Nicht mehr anzeigen",
   },
   realm: {
     archive: "Archiv",

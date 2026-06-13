@@ -13,6 +13,8 @@ APP_VERSION="1.2.6"
 APP_BUILD="dev"
 SERVER_BASENAME="itemplus-server"
 SERVER_LOCAL_NAME="itemplus-server"
+UPDATER_BASENAME="itemplus-update"
+UPDATER_LOCAL_NAME="itemplus-update"
 
 if [ -f "$ROOT_DIR/VERSION" ]; then
   # shellcheck disable=SC1090
@@ -136,7 +138,7 @@ echo ""
 cd "$SCRIPT_DIR"
 
 if [ "$BUILD_ALL" = true ]; then
-  echo "[3/3] Building server for all platforms..."
+  echo "[3/3] Building server and updater for all platforms..."
   mkdir -p "$DIST_DIR"
   mkdir -p "$DIST_DIR/data"
 
@@ -158,6 +160,10 @@ if [ "$BUILD_ALL" = true ]; then
     CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -ldflags="-s -w ${GO_VERSION_LDFLAGS}" -o "$DIST_DIR/$name" .
     SERVER_SIZE=$(du -sh "$DIST_DIR/$name" | cut -f1)
     echo "        $name ($SERVER_SIZE)"
+    updater_name="${name/$SERVER_BASENAME/$UPDATER_BASENAME}"
+    CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -ldflags="-s -w ${GO_VERSION_LDFLAGS}" -o "$DIST_DIR/$updater_name" ./cmd/itemplus-update
+    UPDATER_SIZE=$(du -sh "$DIST_DIR/$updater_name" | cut -f1)
+    echo "        $updater_name ($UPDATER_SIZE)"
   done
 
   echo ""
@@ -172,6 +178,9 @@ else
   CGO_ENABLED=0 go build -ldflags="-s -w ${GO_VERSION_LDFLAGS}" -o "$DIST_DIR/$SERVER_LOCAL_NAME" .
   SERVER_SIZE=$(du -sh "$DIST_DIR/$SERVER_LOCAL_NAME" | cut -f1)
   echo "      Binary: $DIST_DIR/$SERVER_LOCAL_NAME ($SERVER_SIZE)"
+  CGO_ENABLED=0 go build -ldflags="-s -w ${GO_VERSION_LDFLAGS}" -o "$DIST_DIR/$UPDATER_LOCAL_NAME" ./cmd/itemplus-update
+  UPDATER_SIZE=$(du -sh "$DIST_DIR/$UPDATER_LOCAL_NAME" | cut -f1)
+  echo "      Updater: $DIST_DIR/$UPDATER_LOCAL_NAME ($UPDATER_SIZE)"
 
   echo ""
   echo "=== Done! ==="
