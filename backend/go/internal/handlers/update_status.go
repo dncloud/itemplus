@@ -37,6 +37,7 @@ func getUpdateStatus(c *gin.Context) {
 		"checked_at":                status.CheckedAt,
 		"installed_version":         status.InstalledVersion,
 		"installed_build":           status.InstalledBuild,
+		"installed_source":          status.InstalledSource,
 		"latest_release_version":    status.LatestReleaseVersion,
 		"latest_release_build":      status.LatestReleaseBuild,
 		"latest_release_url":        status.LatestReleaseURL,

@@ -56,11 +56,16 @@ func main() {
 	uploadFlag := flag.String("upload", "", "Upload directory override (absolute or relative to itemplus.conf)")
 	logsFlag := flag.String("logs", "", "Log directory override (absolute or relative to itemplus.conf)")
 	noWebapp := flag.Bool("no-webapp", false, "API-only mode (don't start embedded WebApp)")
+	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
 	config.SetConfigPath(*configFlag)
 	config.Load()
 	applyCLIOverrides(*bindFlag, *portFlag, *databaseFlag, *uploadFlag, *logsFlag)
+	if *versionFlag {
+		fmt.Println(config.C.AppVersion)
+		return
+	}
 
 	if config.C.SetupRequired {
 		fmt.Print(banner)

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -26,6 +27,7 @@ func main() {
 	configFlag := flag.String("config", "", "Config file path (default: auto-discover itemplus.conf)")
 	databaseFlag := flag.String("database", "", "Database URL override")
 	outputFlag := flag.String("output", "", "Download directory (default: updates next to itemplus.conf)")
+	serverFlag := flag.String("server", "", "Installed itemplus-server binary path (default: auto-detect next to itemplus-update)")
 	repoFlag := flag.String("repo", "dncloud/itemplus", "GitHub repository to check")
 	timeoutFlag := flag.Duration("timeout", 20*time.Second, "Network timeout for GitHub requests")
 	flag.Parse()
@@ -47,8 +49,12 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeoutFlag)
 	defer cancel()
 	client := &http.Client{Timeout: *timeoutFlag}
+	installedDisplay, installedSource := installedServerVersion(ctx, *serverFlag)
 
-	status, err := services.CheckForUpdates(ctx, *repoFlag, client)
+	status, err := services.CheckForUpdatesForVersion(ctx, *repoFlag, client, installedDisplay)
+	if status != nil {
+		status.InstalledSource = installedSource
+	}
 	if status != nil && !*downloadFlag {
 		preserveDownloadedStatus(status)
 	}
@@ -173,6 +179,9 @@ func defaultDownloadDir() string {
 
 func printStatus(status services.UpdateStatus) {
 	fmt.Printf("Database: %s\n", database.CurrentConnectionSummary())
+	if status.InstalledSource != "" {
+		fmt.Printf("Installed source: %s\n", status.InstalledSource)
+	}
 	fmt.Printf("Installed: %s", status.InstalledVersion)
 	if status.InstalledBuild != "" {
 		fmt.Printf(" build %s", status.InstalledBuild)
@@ -204,4 +213,51 @@ func printStatus(status services.UpdateStatus) {
 		return
 	}
 	fmt.Println("No update available.")
+}
+
+func installedServerVersion(ctx context.Context, explicitPath string) (string, string) {
+	for _, candidate := range serverBinaryCandidates(explicitPath) {
+		output, err := exec.CommandContext(ctx, candidate, "--version").CombinedOutput()
+		if err != nil {
+			continue
+		}
+		version := strings.TrimSpace(string(output))
+		if version == "" {
+			continue
+		}
+		return strings.Split(version, "\n")[0], candidate
+	}
+	return config.C.AppVersion, "itemplus-update"
+}
+
+func serverBinaryCandidates(explicitPath string) []string {
+	seen := map[string]bool{}
+	var candidates []string
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" || seen[path] {
+			return
+		}
+		seen[path] = true
+		candidates = append(candidates, path)
+	}
+	add(explicitPath)
+	executable, _ := os.Executable()
+	execDir := filepath.Dir(executable)
+	execBase := filepath.Base(executable)
+	if strings.Contains(execBase, "itemplus-update") {
+		add(filepath.Join(execDir, strings.Replace(execBase, "itemplus-update", "itemplus-server", 1)))
+	}
+	add(filepath.Join(execDir, serverBinaryName()))
+	if cwd, err := os.Getwd(); err == nil {
+		add(filepath.Join(cwd, serverBinaryName()))
+	}
+	return candidates
+}
+
+func serverBinaryName() string {
+	if runtime.GOOS == "windows" {
+		return "itemplus-server.exe"
+	}
+	return "itemplus-server"
 }

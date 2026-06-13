@@ -20,6 +20,7 @@ type UpdateStatus struct {
 	CheckedAt              string `json:"checked_at"`
 	InstalledVersion       string `json:"installed_version"`
 	InstalledBuild         string `json:"installed_build"`
+	InstalledSource        string `json:"installed_source,omitempty"`
 	LatestReleaseVersion   string `json:"latest_release_version,omitempty"`
 	LatestReleaseBuild     string `json:"latest_release_build,omitempty"`
 	LatestReleaseURL       string `json:"latest_release_url,omitempty"`
@@ -70,6 +71,10 @@ type GitHubCommit struct {
 }
 
 func CheckForUpdates(ctx context.Context, repo string, client *http.Client) (*UpdateStatus, error) {
+	return CheckForUpdatesForVersion(ctx, repo, client, config.C.AppVersion)
+}
+
+func CheckForUpdatesForVersion(ctx context.Context, repo string, client *http.Client, installedDisplay string) (*UpdateStatus, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
@@ -77,7 +82,7 @@ func CheckForUpdates(ctx context.Context, repo string, client *http.Client) (*Up
 		repo = "dncloud/itemplus"
 	}
 
-	installedVersion, installedBuild := SplitVersionDisplay(config.C.AppVersion)
+	installedVersion, installedBuild := SplitVersionDisplay(installedDisplay)
 	status := UpdateStatus{
 		CheckedAt:        time.Now().UTC().Format(time.RFC3339),
 		InstalledVersion: installedVersion,

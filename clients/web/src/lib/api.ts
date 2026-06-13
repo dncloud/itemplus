@@ -124,6 +124,7 @@ export interface UpdateStatus {
   checked_at?: string;
   installed_version?: string;
   installed_build?: string;
+  installed_source?: string;
   latest_release_version?: string;
   latest_release_build?: string;
   latest_release_url?: string;
