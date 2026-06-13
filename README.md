@@ -6,266 +6,259 @@
 
 Open-source inventory and collection management for private households, collectors, and anyone who wants to keep track of their things without warehouse software, SaaS overhead, or ERP bloat.
 
-item+ helps you keep track of what you own, where it lives, and who currently has it. It is built for people who want something more flexible than a notes app or spreadsheet, but much simpler than business software.
+item+ helps you track what you own, where it lives, who currently has it, what has been lent out, and the details that matter for your own setup.
 
-## What item+ is good at
+## Why item+
 
-- Catalog everyday items, gear, and collections in one app
-- Keep archive-style inventory and collectible items separate, but consistent
-- Create your own categories, locations, and custom properties instead of squeezing everything into a fixed schema
-- Define item details the way they actually make sense for you, from dimensions and condition to ratings, priorities, or collector-specific fields
-- Track value, notes, attachments, and where things are stored
-- Manage lending and returns in a simple way
-- Use QR labels, cross-device workflows, and optional thermal printing when you want them
+- Keep everyday stock and personal collections in one place
+- Build your own categories, properties, locations, and workflows
+- Lend items out, track active checkouts, and see what needs to come back
+- Track quantities, values, notes, photos, documents, and external attachments
+- See what is available, what is checked out, and what needs attention
+- Print QR labels and use cross-device workflows when they help
+- Use optional AI assistance without giving the app automatic outbound update checks or background telemetry
+
+item+ is intentionally flexible. A box of screws, a camera collection, 3D printer filament, event equipment, game media, tools, documents, spare parts, and collectibles can all live in the same system without being forced into one fixed schema.
+
+## Highlights
+
+### Flexible inventory
+
+- Two realms: **Archive** for stock-like items and **Collection** for value-oriented objects
+- Custom categories, nested locations, vendors, suppliers, and manufacturers
+- Dynamic properties such as text, number, date, select, multiselect, condition, rating, dimensions, weight, priority, and more
+- Optional count fields for select values, for example `Medium = CD-ROM` plus `Count = 2`
+- Bundles and related items for kits, sets, and grouped equipment
+
+### Lending and accountability
+
+- Track active checkouts, due dates, returns, and overdue items
+- Keep item history and audit-style context
+- Permission-aware user management with admin-only areas
+- iPhone-assisted confirmation flows for sensitive actions when configured
+
+### Attachments and media
+
+- Upload photos and documents per item
+- Store external links
+- Use managed SFTP attachment sources through the backend
+- Stream SFTP-backed video attachments with browser seeking support
+
+### QR labels and devices
+
+- Print QR labels with TSC-compatible thermal printers
+- Scan locations and items
+- Use the iPhone companion app for camera, QR login, photo bridge, barcode handoff, and confirmation flows
+
+The iPhone companion app will be available through the App Store after Apple's review. If you would like TestFlight access before then, feel free to get in touch.
+
+### Optional AI assistant
+
+item+ includes optional AI workflows under the assistant name **Ina**.
+
+- OpenAI and Ollama profiles
+- Per-profile prompts
+- Local Ollama support
+- Optional Ollama cloud web search key
+- Vision toggle for local models that can understand images
+- Chat page for testing the active profile
+- AI usage statistics for requests, tokens, provider, model, and web activity
+- Read-only inventory context for safer assistant answers
+
+AI is opt-in. Configure it only when you want to use it.
 
 ## Screenshots
-
-### First Look
 
 | Login | Dashboard |
 | --- | --- |
 | ![Login](docs/screenshots/01-login-dark.png) | ![Dashboard](docs/screenshots/02-dashboard-dark.png) |
 
-### Items and Details
-
-| Items Grid | Item Detail A |
+| Items | Item detail |
 | --- | --- |
-| ![Items grid](docs/screenshots/03-items-grid-dark.png) | ![Item detail A](docs/screenshots/04-item-detail-dark-a.png) |
+| ![Items grid](docs/screenshots/03-items-grid-dark.png) | ![Item detail](docs/screenshots/04-item-detail-dark-a.png) |
 
-| Item Detail B | Categories |
+| Categories | Locations |
 | --- | --- |
-| ![Item detail B](docs/screenshots/05-item-detail-dark-b.png) | ![Categories](docs/screenshots/06-categories-dark.png) |
+| ![Categories](docs/screenshots/06-categories-dark.png) | ![Locations](docs/screenshots/07-locations-dark.png) |
 
-### Structure and Settings
-
-| Locations | Vendors |
+| Vendors | Settings |
 | --- | --- |
-| ![Locations](docs/screenshots/07-locations-dark.png) | ![Vendors](docs/screenshots/08-vendor-dark.png) |
-
-| Settings |
-| --- |
-| ![Settings](docs/screenshots/09-settings-dark.png) |
-
-## Repository Layout
-
-| Path | Purpose |
-| --- | --- |
-| `backend/go` | Main backend for everyday use, local installs, and packaged builds |
-| `clients/web` | Main web interface |
-
-The active backend on `main` is Go.
-
-- Use `backend/go` for local installs, packaged builds, and deployment.
-- Use `clients/web` as the main UI.
-
-The iOS client is no longer shipped in this public repository.
+| ![Vendors](docs/screenshots/08-vendor-dark.png) | ![Settings](docs/screenshots/09-settings-dark.png) |
 
 ## Quick Start
 
-### Just run the binaries
+### Download a release
 
-If you do not want to set up Go, Node.js, or Xcode, use a release build.
-
-```bash
-./itemplus-server
-```
-
-That starts the backend and the embedded web app together.
-
-On first start, item+ creates a local `itemplus.conf` automatically from `config/itemplus.conf`.
-
-If you want to use the server without the embedded web app, for example while running the web client separately in development:
+The easiest way to run item+ is the single server binary from the latest release.
 
 ```bash
-./itemplus-server --no-webapp
+./itemplus-server-linux-amd64
 ```
 
-You can also override bind address and port:
+On first start, item+ creates a local `itemplus.conf` from the default template. The server runs the API and embedded web app together.
+
+Useful flags:
 
 ```bash
-./itemplus-server --bind 0.0.0.0 --port 17117
+./itemplus-server-linux-amd64 --bind 0.0.0.0 --port 17117
+./itemplus-server-linux-amd64 --config /opt/itemplus/itemplus.conf
+./itemplus-server-linux-amd64 --database sqlite+aiosqlite:////opt/itemplus/data/itemplus.db
+./itemplus-server-linux-amd64 --upload /opt/itemplus/uploads
+./itemplus-server-linux-amd64 --logs /opt/itemplus/logs
+./itemplus-server-linux-amd64 --no-webapp
+./itemplus-server-linux-amd64 --version
 ```
 
-Or point item+ to an explicit config file:
+Open the web app in your browser at the configured host and port.
 
-```bash
-./itemplus-server --config /etc/itemplus/itemplus.conf
+### Typical Linux layout
+
+item+ does not ship a system installer. Keep the layout explicit and understandable for your own host.
+
+Example:
+
+```text
+/opt/itemplus/
+├── itemplus-server-linux-amd64
+├── itemplus-update-linux-amd64
+├── itemplus.conf
+├── data/
+├── uploads/
+├── logs/
+└── updates/
 ```
 
-You can also move uploads to a separate absolute storage path:
-
-```bash
-./itemplus-server --upload /opt/bigstorage/itemplus/uploads
-```
-
-Or override the database path directly at startup:
-
-```bash
-./itemplus-server --database sqlite+aiosqlite:///./data/itemplus.db
-```
-
-You can also move log files somewhere else:
-
-```bash
-./itemplus-server --logs ./logs
-```
-
-On Windows, the same flags work with Windows paths, for example:
-
-```bash
-itemplus-server.exe --upload "D:\\itemplus\\uploads"
-itemplus-server.exe --database "sqlite+aiosqlite:///D:/itemplus/data/itemplus.db"
-itemplus-server.exe --logs "D:\\itemplus\\logs"
-```
-
-If item+ runs behind a reverse proxy you control, you can also allow trusted
-forwarded headers explicitly:
-
-```bash
-./itemplus-server --config /etc/itemplus/itemplus.conf
-```
-
-and then in `itemplus.conf`:
-
-```conf
-TRUSTED_PROXIES=127.0.0.1,::1
-```
-
-Leave `TRUSTED_PROXIES` empty when item+ is reachable directly. In that case,
-item+ ignores forwarded client IP and protocol headers on purpose.
-
-### Recommended: Go backend + web app
-
-```bash
-git clone https://github.com/dncloud/itemplus.git
-cd itemplus/backend/go
-go run . --bind 0.0.0.0 --port 17117
-```
-
-In a second terminal:
-
-```bash
-cd itemplus/clients/web
-npm install
-npm run dev
-```
-
-Open the web app at `http://127.0.0.1:3000`.
-
-### Linux service
-
-For a small Linux server or NAS, the usual production path is to download or build
-`itemplus-server`, place it on the host, and run it behind nginx or Caddy.
-
-item+ does not ship an installer or systemd unit. Linux service setup depends on
-the distribution, filesystem layout, reverse proxy, backup strategy, and database
-choice. If you use systemd, create your own unit and config file for your host.
-
-A typical manual layout might be:
-
-- binary: `/usr/local/bin/itemplus-server`
-- config: `/etc/itemplus/itemplus.conf`
-- data directory: `/var/lib/itemplus`
-- uploads: `/var/lib/itemplus/uploads`
-- logs: `/var/lib/itemplus/logs`
-
-A minimal systemd `ExecStart` can look like this:
+A minimal systemd command can point at the config:
 
 ```ini
-ExecStart=/usr/local/bin/itemplus-server --config /etc/itemplus/itemplus.conf
+ExecStart=/opt/itemplus/itemplus-server-linux-amd64 --config /opt/itemplus/itemplus.conf
 ```
 
-Then adjust `/etc/itemplus/itemplus.conf` for your domain, CORS, SMTP, database,
-upload path, logs, and printer settings. Use `127.0.0.1` as the bind host when
-the app sits behind a reverse proxy, or bind to `0.0.0.0` only when you
-understand the network exposure.
+Use a reverse proxy such as nginx or Caddy if you expose item+ publicly.
 
-Useful systemd commands, if you choose that setup:
+## Updates
+
+item+ does not check the internet for updates by itself. The running server only reads local state.
+
+Use the separate updater binary when you explicitly want to check releases:
 
 ```bash
-systemctl status itemplus
-journalctl -u itemplus -f
-systemctl restart itemplus
+./itemplus-update-linux-amd64 --check --config /opt/itemplus/itemplus.conf
 ```
 
-### Web client only
+To download the matching server binary without installing it:
 
 ```bash
-cd itemplus/clients/web
-npm install
-npm run dev
+./itemplus-update-linux-amd64 --download --config /opt/itemplus/itemplus.conf
 ```
 
-The web client runs on `http://127.0.0.1:3000` and expects a backend on port `17117`.
+The updater writes the result into the local database. The web app can then show an update banner. It does **not** replace the running server.
+
+Manual update flow:
+
+1. Run `itemplus-update --check`
+2. Run `itemplus-update --download`
+3. Stop item+
+4. Replace the old server binary with the downloaded one
+5. Start item+ again
+
+That is intentional. You stay in control of service restarts, backups, permissions, and rollback.
 
 ## Configuration
 
-The Go backend creates a local `itemplus.conf` automatically on first start from `config/itemplus.conf`.
+The default config template lives in [config/itemplus.conf](config/itemplus.conf).
 
-Settings you will usually want to review:
+Settings you will usually review:
 
 - `APP_DOMAIN`
 - `CORS_ORIGINS`
 - `TRUSTED_PROXIES`
 - SMTP settings for magic-link login
+- `DATABASE_URL`
 - `UPLOAD_DIR`
+- `LOG_DIR`
+- AI provider settings, if you want Ina
 
-### Trusted reverse proxies
+### Reverse proxies
 
-By default, item+ does **not** trust any reverse proxy headers.
+By default, item+ does not trust forwarded proxy headers. This is safer for self-hosted installs.
 
-That means:
-
-- `X-Forwarded-For` is ignored unless you explicitly allow a proxy
-- `X-Forwarded-Proto` is ignored unless you explicitly allow a proxy
-- localhost-only setup mode and IP-based rate limits use the direct remote
-  address by default
-
-This is the safer default for self-hosted installs, especially when people bind
-item+ to `0.0.0.0` without nginx or Caddy in front of it.
-
-Only set `TRUSTED_PROXIES` when item+ really runs behind a reverse proxy that
-you control.
-
-Examples:
+Only set `TRUSTED_PROXIES` when item+ is behind a reverse proxy you control.
 
 ```conf
-# Local nginx / Caddy on the same machine
 TRUSTED_PROXIES=127.0.0.1,::1
-
-# Internal reverse proxy networks
-TRUSTED_PROXIES=10.0.0.0/8,192.168.0.0/16
 ```
 
-If you are unsure, leave it empty.
+Leave it empty when item+ is directly reachable.
 
-### External attachments
+### External storage
 
-Normal external attachment links are limited to `http://` and `https://`.
+Normal external attachment links support `http://` and `https://`.
 
-For non-HTTP storage such as SFTP, the recommended direction is not direct
-client links, but a backend proxy flow:
+For SFTP and similar storage, item+ uses a backend-mediated flow:
 
-`client <-> item+ <-> SFTP`
+```text
+browser <-> item+ <-> SFTP
+```
 
-That design keeps authentication, access control, logging, and future caching
-inside item+ instead of exposing storage credentials or raw server paths to the
-client.
+That keeps credentials and access control on the server side.
 
-See also: [docs/sftp-external-storage.md](/Users/oli/Desktop/itemplus/docs/sftp-external-storage.md)
+## Development
 
-## Current State
+### Backend
 
-item+ is already usable, but it is still evolving.
+```bash
+cd backend/go
+go run . --bind 0.0.0.0 --port 17117
+```
 
-The core workflows are there, the apps work, and the project is actively being refined. Some areas, especially public-facing docs, curated demo content, and packaging details, are still being cleaned up.
+### Web app
+
+```bash
+cd clients/web
+npm install
+npm run dev
+```
+
+The development web app runs on `http://127.0.0.1:3000` and expects the backend on port `17117`.
+
+### Build
+
+Build the server with embedded web app:
+
+```bash
+cd backend/go
+bash build.sh
+```
+
+Build all release binaries:
+
+```bash
+cd backend/go
+bash build.sh --all
+```
+
+## Repository Layout
+
+```text
+backend/go     Go backend and release build scripts
+clients/web    Next.js web application
+config         Default configuration template
+docs           Public docs and screenshots
+```
+
+Private release automation stays outside this public repository.
+
+## Project State
+
+item+ is usable and actively developed. The current focus is making the self-hosted experience smoother, improving the AI-assisted workflows, and keeping the public packaging easy to understand.
+
+Expect occasional changes while the project settles into a clean long-term shape.
 
 ## Support
 
-item+ stays free. Good software does not always have to cost money, even when building it takes real work. If the project helps you, you can support it voluntarily via [GitHub Sponsors](https://github.com/sponsors/dncloud).
-
-item+ bleibt kostenlos. Gute Software muss nicht immer etwas kosten, auch wenn ihre Entwicklung echte Arbeit ist. Wenn dir das Projekt hilft, kannst du es freiwillig ueber [GitHub Sponsors](https://github.com/sponsors/dncloud) unterstuetzen.
+item+ is free and open source. If it helps you, you can support development voluntarily through [GitHub Sponsors](https://github.com/sponsors/dncloud).
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
+item+ is licensed under the [MIT License](LICENSE).
