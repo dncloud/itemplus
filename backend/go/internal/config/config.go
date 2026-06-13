@@ -66,6 +66,13 @@ var cliConfigPath string
 
 const sqlitePrefix = "sqlite+aiosqlite:///"
 
+func BuildVersion() string {
+	if strings.TrimSpace(defaultAppBuild) == "" || defaultAppBuild == "dev" {
+		return defaultAppVersion
+	}
+	return defaultAppVersion + " build " + defaultAppBuild
+}
+
 var managedConfigEnvKeys = []string{
 	"APP_NAME",
 	"APP_VERSION",

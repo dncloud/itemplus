@@ -59,13 +59,14 @@ func main() {
 	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
+	if *versionFlag {
+		fmt.Println(config.BuildVersion())
+		return
+	}
+
 	config.SetConfigPath(*configFlag)
 	config.Load()
 	applyCLIOverrides(*bindFlag, *portFlag, *databaseFlag, *uploadFlag, *logsFlag)
-	if *versionFlag {
-		fmt.Println(config.C.AppVersion)
-		return
-	}
 
 	if config.C.SetupRequired {
 		fmt.Print(banner)
