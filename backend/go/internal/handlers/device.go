@@ -24,15 +24,25 @@ func listDeviceSessions(c *gin.Context, query string, args ...interface{}) {
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
-	defer rows.Close()
 
 	var result []map[string]interface{}
+	var staleSessionIDs []int
 	for rows.Next() {
 		row := map[string]interface{}{}
 		if rows.MapScan(row) == nil {
 			cleanRow(row)
-			reconcileSessionRow(row)
+			if sessionID, changed := reconcileSessionRow(row); changed {
+				staleSessionIDs = append(staleSessionIDs, sessionID)
+			}
 			result = append(result, row)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		log.Printf("DB rows close error in listDeviceSessions: %v", err)
+	}
+	for _, sessionID := range staleSessionIDs {
+		if _, err := database.DB.Exec("UPDATE device_sessions SET is_online = 0 WHERE id = ?", sessionID); err != nil {
+			log.Printf("DB session reconcile error: %v", err)
 		}
 	}
 	if result == nil {
@@ -41,22 +51,20 @@ func listDeviceSessions(c *gin.Context, query string, args ...interface{}) {
 	c.JSON(http.StatusOK, result)
 }
 
-func reconcileSessionRow(row map[string]interface{}) {
+func reconcileSessionRow(row map[string]interface{}) (int, bool) {
 	sessionID, ok := rowInt(row["id"])
 	if !ok {
-		return
+		return 0, false
 	}
 	isOnline, ok := rowBool(row["is_online"])
 	if !ok || !isOnline {
-		return
+		return 0, false
 	}
 	if ws.M.HasSession(sessionID) {
-		return
+		return 0, false
 	}
 	row["is_online"] = false
-	if _, err := database.DB.Exec("UPDATE device_sessions SET is_online = 0 WHERE id = ?", sessionID); err != nil {
-		log.Printf("DB session reconcile error: %v", err)
-	}
+	return sessionID, true
 }
 
 func rowInt(v interface{}) (int, bool) {

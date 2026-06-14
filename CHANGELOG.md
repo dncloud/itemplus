@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.7 - 2026-06-14
+
+### SQLite reliability
+- Fixed SQLite `database is locked` errors during device-session reconciliation by closing the session query before stale sessions are marked offline.
+- Configured SQLite with a single database connection, WAL mode, normal synchronous mode, a longer busy timeout, and foreign-key enforcement while leaving MySQL/MariaDB behavior unchanged.
+
 ## 1.2.6 - 2026-06-12
 
 ### Manual updater

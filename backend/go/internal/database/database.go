@@ -85,12 +85,25 @@ func OpenPrepared(url string) (*sqlx.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	configureConnectionPool(db, driver)
 
 	if err := createTables(db, driver); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	return db, nil
+}
+
+func configureConnectionPool(db *sqlx.DB, driver string) {
+	if driver != "sqlite" {
+		return
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	_, _ = db.Exec("PRAGMA journal_mode=WAL")
+	_, _ = db.Exec("PRAGMA synchronous=NORMAL")
+	_, _ = db.Exec("PRAGMA busy_timeout=10000")
+	_, _ = db.Exec("PRAGMA foreign_keys=ON")
 }
 
 const mysqlDateTimeLayout = "2006-01-02 15:04:05"
