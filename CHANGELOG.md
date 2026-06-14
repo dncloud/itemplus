@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.9 - 2026-06-14
+
+### Update banner
+- Fixed stale update banners after replacing the server binary by normalizing the stored update-check result against the currently running item+ version before the web app renders it.
+- Changed the `Later` / `Später` action to hide the banner only for the current browser session instead of storing a long-lived dismissal in local storage.
+- Removed the special downloaded-update banner state so downloaded updates continue to use the normal update notice wording.
+
 ## 1.2.8 - 2026-06-14
 
 ### Update banner

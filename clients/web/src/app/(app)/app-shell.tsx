@@ -54,7 +54,7 @@ export function AppShellHeader({
   onLogout: () => Promise<void>;
   updateStatus: UpdateStatus | null;
 }) {
-  const [dismissedUpdateKey, setDismissedUpdateKey] = useState(() => readLocalStorage(UPDATE_BANNER_DISMISSED_KEY));
+  const [dismissedUpdateKey, setDismissedUpdateKey] = useState(() => readSessionStorage(UPDATE_BANNER_DISMISSED_KEY));
   const [ignoredUpdateKey, setIgnoredUpdateKey] = useState(() => readLocalStorage(UPDATE_BANNER_IGNORED_KEY));
   const updateAvailable = !!updateStatus && (updateStatus.available || updateStatus.release_update_available || updateStatus.commit_update_available);
   const installed = updateStatus?.installed_version
@@ -64,13 +64,12 @@ export function AppShellHeader({
     ? `${updateStatus.latest_release_version}${updateStatus.latest_release_build ? ` build ${updateStatus.latest_release_build}` : ""}`
     : "";
   const latest = latestRelease || updateStatus?.latest_commit || "";
-  const downloadedReady = !!updateStatus?.downloaded_path && !!updateStatus.latest_release_build && updateStatus.downloaded_build === updateStatus.latest_release_build;
-  const updateKey = `${installed}|${latest}|${updateStatus?.downloaded_build ?? ""}|${updateStatus?.downloaded_path ?? ""}`;
+  const updateKey = `${installed}|${latest}`;
   const showUpdateBanner = updateAvailable && ignoredUpdateKey !== updateKey && dismissedUpdateKey !== updateKey;
 
   const dismissUpdateBanner = () => {
     setDismissedUpdateKey(updateKey);
-    writeLocalStorage(UPDATE_BANNER_DISMISSED_KEY, updateKey);
+    writeSessionStorage(UPDATE_BANNER_DISMISSED_KEY, updateKey);
   };
 
   const ignoreUpdateBanner = () => {
@@ -84,10 +83,9 @@ export function AppShellHeader({
         <div className="border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-950 dark:border-blue-500/30 dark:bg-[#0f2137] dark:text-blue-100 sm:px-6 lg:px-8">
           <div className="mx-auto flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="min-w-0 font-medium">
-              {downloadedReady ? t("update.downloaded") : t("update.available")}
+              {t("update.available")}
               {latest ? <span className="ml-2 font-normal opacity-90">{latest}</span> : null}
               {installed ? <span className="ml-2 text-xs font-normal opacity-70">{t("update.installed", { version: installed })}</span> : null}
-              {downloadedReady ? <span className="block text-xs font-normal opacity-80 sm:inline sm:ml-2">{t("update.downloadedHint")}</span> : null}
             </p>
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {updateStatus?.latest_release_url ? (
@@ -199,6 +197,16 @@ function readLocalStorage(key: string) {
 function writeLocalStorage(key: string, value: string) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(key, value);
+}
+
+function readSessionStorage(key: string) {
+  if (typeof window === "undefined") return "";
+  return window.sessionStorage.getItem(key) ?? "";
+}
+
+function writeSessionStorage(key: string, value: string) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(key, value);
 }
 
 function ConnectionStatusIcon({

@@ -247,6 +247,10 @@ func sameCommit(left, right string) bool {
 	return strings.HasPrefix(left, right) || strings.HasPrefix(right, left)
 }
 
+func SameCommit(left, right string) bool {
+	return sameCommit(left, right)
+}
+
 var versionPartPattern = regexp.MustCompile(`\d+`)
 
 func compareVersions(left, right string) int {
@@ -273,4 +277,8 @@ func compareVersions(left, right string) int {
 		}
 	}
 	return 0
+}
+
+func CompareVersions(left, right string) int {
+	return compareVersions(left, right)
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/itemplus/backend/internal/config"
 	"github.com/itemplus/backend/internal/database"
 	"github.com/itemplus/backend/internal/middleware"
 	"github.com/itemplus/backend/internal/services"
@@ -32,6 +33,7 @@ func getUpdateStatus(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"available": false})
 		return
 	}
+	normalizeUpdateStatusForRunningServer(&status)
 	c.JSON(http.StatusOK, gin.H{
 		"available":                 status.ReleaseUpdateAvailable || status.CommitUpdateAvailable,
 		"checked_at":                status.CheckedAt,
@@ -53,4 +55,34 @@ func getUpdateStatus(c *gin.Context) {
 		"status":                    status.Status,
 		"error":                     status.Error,
 	})
+}
+
+func normalizeUpdateStatusForRunningServer(status *services.UpdateStatus) {
+	runningVersion, runningBuild := services.SplitVersionDisplay(config.C.AppVersion)
+	if runningVersion == "" {
+		return
+	}
+	status.InstalledVersion = runningVersion
+	status.InstalledBuild = runningBuild
+	status.InstalledSource = "running server"
+
+	releaseUpdate := false
+	if status.LatestReleaseVersion != "" {
+		releaseUpdate = services.CompareVersions(status.LatestReleaseVersion, runningVersion) > 0
+	}
+
+	commitUpdate := false
+	if releaseUpdate {
+		commitUpdate = true
+	} else if status.LatestReleaseVersion != "" && services.CompareVersions(status.LatestReleaseVersion, runningVersion) == 0 {
+		if status.LatestReleaseBuild != "" {
+			commitUpdate = !services.SameCommit(runningBuild, status.LatestReleaseBuild)
+		}
+		if !commitUpdate && status.LatestCommit != "" {
+			commitUpdate = !services.SameCommit(runningBuild, status.LatestCommit)
+		}
+	}
+
+	status.ReleaseUpdateAvailable = releaseUpdate
+	status.CommitUpdateAvailable = commitUpdate
 }
