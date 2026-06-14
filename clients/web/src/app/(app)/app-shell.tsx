@@ -8,7 +8,7 @@ import type { UpdateStatus } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 
 const UPDATE_BANNER_DISMISSED_KEY = "itemplus.updateBanner.dismissed";
-const UPDATE_BANNER_NEVER_KEY = "itemplus.updateBanner.never";
+const UPDATE_BANNER_IGNORED_KEY = "itemplus.updateBanner.ignored";
 
 export function AppShellLoading() {
   return (
@@ -55,8 +55,8 @@ export function AppShellHeader({
   updateStatus: UpdateStatus | null;
 }) {
   const [dismissedUpdateKey, setDismissedUpdateKey] = useState(() => readLocalStorage(UPDATE_BANNER_DISMISSED_KEY));
-  const [neverShowUpdateBanner, setNeverShowUpdateBanner] = useState(() => readLocalStorage(UPDATE_BANNER_NEVER_KEY) === "1");
-  const updateAvailable = !!updateStatus && (updateStatus.release_update_available || updateStatus.commit_update_available);
+  const [ignoredUpdateKey, setIgnoredUpdateKey] = useState(() => readLocalStorage(UPDATE_BANNER_IGNORED_KEY));
+  const updateAvailable = !!updateStatus && (updateStatus.available || updateStatus.release_update_available || updateStatus.commit_update_available);
   const installed = updateStatus?.installed_version
     ? `${updateStatus.installed_version}${updateStatus.installed_build ? ` build ${updateStatus.installed_build}` : ""}`
     : "";
@@ -66,16 +66,16 @@ export function AppShellHeader({
   const latest = latestRelease || updateStatus?.latest_commit || "";
   const downloadedReady = !!updateStatus?.downloaded_path && !!updateStatus.latest_release_build && updateStatus.downloaded_build === updateStatus.latest_release_build;
   const updateKey = `${installed}|${latest}|${updateStatus?.downloaded_build ?? ""}|${updateStatus?.downloaded_path ?? ""}`;
-  const showUpdateBanner = updateAvailable && !neverShowUpdateBanner && dismissedUpdateKey !== updateKey;
+  const showUpdateBanner = updateAvailable && ignoredUpdateKey !== updateKey && dismissedUpdateKey !== updateKey;
 
   const dismissUpdateBanner = () => {
     setDismissedUpdateKey(updateKey);
     writeLocalStorage(UPDATE_BANNER_DISMISSED_KEY, updateKey);
   };
 
-  const disableUpdateBanner = () => {
-    setNeverShowUpdateBanner(true);
-    writeLocalStorage(UPDATE_BANNER_NEVER_KEY, "1");
+  const ignoreUpdateBanner = () => {
+    setIgnoredUpdateKey(updateKey);
+    writeLocalStorage(UPDATE_BANNER_IGNORED_KEY, updateKey);
   };
 
   return (
@@ -95,7 +95,7 @@ export function AppShellHeader({
                   {t("update.releaseNotes")}
                 </a>
               ) : null}
-              <button type="button" onClick={disableUpdateBanner} className="rounded-md px-2 py-1 font-medium opacity-80 transition hover:bg-blue-100 hover:opacity-100 dark:hover:bg-blue-400/10">
+              <button type="button" onClick={ignoreUpdateBanner} className="rounded-md px-2 py-1 font-medium opacity-80 transition hover:bg-blue-100 hover:opacity-100 dark:hover:bg-blue-400/10">
                 {t("update.never")}
               </button>
               <button type="button" onClick={dismissUpdateBanner} className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium opacity-80 transition hover:bg-blue-100 hover:opacity-100 dark:hover:bg-blue-400/10">

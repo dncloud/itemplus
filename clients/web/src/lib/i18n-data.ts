@@ -116,7 +116,7 @@ const en: Dict = {
     downloadedHint: "Stop the server, copy the new binary into place, then start item+ again. Have fun.",
     releaseNotes: "Release notes",
     dismiss: "Later",
-    never: "Do not show again",
+    never: "Ignore this update",
   },
   realm: {
     archive: "Archive",
@@ -1063,7 +1063,7 @@ const de: Dict = {
     downloadedHint: "Stoppe den Server, kopiere die neue Binary an die richtige Stelle und starte item+ wieder. Have fun.",
     releaseNotes: "Release Notes",
     dismiss: "Später",
-    never: "Nicht mehr anzeigen",
+    never: "Dieses Update ignorieren",
   },
   realm: {
     archive: "Archiv",

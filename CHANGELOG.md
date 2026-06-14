@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.8 - 2026-06-14
+
+### Update banner
+- Fixed the update banner dismissal behavior so ignoring an update only hides that exact installed/available version pair instead of suppressing all future update notices in the browser.
+- Made the web app treat the generic `/api/update-status` `available` flag as a valid update signal in addition to the detailed release/commit flags.
+- Renamed the permanent-looking “Do not show again” action to “Ignore this update” / “Dieses Update ignorieren” to better match the new scoped behavior.
+
 ## 1.2.7 - 2026-06-14
 
 ### SQLite reliability
