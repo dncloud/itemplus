@@ -134,11 +134,33 @@ description: Open-source inventory and collection management for households, wor
       </div>
 
       <div id="support" class="bg-gray-900 py-24 sm:py-32">
-        <div class="mx-auto max-w-4xl px-6 text-center lg:px-8">
-          <h2 class="text-4xl font-semibold tracking-tight text-white sm:text-5xl" data-copy="supportTitle">item+ stays free</h2>
-          <p class="mx-auto mt-6 max-w-3xl text-lg/8 text-gray-300" data-copy="supportBody">Good software does not always have to cost money, even when building it takes real work. If the project helps you, you can support it voluntarily.</p>
-          <div class="mt-10 flex items-center justify-center gap-x-6">
-            <a href="https://github.com/sponsors/dncloud" target="_blank" rel="noopener noreferrer" class="rounded-md bg-indigo-500 px-3.5 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-indigo-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500" data-copy="supportButton">Support via GitHub Sponsors</a>
+        <div class="mx-auto max-w-5xl px-6 lg:px-8">
+          <div class="mx-auto max-w-3xl text-center">
+            <h2 class="text-4xl font-semibold tracking-tight text-white sm:text-5xl" data-copy="supportTitle">Support for item+</h2>
+            <p class="mx-auto mt-6 max-w-3xl text-lg/8 text-gray-300" data-copy="supportBody">Questions about the iOS app, the website, self-hosted usage, or App Review can be handled through the dedicated support page.</p>
+          </div>
+          <div class="mx-auto mt-12 grid max-w-4xl grid-cols-1 gap-6 lg:grid-cols-3">
+            <article class="rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
+              <h3 class="text-base font-semibold text-white" data-copy="supportCardOneTitle">Support page</h3>
+              <p class="mt-3 text-sm/6 text-gray-300" data-copy="supportCardOneBody">Use the public support page for contact details, review notes, and the correct support channel.</p>
+              <div class="mt-5">
+                <a href="{{ '/support/' | relative_url }}" class="text-sm font-semibold text-indigo-300 hover:text-white" data-copy="supportCardOneLink">Open support page</a>
+              </div>
+            </article>
+            <article class="rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
+              <h3 class="text-base font-semibold text-white" data-copy="supportCardTwoTitle">E-mail</h3>
+              <p class="mt-3 text-sm/6 text-gray-300" data-copy="supportCardTwoBody">For direct questions about the app, review process, or public website.</p>
+              <div class="mt-5">
+                <a href="mailto:hello@itemplus.app" class="text-sm font-semibold text-indigo-300 hover:text-white">hello@itemplus.app</a>
+              </div>
+            </article>
+            <article class="rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
+              <h3 class="text-base font-semibold text-white" data-copy="supportCardThreeTitle">Open-source project</h3>
+              <p class="mt-3 text-sm/6 text-gray-300" data-copy="supportCardThreeBody">Bugs, feature requests, and technical discussion still belong in the public repository.</p>
+              <div class="mt-5">
+                <a href="https://github.com/dncloud/itemplus/issues" target="_blank" rel="noopener noreferrer" class="text-sm font-semibold text-indigo-300 hover:text-white" data-copy="supportCardThreeLink">Open issue tracker</a>
+              </div>
+            </article>
           </div>
         </div>
       </div>
@@ -150,6 +172,7 @@ description: Open-source inventory and collection management for households, wor
         navFeatures: "Features",
         navScreenshots: "Screenshots",
         navSupport: "Support",
+        footerSupport: "Support",
         footerIssues: "Issue-Tracker",
         footerGithub: "GitHub",
         footerBottom: "© 2025-2026 Oliver Cermann. item+ steht unter der MIT License.",
@@ -192,9 +215,16 @@ description: Open-source inventory and collection management for households, wor
         shotTwoBody: "Items, Orte und Kategorien bleiben lesbar, egal ob es um Vorräte, Ausrüstung oder Sammlungsstücke geht.",
         shotThreeTitle: "Settings und Infrastruktur",
         shotThreeBody: "Rechte, Druck, KI und Infrastruktur bleiben an einem Ort und wirken wie Teil desselben Systems.",
-        supportTitle: "item+ bleibt kostenlos",
-        supportBody: "Gute Software muss nicht immer etwas kosten, auch wenn ihre Entwicklung echte Arbeit ist. Wenn dir das Projekt hilft, kannst du es freiwillig unterstützen.",
-        supportButton: "Unterstützen via GitHub Sponsors",
+        supportTitle: "Support für item+",
+        supportBody: "Fragen zur iOS App, zur Website, zur selbstgehosteten Nutzung oder zum App Review lassen sich über die dedizierte Support-Seite klären.",
+        supportCardOneTitle: "Support-Seite",
+        supportCardOneBody: "Hier findest du Kontaktinfos, Hinweise für Review und den passenden Support-Weg.",
+        supportCardOneLink: "Support-Seite öffnen",
+        supportCardTwoTitle: "E-Mail",
+        supportCardTwoBody: "Für direkte Fragen zur App, zum Review-Prozess oder zur öffentlichen Website.",
+        supportCardThreeTitle: "Open-Source-Projekt",
+        supportCardThreeBody: "Bugs, Feature-Wünsche und technische Diskussionen gehören weiter ins öffentliche Repository.",
+        supportCardThreeLink: "Issue-Tracker öffnen",
         footerPrivacy: "Datenschutz",
         footerImprint: "Impressum"
       },
@@ -202,6 +232,7 @@ description: Open-source inventory and collection management for households, wor
         navFeatures: "Features",
         navScreenshots: "Screenshots",
         navSupport: "Support",
+        footerSupport: "Support",
         footerIssues: "Issue tracker",
         footerGithub: "GitHub",
         footerBottom: "© 2025-2026 Oliver Cermann. item+ is released under the MIT License.",
@@ -244,9 +275,16 @@ description: Open-source inventory and collection management for households, wor
         shotTwoBody: "Items, locations, and categories stay readable whether you track stock, shelves, gear, or collectibles.",
         shotThreeTitle: "Settings and infrastructure",
         shotThreeBody: "Permissions, printing, AI, and infrastructure settings stay in one place and still feel like part of the same product.",
-        supportTitle: "item+ stays free",
-        supportBody: "Good software does not always have to cost money, even when building it takes real work. If the project helps you, you can support it voluntarily.",
-        supportButton: "Support via GitHub Sponsors",
+        supportTitle: "Support for item+",
+        supportBody: "Questions about the iOS app, the website, self-hosted usage, or App Review can be handled through the dedicated support page.",
+        supportCardOneTitle: "Support page",
+        supportCardOneBody: "Use the public support page for contact details, review notes, and the correct support channel.",
+        supportCardOneLink: "Open support page",
+        supportCardTwoTitle: "E-mail",
+        supportCardTwoBody: "For direct questions about the app, review process, or public website.",
+        supportCardThreeTitle: "Open-source project",
+        supportCardThreeBody: "Bugs, feature requests, and technical discussion still belong in the public repository.",
+        supportCardThreeLink: "Open issue tracker",
         footerPrivacy: "Privacy",
         footerImprint: "Imprint"
       }
