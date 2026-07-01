@@ -2,10 +2,10 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import SearchDialog from "@/components/search-dialog";
+import SearchDialog from "@/components/search/dialog";
 import { api, type UpdateStatus } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import { AppShellContainer, AppShellFooter, AppShellHeader, AppShellLoading, AppSidebarOverlay } from "@/app/(app)/app-shell";
+import { AppShellContainer, AppShellFooter, AppShellHeader, AppShellLoading } from "@/app/(app)/app-shell";
 import { AppSidebar } from "@/app/(app)/app-sidebar";
 import {
   connectAppWebSocket,
@@ -26,8 +26,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
 
   const loadBadges = useCallback(async () => {
-    setBadges(await loadAppBadges(can));
-  }, [can]);
+    setBadges(await loadAppBadges(can, realm));
+  }, [can, realm]);
 
   const loadUpdateStatus = useCallback(async () => {
     try {
@@ -107,23 +107,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <AppShellContainer>
-      <AppSidebarOverlay sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-
-      <AppSidebar
-        pathname={pathname}
-        realm={realm}
-        theme={theme}
-        isAdmin={isAdmin}
-        badges={badges}
-        t={t}
-        can={can}
-        loadBadges={loadBadges}
-        setSidebarOpen={setSidebarOpen}
-        setRealm={setRealm}
-        setTheme={setTheme}
-        routerPush={(href) => router.push(href)}
-        sidebarOpen={sidebarOpen}
-      />
+      <Suspense fallback={null}>
+        <AppSidebar
+          pathname={pathname}
+          realm={realm}
+          theme={theme}
+          isAdmin={isAdmin}
+          badges={badges}
+          t={t}
+          can={can}
+          loadBadges={loadBadges}
+          setSidebarOpen={setSidebarOpen}
+          setRealm={setRealm}
+          setTheme={setTheme}
+          routerPush={(href) => router.push(href)}
+          sidebarOpen={sidebarOpen}
+          onLogout={logoutAppSession}
+        />
+      </Suspense>
 
       <AppShellHeader
         t={t}
@@ -136,7 +137,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         showPrinterStatus={showPrintFeatures && (isAdmin || can("print"))}
         onOpenSidebar={() => setSidebarOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
-        onLogout={logoutAppSession}
         updateStatus={updateStatus}
       />
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api } from "./api";
+import { api, type BrandingSettings } from "./api";
 import { translate, type Locale } from "./i18n";
 import { wsClient } from "./ws";
 import {
@@ -88,9 +88,15 @@ interface AppContextValue {
   printItemQR: (itemId: number, copies?: number) => Promise<void>;
   printLocationQR: (locationId: number, copies?: number) => Promise<void>;
   brandingLogo: string | null;
+  brandingTitle: string;
+  brandingTitleSize: number;
+  brandingTitlePosition: "right" | "below";
   brandingSubtitle: string;
   brandingFooterText: string;
   brandingWidth: number;
+  brandingLogoBackground: string;
+  brandingLogoPadding: number;
+  brandingLogoRadius: number;
   refreshBranding: () => Promise<void>;
   fmtDate: (dateStr: string | null | undefined) => string;
   fmtDateTime: (dateStr: string | null | undefined) => string;
@@ -145,9 +151,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [itemStockCriticalPercent, _setItemStockCriticalPercent] = useState(() => getStoredPercent("itemplus_item_stock_critical_percent", 15));
   const [itemsPerPage, _setItemsPerPage] = useState(getStoredItemsPerPage);
   const [brandingLogo, setBrandingLogo] = useState<string | null>(null);
+  const [brandingTitle, setBrandingTitle] = useState<string>("item+");
+  const [brandingTitleSize, setBrandingTitleSize] = useState<number>(17);
+  const [brandingTitlePosition, setBrandingTitlePosition] = useState<"right" | "below">("right");
   const [brandingSubtitle, setBrandingSubtitle] = useState<string>("");
   const [brandingFooterText, setBrandingFooterText] = useState<string>("");
-  const [brandingWidth, setBrandingWidth] = useState<number>(180);
+  const [brandingWidth, setBrandingWidth] = useState<number>(64);
+  const [brandingLogoBackground, setBrandingLogoBackground] = useState<string>("");
+  const [brandingLogoPadding, setBrandingLogoPadding] = useState<number>(0);
+  const [brandingLogoRadius, setBrandingLogoRadius] = useState<number>(6);
   const [locale, _setLocale] = useState<Locale>(getStoredLocale);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserLabel, setCurrentUserLabel] = useState("");
@@ -170,11 +182,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const applyBrandingState = useCallback((branding?: { logo?: string | null; subtitle?: string; footerText?: string; width?: number }) => {
+  const applyBrandingState = useCallback((branding?: Partial<BrandingSettings>) => {
     setBrandingLogo(branding?.logo || null);
+    setBrandingTitle((branding?.title || "").trim() || "item+");
+    setBrandingTitleSize(typeof branding?.titleSize === "number" ? branding.titleSize : 17);
+    setBrandingTitlePosition(branding?.titlePosition === "below" ? "below" : "right");
     setBrandingSubtitle(branding?.subtitle || "");
     setBrandingFooterText(branding?.footerText || "");
-    setBrandingWidth(branding?.width || 180);
+    setBrandingWidth(branding?.width || 64);
+    setBrandingLogoBackground(branding?.logoBackground || "");
+    setBrandingLogoPadding(typeof branding?.logoPadding === "number" ? branding.logoPadding : 0);
+    setBrandingLogoRadius(typeof branding?.logoRadius === "number" ? branding.logoRadius : 6);
   }, []);
 
   const refreshBranding = useCallback(async () => {
@@ -465,7 +483,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [aiAssistantPanelController]);
 
   return (
-    <AppContext.Provider value={{ iosBridgeStatus, printerBridgeStatus, aiAssistantBusy, aiAssistantPanelAvailable: aiAssistantPanelController?.available ?? false, aiAssistantPanelOpen: aiAssistantPanelController?.open ?? false, realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, currentUserLabel, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showPrintFeatures, setShowPrintFeatures, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, printItemQR, printLocationQR, brandingLogo, brandingSubtitle, brandingFooterText, brandingWidth, refreshBranding, fmtDate, fmtDateTime, t, setAiAssistantBusy, setAiAssistantPanelController, toggleAiAssistantPanel }}>
+    <AppContext.Provider value={{ iosBridgeStatus, printerBridgeStatus, aiAssistantBusy, aiAssistantPanelAvailable: aiAssistantPanelController?.available ?? false, aiAssistantPanelOpen: aiAssistantPanelController?.open ?? false, realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, currentUserLabel, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showPrintFeatures, setShowPrintFeatures, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, printItemQR, printLocationQR, brandingLogo, brandingTitle, brandingTitleSize, brandingTitlePosition, brandingSubtitle, brandingFooterText, brandingWidth, brandingLogoBackground, brandingLogoPadding, brandingLogoRadius, refreshBranding, fmtDate, fmtDateTime, t, setAiAssistantBusy, setAiAssistantPanelController, toggleAiAssistantPanel }}>
       {children}
     </AppContext.Provider>
   );

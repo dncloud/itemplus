@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/itemplus/backend/internal/database"
-	"github.com/itemplus/backend/internal/services"
+	printtemplates "github.com/itemplus/backend/internal/printing/templates"
 )
 
 type labelTemplateRecord struct {
@@ -66,45 +66,45 @@ func RenderEntityTSPL(realm, entityType string, entityID, copies int) (string, s
 
 	rendered := renderTemplate(tpl.TSPLTemplate, vars)
 	rendered = applyCopies(rendered, copies)
-	return services.EnsureTSPLTerminated(rendered), qrContent, nil
+	return EnsureTSPLTerminated(rendered), qrContent, nil
 }
 
 func RenderPreviewTSPL(realm, entityType string, entityID, copies int) string {
 	tpl, err := loadActiveTemplate(entityType)
 	if err != nil {
-		defs := services.DefaultLabelTemplates()
+		defs := printtemplates.DefaultLabelTemplates()
 		if len(defs) == 0 {
-			return services.EnsureTSPLTerminated("PRINT 1")
+			return EnsureTSPLTerminated("PRINT 1")
 		}
-		content := services.CompactQR(realm, entityType, entityID)
+		content := CompactQR(realm, entityType, entityID)
 		rendered := strings.ReplaceAll(defs[0].TSPLTemplate, "{{qr_content}}", escapeTSPLValue(content))
-		return services.EnsureTSPLTerminated(applyCopies(rendered, copies))
+		return EnsureTSPLTerminated(applyCopies(rendered, copies))
 	}
 
-	content := services.CompactQR(realm, entityType, entityID)
+	content := CompactQR(realm, entityType, entityID)
 	rendered := renderTemplate(tpl.TSPLTemplate, map[string]string{
 		"qr_content":  content,
 		"realm":       realm,
 		"entity_type": entityType,
 		"entity_id":   strconv.Itoa(entityID),
 	})
-	return services.EnsureTSPLTerminated(applyCopies(rendered, copies))
+	return EnsureTSPLTerminated(applyCopies(rendered, copies))
 }
 
 func CalibrationTSPL() (string, error) {
 	tpl, err := loadActiveTemplate("item")
 	if err != nil {
-		defs := services.DefaultLabelTemplates()
+		defs := printtemplates.DefaultLabelTemplates()
 		if len(defs) == 0 {
 			return "", fmt.Errorf("no label template available")
 		}
 		def := defs[0]
-		return services.EnsureTSPLTerminated(
+		return EnsureTSPLTerminated(
 			fmt.Sprintf("SIZE %d mm, %d mm\nGAP %.1f mm, 0 mm\nGAPDETECT", def.WidthMM, def.HeightMM, def.GapMM),
 		), nil
 	}
 
-	return services.EnsureTSPLTerminated(
+	return EnsureTSPLTerminated(
 		fmt.Sprintf("SIZE %d mm, %d mm\nGAP %.1f mm, 0 mm\nGAPDETECT", tpl.WidthMM, tpl.HeightMM, tpl.GapMM),
 	), nil
 }
@@ -129,7 +129,7 @@ func loadActiveTemplate(entityType string) (*labelTemplateRecord, error) {
 }
 
 func loadVariables(realm, entityType string, entityID int) (map[string]string, string, error) {
-	qrContent := services.CompactQR(realm, entityType, entityID)
+	qrContent := CompactQR(realm, entityType, entityID)
 	vars := map[string]string{
 		"qr_content":  qrContent,
 		"realm":       realm,

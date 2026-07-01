@@ -91,6 +91,14 @@ func (mysqlAdapter) upsertAppSetting(key, value, updatedAt string) error {
 	return err
 }
 
+func (mysqlAdapter) upsertUserSetting(userID int, key, value, updatedAt string) error {
+	_, err := DB.Exec(
+		"INSERT INTO user_settings (user_id, setting_key, value, updated_at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = VALUES(updated_at)",
+		userID, key, value, updatedAt,
+	)
+	return err
+}
+
 func (mysqlAdapter) schemaStatements() []string {
 	base := schemaStatementsBase()
 	out := make([]string, 0, len(base))
@@ -107,6 +115,8 @@ func adaptMySQLSchemaSQL(sql string) string {
 	}{
 		{`CREATE INDEX IF NOT EXISTS `, `CREATE INDEX `},
 		{`id INTEGER PRIMARY KEY AUTOINCREMENT`, `id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY`},
+		{`user_id INTEGER NOT NULL`, `user_id BIGINT NOT NULL`},
+		{`setting_key TEXT NOT NULL`, `setting_key VARCHAR(191) NOT NULL`},
 		{`key TEXT PRIMARY KEY`, "`key` VARCHAR(191) PRIMARY KEY"},
 		{`apple_sub TEXT UNIQUE NOT NULL`, `apple_sub VARCHAR(191) NOT NULL UNIQUE`},
 		{`email TEXT,`, `email VARCHAR(191),`},
@@ -119,13 +129,24 @@ func adaptMySQLSchemaSQL(sql string) string {
 		{`token TEXT UNIQUE NOT NULL`, `token VARCHAR(191) NOT NULL UNIQUE`},
 		{`device_type TEXT NOT NULL`, `device_type VARCHAR(64) NOT NULL`},
 		{`realm TEXT NOT NULL`, `realm VARCHAR(32) NOT NULL`},
+		{`scope_type TEXT NOT NULL DEFAULT 'realm'`, `scope_type VARCHAR(32) NOT NULL DEFAULT 'realm'`},
 		{`profile_id TEXT`, `profile_id VARCHAR(191)`},
 		{`provider TEXT`, `provider VARCHAR(64)`},
 		{`model TEXT`, `model VARCHAR(191)`},
 		{`feature TEXT NOT NULL`, `feature VARCHAR(64) NOT NULL`},
 		{`transport TEXT`, `transport VARCHAR(64)`},
-		{`status TEXT DEFAULT 'pending'`, `status VARCHAR(32) DEFAULT 'pending'`},
+		{`reminder_type TEXT NOT NULL DEFAULT 'maintenance'`, `reminder_type VARCHAR(64) NOT NULL DEFAULT 'maintenance'`},
+		{`custom_type_label TEXT`, `custom_type_label VARCHAR(191)`},
+		{`movement_type TEXT NOT NULL`, `movement_type VARCHAR(64) NOT NULL`},
+		{`source TEXT NOT NULL DEFAULT 'manual'`, `source VARCHAR(64) NOT NULL DEFAULT 'manual'`},
+		{`due_date TEXT NOT NULL`, `due_date VARCHAR(32) NOT NULL`},
+		{`last_completed_at TEXT`, `last_completed_at VARCHAR(32)`},
+		{`completed_at TEXT`, `completed_at VARCHAR(32)`},
+		{`performed_at TEXT NOT NULL`, `performed_at VARCHAR(32) NOT NULL`},
+		{`repeat_unit TEXT`, `repeat_unit VARCHAR(32)`},
+		{`status TEXT NOT NULL DEFAULT 'open'`, `status VARCHAR(32) NOT NULL DEFAULT 'open'`},
 		{`status TEXT DEFAULT 'active'`, `status VARCHAR(32) DEFAULT 'active'`},
+		{`status TEXT DEFAULT 'pending'`, `status VARCHAR(32) DEFAULT 'pending'`},
 		{`property_type TEXT NOT NULL`, `property_type VARCHAR(64) NOT NULL`},
 		{`options TEXT DEFAULT '{}'`, `options LONGTEXT`},
 		{`display_width TEXT DEFAULT 'third'`, `display_width VARCHAR(32) DEFAULT 'third'`},
@@ -147,5 +168,8 @@ func (mysqlAdapter) shouldIgnoreSchemaError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(strings.ToLower(err.Error()), "duplicate key name")
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "duplicate key name") ||
+		strings.Contains(message, "specified key was too long") ||
+		strings.Contains(message, "max key length")
 }

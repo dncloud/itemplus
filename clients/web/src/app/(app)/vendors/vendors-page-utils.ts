@@ -1,6 +1,6 @@
 "use client";
 
-import { api, type Vendor } from "@/lib/api";
+import { api, type AIVendorSuggestionResult, type Vendor } from "@/lib/api";
 import type { EntityType } from "./vendors-sections";
 
 function getVendorFetcher(tab: EntityType) {
@@ -40,6 +40,9 @@ export function validateVendorDraft(
   if (draft.website && !/^https?:\/\/.+/.test(draft.website)) {
     return t("vendors.invalidWebsite");
   }
+  if (draft.logo_background && !/^#[0-9a-f]{6}$/i.test(draft.logo_background)) {
+    return t("vendors.invalidLogoBackground");
+  }
   if (draft.support_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.support_email)) {
     return t("vendors.invalidSupportEmail");
   }
@@ -61,11 +64,13 @@ export async function saveVendorDraft({
   isNew: boolean;
 }) {
   const endpoint = getVendorEndpoint(realm, tab, isNew ? undefined : draft.id);
+  const cleanDraft = { ...draft };
+  delete cleanDraft.external_logo_url;
   await fetch(endpoint, {
     method: isNew ? "POST" : "PUT",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify(draft),
+    body: JSON.stringify(cleanDraft),
   });
 }
 
@@ -73,5 +78,39 @@ export async function deleteVendorDraft(realm: string, tab: EntityType, vendorId
   await fetch(getVendorEndpoint(realm, tab, vendorId), {
     method: "DELETE",
     credentials: "include",
+  });
+}
+
+export async function suggestVendorDraft({
+  realm,
+  tab,
+  prompt,
+  locale,
+  allowWebSearch,
+  draft,
+}: {
+  realm: "archive" | "collection";
+  tab: EntityType;
+  prompt: string;
+  locale?: string;
+  allowWebSearch?: boolean;
+  draft?: Partial<Vendor>;
+}): Promise<AIVendorSuggestionResult> {
+  const entityType =
+    tab === "manufacturers"
+      ? "manufacturer"
+      : tab === "suppliers"
+        ? "supplier"
+        : tab === "vendors"
+          ? "vendor"
+          : "sales_platform";
+
+  return api.suggestVendor({
+    realm,
+    entity_type: entityType,
+    prompt,
+    locale,
+    allow_web_search: allowWebSearch,
+    draft,
   });
 }

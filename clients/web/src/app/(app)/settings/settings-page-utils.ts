@@ -1,8 +1,8 @@
 "use client";
 
-import { api, type LabelTemplate, type ExternalSource, type LabelTemplateMeta, type PrinterStatus, type User } from "@/lib/api";
-import { draftFromAISettings } from "@/components/settings-drafts";
-import type { AISettingsDraft } from "@/components/settings-drafts";
+import { api, type LabelTemplate, type ExternalSource, type LabelTemplateMeta, type MaintenanceSettings, type PrinterStatus, type SidebarFavorite, type User } from "@/lib/api";
+import { draftFromAISettings } from "@/components/settings/drafts";
+import type { AISettingsDraft } from "@/components/settings/drafts";
 
 export type DeviceSession = {
   id: number;
@@ -29,6 +29,8 @@ export async function fetchInitialSettingsData() {
     templateMeta: LabelTemplateMeta | null;
     templates: LabelTemplate[];
     externalSources: ExternalSource[];
+    maintenanceSettings: MaintenanceSettings | null;
+    sidebarFavorites: SidebarFavorite[];
     aiDraft: AISettingsDraft | null;
     sessions: DeviceSession[];
   } = {
@@ -37,6 +39,8 @@ export async function fetchInitialSettingsData() {
     templateMeta: null,
     templates: [],
     externalSources: [],
+    maintenanceSettings: null,
+    sidebarFavorites: [],
     aiDraft: null,
     sessions: [],
   };
@@ -44,6 +48,9 @@ export async function fetchInitialSettingsData() {
   const tasks: Promise<void>[] = [
     fetchDeviceSessions().then((sessions) => {
       result.sessions = sessions;
+    }).catch(() => {}),
+    api.getSidebarFavorites().then((favorites) => {
+      result.sidebarFavorites = favorites.favorites || [];
     }).catch(() => {}),
   ];
 
@@ -69,6 +76,10 @@ export async function fetchInitialSettingsData() {
 
       tasks.push(api.getAISettings().then((settings) => {
         result.aiDraft = draftFromAISettings(settings);
+      }).catch(() => {}));
+
+      tasks.push(api.getMaintenanceSettings().then((settings) => {
+        result.maintenanceSettings = settings;
       }).catch(() => {}));
     }
   }

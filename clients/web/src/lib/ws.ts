@@ -8,7 +8,7 @@ type EventHandler = (data: Record<string, unknown>) => void;
 const VALID_EVENTS = new Set([
   "pong", "device.connected", "device.disconnected", "devices.list",
   "browser.open_item", "browser.open_location", "photo.request", "photo.uploaded",
-  "barcode.capture_unavailable", "barcode.scanned",
+  "barcode.capture_unavailable", "barcode.scanned", "qr.scanned",
   "delete.confirm_request", "delete.done", "delete.rejected", "delete.no_device",
   "session.ready", "session.kicked", "login.confirmed", "user.activated",
   "print.done", "print.failed",

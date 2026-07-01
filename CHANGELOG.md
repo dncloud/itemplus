@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.3.0 - 2026-07-02
+
+### Operations, stock, and reminders
+- Added dedicated `Stock`, `Maintenance`, and `Checkouts` workflow pages with clearer statistics, cleaner tables, and a shared operating-area structure that makes day-to-day inventory work easier to scan.
+- Added stock movement history for archive-style inventory so purchases, consumption, corrections, lending, and returns no longer live only in the current quantity field.
+- Added an `Inventory audit` workflow with live sessions, scanner/manual confirmations, recent reports, missing-item detection, unexpected finds, and explicit snapshot-vs-current location handling instead of silently rewriting locations during a room check.
+- Expanded maintenance and reminder handling with recurrence, history, editing, skip/complete flows, overdue indicators, and dashboard/sidebar signals instead of burying everything inside item edit screens.
+- Reworked checkout visibility and navigation so overdue or relevant activity is surfaced through the operating menu and page-level summaries instead of crowding the main dashboard.
+
+### AI, chat, and master data
+- Continued the Ina chat refinement across free chat, item creation, categories, properties, and vendors so AI actions feel more conversational, less technical, and easier to continue over multiple steps.
+- Added AI-assisted vendor/master-data enrichment with suggested structured fields and multi-source logo suggestions, including better filtering for likely real logos instead of unrelated images or tiny favicons.
+- Improved AI debug visibility with raw output, token counters, and provider/model badges so local Ollama and OpenAI behavior can be inspected more easily during tuning.
+- Refined AI prompt management so profiles, prompt templates, and related settings are easier to maintain per installation while keeping the JSON contracts and response handling stable.
+
+### Navigation, settings, and web app polish
+- Reworked the main navigation into a more compact tile-based structure with clearer grouping for `Inventory`, `Operations`, `System`, and `Settings`, including per-section indicators for pending operational tasks.
+- Redesigned large parts of Settings to use calmer, more consistent section layouts, less visual noise, clearer actions, and faster save feedback through top-right status toasts instead of scattered inline messages.
+- Merged branding controls more naturally into the app settings flow and expanded branding customization for logo sizing, spacing, corner radius, title behavior, and related presentation details.
+- Added cleaner favorites/default handling for dashboard shortcuts and continued aligning page headers, button sizing, table spacing, and general typography across the web app.
+
+### Users, permissions, and administration
+- Refined user management with clearer overview stats, lighter permission editing, avatar upload support, and a less crowded administration layout.
+- Split operational permissions more precisely so stock and maintenance access can be granted separately for read and edit scenarios instead of exposing entire areas too broadly.
+- Hid navigation targets and system areas that a user cannot actually use, keeping non-admin accounts focused on the parts of item+ that are relevant to their role.
+- Added `IOS_REVIEW_PERMISSIONS=true|false` as an explicit development/review switch so newly created non-admin users can optionally receive all regular app permissions on isolated demo or App Review systems.
+
+### Internal cleanup
+- Continued the backend restructuring into clearer domains such as bootstrap, database, core, HTTP, printing, storage, and websocket code, reducing the old catch-all handler/service layout.
+- Continued the web app cleanup by moving oversized page/component files into more focused modules and shared UI/helper areas without changing the overall product direction.
+
 ## 1.2.9 - 2026-06-14
 
 ### Update banner

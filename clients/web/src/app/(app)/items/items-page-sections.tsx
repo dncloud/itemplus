@@ -2,11 +2,10 @@
 
 import clsx from "clsx";
 import Link from "next/link";
-import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, FunnelIcon, MagnifyingGlassIcon, PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import { FunnelIcon as FunnelSolid } from "@heroicons/react/24/solid";
+import { Barcode, ChevronDown, ChevronRight, ChevronUp, Filter, Search, Plus, X } from "lucide-react";
+import { Filter as FunnelSolid } from "lucide-react";
 import { type Category, type Location } from "@/lib/api";
 import { ItemsFilterPicker as FilterPicker } from "@/app/(app)/items/items-filter-picker";
-import { BarcodeIcon } from "@/components/barcode-icon";
 
 type Translator = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -28,7 +27,7 @@ export function ItemsPageHeader({
   onOpenNew: () => void;
 }) {
   return (
-    <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:border-b sm:border-gray-200 sm:text-left lg:mb-8 dark:border-white/10">
+    <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:text-left lg:mb-8">
       <div className="space-y-1 py-3">
         <nav className="text-sm font-medium dark:text-gray-100">
           <ol className="flex items-center justify-center sm:justify-start">
@@ -38,11 +37,11 @@ export function ItemsPageHeader({
               </Link>
             </li>
             <li className="flex items-center px-1 opacity-25">
-              <ChevronRightIcon className="inline-block h-5 w-5" />
+              <ChevronRight className="inline-block h-5 w-5" />
             </li>
             <li className="text-gray-500 dark:text-gray-400">{realm === "archive" ? t("realm.archive") : t("realm.collection")}</li>
             <li className="flex items-center px-1 opacity-25">
-              <ChevronRightIcon className="inline-block h-5 w-5" />
+              <ChevronRight className="inline-block h-5 w-5" />
             </li>
             <li className="text-gray-900 dark:text-white">{t("items.title")}</li>
           </ol>
@@ -63,7 +62,7 @@ export function ItemsPageHeader({
             )}
             title={barcodeCapturePending ? t("items.barcodeWaiting") : t("items.scanBarcode")}
           >
-            <BarcodeIcon className="h-4 w-4" />
+            <Barcode className="h-4 w-4" />
           </button>
         )}
         {canWrite && (
@@ -72,7 +71,7 @@ export function ItemsPageHeader({
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
             title={t("common.new")}
           >
-            <PlusIcon className="h-4 w-4" />
+            <Plus className="h-4 w-4" />
           </button>
         )}
       </div>
@@ -143,7 +142,7 @@ export function ItemsPageToolbar({
 
   return (
     <>
-      <div className="border-b border-gray-200 pb-5 dark:border-white/10">
+      <div className="pb-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-1 flex-col gap-4">
             <form
@@ -162,14 +161,14 @@ export function ItemsPageToolbar({
                     aria-label={t("common.search")}
                     className="col-start-1 row-start-1 block w-full rounded-l-md bg-white py-1.5 pr-3 pl-10 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 sm:pl-9 sm:text-sm/6 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500"
                   />
-                  <MagnifyingGlassIcon className="pointer-events-none col-start-1 row-start-1 ml-3 size-5 self-center text-gray-400 sm:size-4" />
+                  <Search className="pointer-events-none col-start-1 row-start-1 ml-3 size-5 self-center text-gray-400 sm:size-4" />
                 </div>
                 <button
                   type="submit"
                   className="inline-flex shrink-0 items-center justify-center border-y border-l-0 border-r-0 border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
                   title={t("common.search")}
                 >
-                  <MagnifyingGlassIcon className="h-4 w-4" />
+                  <Search className="h-4 w-4" />
                 </button>
                 <div className="relative">
                   <button
@@ -179,7 +178,7 @@ export function ItemsPageToolbar({
                   >
                     {(filterCategory || filterLocation || filterStatus || sortField !== "id")
                       ? <FunnelSolid className="-ml-0.5 size-4 text-gray-400 dark:text-gray-300" />
-                      : <FunnelIcon className="-ml-0.5 size-4 text-gray-400 dark:text-gray-300" />}
+                      : <Filter className="-ml-0.5 size-4 text-gray-400 dark:text-gray-300" />}
                     {t("common.filter")}
                   </button>
                   {filterOpen && (
@@ -206,7 +205,7 @@ export function ItemsPageToolbar({
                                   }`}
                                 >
                                   {label}
-                                  {active && (sortOrder === "asc" ? <ChevronUpIcon className="h-3 w-3" /> : <ChevronDownIcon className="h-3 w-3" />)}
+                                  {active && (sortOrder === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
                                 </button>
                               );
                             })}
@@ -300,7 +299,7 @@ export function ItemsPageToolbar({
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 transition"
               >
                 {t("common.search")}: {activeSearch}
-                <XMarkIcon className="h-3.5 w-3.5" />
+                <X className="h-3.5 w-3.5" />
               </button>
             ) : null}
             {filterCategory && (
@@ -309,7 +308,7 @@ export function ItemsPageToolbar({
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 transition"
               >
                 {t("items.category")}: {getCategoryName(filterCategory)}
-                <XMarkIcon className="h-3.5 w-3.5" />
+                <X className="h-3.5 w-3.5" />
               </button>
             )}
             {filterLocation && (
@@ -318,7 +317,7 @@ export function ItemsPageToolbar({
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 transition"
               >
                 {t("items.location")}: {getLocationName(filterLocation)}
-                <XMarkIcon className="h-3.5 w-3.5" />
+                <X className="h-3.5 w-3.5" />
               </button>
             )}
             {filterStatus && (
@@ -327,7 +326,7 @@ export function ItemsPageToolbar({
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 transition"
               >
                 {t("items.itemStatus")}: {getStatusLabel(filterStatus)}
-                <XMarkIcon className="h-3.5 w-3.5" />
+                <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>

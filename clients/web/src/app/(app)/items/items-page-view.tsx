@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { CheckCircleIcon, PencilIcon, PrinterIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { CircleCheck, Pencil, Printer, Trash2, Wrench, X } from "lucide-react";
 import type { CheckoutRequest, Item, Property } from "@/lib/api";
 import {
   formatCurrency,
@@ -36,6 +36,25 @@ function renderCheckoutBadge(item: Item, t: (key: string, vars?: Record<string, 
   return (
     <span className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300 shrink-0">
       {t("items.checkedOutToLabel", { user: label })}
+    </span>
+  );
+}
+
+function renderMaintenanceBadge(item: Item, fmtDate: (value: string) => string, t: (key: string, vars?: Record<string, string | number>) => string) {
+  const summary = item.maintenance_summary;
+  const dueCount = summary?.due_count || 0;
+  const overdueCount = summary?.overdue_count || 0;
+  if (dueCount <= 0 && overdueCount <= 0) return null;
+  const label = overdueCount > 0
+    ? t("maintenance.badgeOverdue", { count: overdueCount })
+    : t("maintenance.badgeDue", { count: dueCount });
+  const className = overdueCount > 0
+    ? "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"
+    : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium shrink-0 ${className}`} title={t("maintenance.title")}>
+      <Wrench className="h-3.5 w-3.5" />
+      {label}
     </span>
   );
 }
@@ -175,12 +194,13 @@ export function ItemsGrid({
           })()}
           <div className="flex flex-1 flex-col p-4">
             <div className="min-w-0">
-              {(item.is_bundle || item.parentBundle || pendingRequestsByItem[item.id]?.length || item.checked_out_to || (item.item_status && item.item_status !== "active")) ? (
+              {(item.is_bundle || item.parentBundle || pendingRequestsByItem[item.id]?.length || item.checked_out_to || (item.maintenance_summary?.due_count || 0) > 0 || (item.maintenance_summary?.overdue_count || 0) > 0 || (item.item_status && item.item_status !== "active")) ? (
                 <div className="mb-2 flex flex-wrap items-start gap-1.5">
                   {renderBundleBadge(item, t)}
                   {renderStatusBadge(item, t)}
                   {renderRequestBadge(item.id, pendingRequestsByItem, t)}
                   {renderCheckoutBadge(item, t)}
+                  {renderMaintenanceBadge(item, (value) => formatListDate(locale, value), t)}
                 </div>
               ) : null}
               <div className="flex flex-wrap items-start gap-1.5">
@@ -290,12 +310,12 @@ export function ItemsGrid({
               <div className="flex items-center justify-end gap-1">
                 {canPrint && (
                   <button onClick={() => onPrint(item)} className="rounded-md p-1.5 hover:bg-gray-100 dark:hover:bg-white/10" title={t("common.print")}>
-                    <PrinterIcon className="h-4 w-4 text-gray-400" />
+                    <Printer className="h-4 w-4 text-gray-400" />
                   </button>
                 )}
                 {canWrite && (
                   <button onClick={() => onOpenEdit(item)} className="rounded-md p-1.5 hover:bg-gray-100 dark:hover:bg-white/10" title={t("common.edit")}>
-                    <PencilIcon className="h-4 w-4 text-gray-400" />
+                    <Pencil className="h-4 w-4 text-gray-400" />
                   </button>
                 )}
                 {canDelete && (
@@ -303,7 +323,7 @@ export function ItemsGrid({
                     {pendingDelete === item.id ? (
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
                     ) : (
-                      <TrashIcon className="h-4 w-4 text-red-400" />
+                      <Trash2 className="h-4 w-4 text-red-400" />
                     )}
                   </button>
                 )}
@@ -404,9 +424,9 @@ export function ItemsNotification({
               <div className="flex items-start">
                 <div className="shrink-0">
                   {notification.tone === "error" ? (
-                    <XMarkIcon className="size-6 text-red-400" />
+                    <X className="size-6 text-red-400" />
                   ) : (
-                    <CheckCircleIcon className="size-6 text-green-400" />
+                    <CircleCheck className="size-6 text-green-400" />
                   )}
                 </div>
                 <div className="ml-3 w-0 flex-1 pt-0.5">
@@ -416,7 +436,7 @@ export function ItemsNotification({
                 <div className="ml-4 flex shrink-0">
                   <button type="button" onClick={onClose} className="inline-flex rounded-md text-gray-400 hover:text-white focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-indigo-500">
                     <span className="sr-only">{t("common.close")}</span>
-                    <XMarkIcon className="size-5" />
+                    <X className="size-5" />
                   </button>
                 </div>
               </div>

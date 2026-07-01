@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CircleCheck, CircleAlert, CircleX } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { LogoIcon } from "@/components/logo";
+import { LogoIcon } from "@/components/branding/logo";
 import { useApp } from "@/lib/app-context";
 
 export default function MagicLinkVerifyPage() {
@@ -70,9 +71,7 @@ export default function MagicLinkVerifyPage() {
           {status === "success" && (
             <div className="space-y-3">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-                <svg className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
+                <CircleCheck className="h-8 w-8 text-green-600" />
               </div>
               <p className="text-sm font-medium text-green-400">{t("auth.success")}</p>
             </div>
@@ -81,9 +80,7 @@ export default function MagicLinkVerifyPage() {
           {status === "inactive" && (
             <div className="space-y-3">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
-                <svg className="h-8 w-8 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                </svg>
+                <CircleAlert className="h-8 w-8 text-amber-600" />
               </div>
               <p className="text-sm font-medium">{t("auth.activationSuccess")}</p>
               <p className="text-xs text-gray-400">{t("auth.activationPending")}</p>
@@ -93,9 +90,7 @@ export default function MagicLinkVerifyPage() {
           {status === "error" && (
             <div className="space-y-3">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-                <svg className="h-8 w-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <CircleX className="h-8 w-8 text-red-600" />
               </div>
               <p className="text-sm font-medium text-red-400">{t("auth.invalidMagicLink")}</p>
               <button onClick={() => router.push("/auth")} className="text-xs text-gray-400 hover:text-gray-200">

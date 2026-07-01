@@ -39,6 +39,14 @@ func (sqliteAdapter) upsertAppSetting(key, value, updatedAt string) error {
 	return err
 }
 
+func (sqliteAdapter) upsertUserSetting(userID int, key, value, updatedAt string) error {
+	_, err := DB.Exec(
+		"INSERT INTO user_settings (user_id, setting_key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, setting_key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+		userID, key, value, updatedAt,
+	)
+	return err
+}
+
 func (sqliteAdapter) schemaStatements() []string {
 	return schemaStatementsBase()
 }

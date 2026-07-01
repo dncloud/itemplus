@@ -33,10 +33,10 @@ export function ItemsFilterPicker({
           setSearch("");
           setTimeout(() => inputRef.current?.focus(), 50);
         }}
-        className={`w-full flex items-center justify-between rounded-lg border px-3 py-2 text-sm text-left transition ${
+        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
           value
-            ? "border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400"
-            : "border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+            ? "border-blue-300 bg-blue-50 text-blue-600 dark:border-blue-700 dark:bg-blue-900/10 dark:text-blue-400"
+            : "border-gray-300 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
         }`}
       >
         <span className="truncate">{selectedName || "Alle"}</span>
@@ -46,7 +46,7 @@ export function ItemsFilterPicker({
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+        <div className="absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
           <div className="border-b border-gray-100 p-2 dark:border-gray-800">
             <input
               ref={inputRef}
@@ -64,8 +64,8 @@ export function ItemsFilterPicker({
                 onChange(undefined);
                 setOpen(false);
               }}
-              className={`w-full text-left px-3 py-2 text-sm transition ${
-                !value ? "bg-blue-50 dark:bg-blue-900/10 text-blue-600 font-medium" : "text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
+              className={`w-full px-3 py-2 text-left text-sm transition ${
+                !value ? "bg-blue-50 font-medium text-blue-600 dark:bg-blue-900/10" : "text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
               }`}
             >
               Alle
@@ -86,10 +86,10 @@ export function ItemsFilterPicker({
                     onChange(item.id);
                     setOpen(false);
                   }}
-                  className={`w-full text-left px-3 py-2 text-sm transition flex items-center gap-1.5 ${
+                  className={`flex w-full items-center gap-1.5 px-3 py-2 text-left text-sm transition ${
                     active
-                      ? "bg-blue-50 dark:bg-blue-900/10 text-blue-600 font-medium"
-                      : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                      ? "bg-blue-50 font-medium text-blue-600 dark:bg-blue-900/10"
+                      : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
                   }`}
                   style={{ paddingLeft: `${12 + depth * 16}px` }}
                 >

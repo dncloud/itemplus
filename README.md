@@ -179,6 +179,23 @@ Settings you will usually review:
 - `LOG_DIR`
 - AI provider settings, if you want Ina
 
+### Review and development helper
+
+item+ can optionally grant all regular app permissions to newly created non-admin users:
+
+```conf
+IOS_REVIEW_PERMISSIONS=true
+```
+
+This exists for local development, demos, and App Review style test systems where a fresh Sign in with Apple account should be able to use the app immediately after creation.
+
+Important:
+
+- it only affects newly created users
+- it does not make those users admins
+- it is not meant for normal production use
+- keep it disabled on regular public installations unless you explicitly want this behavior
+
 ### Reverse proxies
 
 By default, item+ does not trust forwarded proxy headers. This is safer for self-hosted installs.

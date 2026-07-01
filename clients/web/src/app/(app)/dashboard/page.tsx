@@ -3,64 +3,47 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import Link from "next/link";
-import {
-  type ActiveCheckout,
-  type InventoryWarning,
-  type LocationWarning,
-  type StatsOverview,
-} from "@/lib/api";
+import { type StatsOverview } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import {
-  ArchiveBoxIcon,
-  BanknotesIcon,
-  MapPinIcon,
-  Squares2X2Icon,
-  SwatchIcon,
-} from "@heroicons/react/24/outline";
+  Archive,
+  Banknote,
+  MapPin,
+  LayoutGrid,
+  Palette,
+} from "lucide-react";
 import {
-  OverduePanel,
   RecentlyAddedPanel,
   TopItemsPanel,
-  WarningGrid,
 } from "./dashboard-sections";
 import {
   fetchDashboardPageData,
-  filterWarningsByRealm,
   formatDashboardCurrency,
 } from "./dashboard-page-utils";
 
 const enableDashboardPrefetch = process.env.NODE_ENV === "production";
 
 export default function DashboardPage() {
-  const { realm, setRealm, fmtDate, t, can } = useApp();
+  const { realm, fmtDate, t, can } = useApp();
   const [stats, setStats] = useState<StatsOverview | null>(null);
-  const [warnings, setWarnings] = useState<InventoryWarning[]>([]);
-  const [locWarnings, setLocWarnings] = useState<LocationWarning[]>([]);
-  const [myOverdue, setMyOverdue] = useState<ActiveCheckout[]>([]);
   const [loading, setLoading] = useState(true);
   const [topSort, setTopSort] = useState<"value" | "quantity">("value");
-  const [topSortMenuOpen, setTopSortMenuOpen] = useState(false);
   const canReadItems = can("items.read");
   const canReadCategories = can("categories.read");
   const canReadLocations = can("locations.read");
-  const canViewInventoryWarnings = can("items.write");
-  const canViewLocationWarnings = can("locations.write");
   const canManageCheckout = can("checkout.manage");
 
   useEffect(() => {
     let cancelled = false;
 
     void fetchDashboardPageData({
-      includeInventoryWarnings: canViewInventoryWarnings,
-      includeLocationWarnings: canViewLocationWarnings,
+      includeInventoryWarnings: false,
+      includeLocationWarnings: false,
       includeAllOverdue: canManageCheckout,
     })
-      .then(({ overview, inventoryWarnings, locationWarnings, overdue }) => {
+      .then(({ overview }) => {
         if (cancelled) return;
         setStats(overview);
-        setWarnings(inventoryWarnings);
-        setLocWarnings(locationWarnings);
-        setMyOverdue(overdue);
       })
       .catch(() => {})
       .finally(() => {
@@ -70,21 +53,12 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [realm, canViewInventoryWarnings, canViewLocationWarnings, canManageCheckout]);
-
-  useEffect(() => {
-    if (!topSortMenuOpen) return;
-    const close = () => setTopSortMenuOpen(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [topSortMenuOpen]);
+  }, [realm, canManageCheckout]);
 
   if (loading) return <Loading />;
   if (!stats) return <p className="text-gray-500">{t("dashboard.noData")}</p>;
 
   const current = stats[realm];
-  const realmWarnings = filterWarningsByRealm(warnings, realm);
-  const realmLocWarnings = filterWarningsByRealm(locWarnings, realm);
   const topItems = topSort === "value" ? current.top_by_value : current.top_by_quantity;
 
   return (
@@ -94,21 +68,21 @@ export default function DashboardPage() {
           <SimpleStat
             title="Realm"
             value={realm === "archive" ? t("realm.archive") : t("realm.collection")}
-            icon={ArchiveBoxIcon}
+            icon={Archive}
             accent="gray"
           />
           <SimpleStat
             title={t("dashboard.totalValue")}
             value={formatDashboardCurrency(current.total_value)}
             detail={`Ø ${formatDashboardCurrency(current.avg_price)}`}
-            icon={BanknotesIcon}
+            icon={Banknote}
             accent="indigo"
           />
           <SimpleStat
             title={t("dashboard.items")}
             value={current.items}
             detail={canReadItems ? "Alle anzeigen" : undefined}
-            icon={ArchiveBoxIcon}
+            icon={Archive}
             accent="blue"
             href={canReadItems ? "/items" : undefined}
           />
@@ -116,7 +90,7 @@ export default function DashboardPage() {
             title={t("dashboard.categories")}
             value={current.categories}
             detail={canReadCategories ? "Alle anzeigen" : undefined}
-            icon={Squares2X2Icon}
+            icon={LayoutGrid}
             accent="emerald"
             href={canReadCategories ? "/categories" : undefined}
           />
@@ -124,7 +98,7 @@ export default function DashboardPage() {
             title={t("dashboard.locations")}
             value={current.locations}
             detail={canReadLocations ? "Alle anzeigen" : undefined}
-            icon={MapPinIcon}
+            icon={MapPin}
             accent="gray"
             href={canReadLocations ? "/locations" : undefined}
           />
@@ -132,32 +106,12 @@ export default function DashboardPage() {
             title={t("dashboard.properties")}
             value={current.properties}
             detail={canReadCategories ? "Alle anzeigen" : undefined}
-            icon={SwatchIcon}
+            icon={Palette}
             accent="purple"
             href={canReadCategories ? "/categories" : undefined}
           />
         </dl>
       </div>
-
-      <WarningGrid
-        inventoryWarnings={canViewInventoryWarnings ? realmWarnings : []}
-        locationWarnings={canViewLocationWarnings ? realmLocWarnings : []}
-        canOpenItems={canReadItems}
-        canOpenLocations={canReadLocations}
-        t={t}
-      />
-
-      <OverduePanel
-        checkouts={myOverdue}
-        fmtDate={fmtDate}
-        canOpenItems={canReadItems}
-        t={t}
-        onOpenCheckout={(checkout) => {
-          if (checkout.realm === "archive" || checkout.realm === "collection") {
-            setRealm(checkout.realm);
-          }
-        }}
-      />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 lg:gap-8">
         <div className="space-y-4 lg:space-y-8">
@@ -168,12 +122,7 @@ export default function DashboardPage() {
           <TopItemsPanel
             items={topItems ?? []}
             topSort={topSort}
-            topSortMenuOpen={topSortMenuOpen}
-            onToggleMenu={() => setTopSortMenuOpen((open) => !open)}
-            onSelectSort={(value) => {
-              setTopSort(value);
-              setTopSortMenuOpen(false);
-            }}
+            onSelectSort={setTopSort}
             formatCurrency={formatDashboardCurrency}
             canOpenItems={canReadItems}
             t={t}

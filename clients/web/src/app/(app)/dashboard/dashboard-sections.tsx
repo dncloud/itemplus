@@ -3,14 +3,15 @@
 import type React from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import type { ActiveCheckout, InventoryWarning, LocationWarning } from "@/lib/api";
-import { formatCheckoutRelativeState } from "@/lib/checkout-relative-time";
+import { useState } from "react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import type { InventoryWarning, LocationWarning } from "@/lib/api";
 import {
-  ArchiveBoxIcon,
-  BanknotesIcon,
-  CalendarDaysIcon,
-  XCircleIcon,
-} from "@heroicons/react/24/outline";
+  Archive,
+  Banknote,
+  ChevronDown,
+  CircleX,
+} from "lucide-react";
 
 const enableDashboardPrefetch = process.env.NODE_ENV === "production";
 
@@ -59,7 +60,7 @@ export function WarningGrid({
           {inventoryWarnings.map((warning) => (
             <li key={warning.item_id}>
               {canOpenItems ? (
-                <Link prefetch={enableDashboardPrefetch} href={`/items/${warning.item_id}`} className="hover:text-rose-700 dark:hover:text-rose-300">
+                <Link prefetch={enableDashboardPrefetch} href={`/items/${warning.item_id}`} className="text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-300">
                   {warning.name}
                 </Link>
               ) : (
@@ -78,7 +79,7 @@ export function WarningGrid({
           {locationWarnings.map((warning) => (
             <li key={warning.location_id}>
               {canOpenLocations ? (
-                <Link prefetch={enableDashboardPrefetch} href={`/items?location=${warning.location_id}`} className="hover:text-rose-700 dark:hover:text-rose-300">
+                <Link prefetch={enableDashboardPrefetch} href={`/items?location=${warning.location_id}`} className="text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-300">
                   {warning.name}
                 </Link>
               ) : (
@@ -92,76 +93,6 @@ export function WarningGrid({
         </SignalCard>
       ) : null}
     </div>
-  );
-}
-
-export function OverduePanel({
-  checkouts,
-  fmtDate,
-  canOpenItems = true,
-  t,
-  onOpenCheckout,
-}: {
-  checkouts: ActiveCheckout[];
-  fmtDate: (value: string) => string;
-  canOpenItems?: boolean;
-  t: (key: string, vars?: Record<string, string | number>) => string;
-  onOpenCheckout: (checkout: ActiveCheckout) => void;
-}) {
-  if (checkouts.length === 0) return null;
-
-  return (
-    <DashboardPanel
-      title={t("dashboard.overdueTitle")}
-      icon={CalendarCardIcon}
-      meta={`${checkouts.length} ${checkouts.length === 1 ? "checkout" : "checkouts"}`}
-      flush
-    >
-      <nav>
-        <ul role="list" className="divide-y divide-gray-200 dark:divide-white/5">
-          {checkouts.map((checkout) => (
-            <li key={checkout.id} className="relative px-4 py-3 hover:bg-gray-50 sm:px-6 dark:hover:bg-white/2.5">
-              <div className="min-w-0">
-                <p className="text-sm/6 font-semibold text-gray-900 dark:text-white">
-                  {canOpenItems ? (
-                    <Link prefetch={enableDashboardPrefetch} href={`/items/${checkout.item_id}`} onClick={() => onOpenCheckout(checkout)}>
-                      <span className="absolute inset-x-0 inset-y-0" aria-hidden="true" />
-                      {checkout.item_name}
-                    </Link>
-                  ) : (
-                    <span>{checkout.item_name}</span>
-                  )}
-                </p>
-                {checkout.user_name ? (
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {t("checkouts.checkedOutToUser", { user: checkout.user_name })}
-                  </p>
-                ) : null}
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {checkout.created_at ? fmtDate(checkout.created_at) : "—"}
-                </p>
-                {checkout.created_at && checkout.due_date ? (
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {t("checkouts.period")}: {t("checkouts.fromTo", {
-                      from: fmtDate(checkout.created_at),
-                      to: fmtDate(checkout.due_date),
-                    })}
-                  </p>
-                ) : null}
-                <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-                  {formatCheckoutRelativeState({
-                    dueDate: checkout.due_date,
-                    isOverdue: true,
-                    overdueDays: checkout.overdue_days,
-                    t,
-                  })}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </nav>
-    </DashboardPanel>
   );
 }
 
@@ -181,7 +112,7 @@ export function RecentlyAddedPanel({
   return (
     <DashboardPanel
       title={t("dashboard.recentlyAdded")}
-      icon={ArchiveBoxIcon}
+      icon={Archive}
       meta={`${items.length} ${items.length === 1 ? "item" : "items"}`}
       flush
     >
@@ -227,8 +158,6 @@ export function RecentlyAddedPanel({
 export function TopItemsPanel({
   items,
   topSort,
-  topSortMenuOpen,
-  onToggleMenu,
   onSelectSort,
   formatCurrency,
   canOpenItems = true,
@@ -236,8 +165,6 @@ export function TopItemsPanel({
 }: {
   items: Record<string, unknown>[];
   topSort: "value" | "quantity";
-  topSortMenuOpen: boolean;
-  onToggleMenu: () => void;
   onSelectSort: (value: "value" | "quantity") => void;
   formatCurrency: (value: number) => string;
   canOpenItems?: boolean;
@@ -248,19 +175,12 @@ export function TopItemsPanel({
   return (
     <DashboardPanel
       title={t("dashboard.topItems")}
-      icon={BanknotesIcon}
+      icon={Banknote}
       meta={`${items.length} ${items.length === 1 ? "item" : "items"}`}
       flush
       action={
-        <div className="relative">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleMenu();
-            }}
-            className="flex items-center gap-x-1 text-sm/6 font-medium text-gray-400 hover:text-white"
-          >
+        <Menu as="div" className="relative">
+          <MenuButton className="flex items-center gap-x-1 text-sm/6 font-medium text-gray-400 hover:text-white">
             {t("items.sortBy")}
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className="size-5 text-gray-500">
               <path
@@ -269,32 +189,38 @@ export function TopItemsPanel({
                 clipRule="evenodd"
               />
             </svg>
-          </button>
-          {topSortMenuOpen ? (
-            <div className="absolute right-0 z-10 mt-2 w-40 origin-top-right rounded-md bg-gray-800 py-2 shadow-lg outline-1 -outline-offset-1 outline-white/10 transition">
+          </MenuButton>
+          <MenuItems
+            anchor="bottom end"
+            transition
+            className="absolute right-0 z-10 mt-2 w-40 origin-top-right rounded-md bg-gray-800 py-2 shadow-lg outline-1 -outline-offset-1 outline-white/10 transition duration-100 ease-out data-[closed]:scale-95 data-[closed]:opacity-0"
+          >
+            <MenuItem>
               <button
                 type="button"
                 onClick={() => onSelectSort("value")}
                 className={clsx(
-                  "block w-full px-3 py-1 text-left text-sm/6 focus:outline-hidden",
-                  topSort === "value" ? "font-semibold text-white" : "text-gray-300 hover:bg-white/5",
+                  "block w-full px-3 py-1 text-left text-sm/6 text-gray-300 focus:outline-hidden data-[focus]:bg-white/5",
+                  topSort === "value" ? "font-semibold text-white" : undefined,
                 )}
               >
                 {t("dashboard.byValue")}
               </button>
+            </MenuItem>
+            <MenuItem>
               <button
                 type="button"
                 onClick={() => onSelectSort("quantity")}
                 className={clsx(
-                  "block w-full px-3 py-1 text-left text-sm/6 focus:outline-hidden",
-                  topSort === "quantity" ? "font-semibold text-white" : "text-gray-300 hover:bg-white/5",
+                  "block w-full px-3 py-1 text-left text-sm/6 text-gray-300 focus:outline-hidden data-[focus]:bg-white/5",
+                  topSort === "quantity" ? "font-semibold text-white" : undefined,
                 )}
               >
                 {t("dashboard.byQuantity")}
               </button>
-            </div>
-          ) : null}
-        </div>
+            </MenuItem>
+          </MenuItems>
+        </Menu>
       }
     >
       <ul role="list" className="divide-y divide-gray-200 dark:divide-white/5">
@@ -375,12 +301,12 @@ function SignalCard({
       <div className="flex gap-3 px-4 py-4 sm:px-6">
         <div className="shrink-0">
           <div className={clsx("rounded-full p-1", toneStyles.iconWrap)}>
-            <XCircleIcon className={clsx("size-5", toneStyles.icon)} />
+            <CircleX className={clsx("size-5", toneStyles.icon)} />
           </div>
         </div>
         <div className="min-w-0">
           <h3 className={clsx("text-sm font-semibold", toneStyles.title)}>{title}</h3>
-          <div className={clsx("mt-2 text-sm", toneStyles.body)}>
+          <div className={clsx("mt-2 text-[13px]", toneStyles.body)}>
             <ul role="list" className={clsx("list-disc space-y-1 pl-5", toneStyles.marker)}>
               {children}
             </ul>
@@ -398,6 +324,8 @@ function DashboardPanel({
   action,
   children,
   flush = false,
+  collapsible = false,
+  defaultOpen = false,
 }: {
   title: string;
   meta?: string;
@@ -405,22 +333,47 @@ function DashboardPanel({
   action?: React.ReactNode;
   children: React.ReactNode;
   flush?: boolean;
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const headerContent = (
+    <>
+      <div className="flex size-12 flex-none items-center justify-center rounded-lg bg-gray-100 ring-1 ring-gray-200 dark:bg-gray-700 dark:ring-white/10">
+        <Icon className="size-6 text-gray-500 dark:text-gray-300" />
+      </div>
+      <div className="min-w-0 flex-1 text-left">
+        <h3 className="truncate text-sm/6 font-medium text-gray-900 dark:text-white">{title}</h3>
+        {meta ? <p className="text-sm text-gray-400">{meta}</p> : null}
+      </div>
+      {collapsible ? (
+        <ChevronDown className={clsx("size-5 shrink-0 text-gray-400 transition-transform", open ? "rotate-180" : "")} />
+      ) : action ? (
+        <div className="shrink-0">{action}</div>
+      ) : null}
+    </>
+  );
+
   return (
     <section className="overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-900/5 dark:bg-gray-800/50 dark:outline-white/10">
-      <div className="flex items-center gap-x-4 border-b border-gray-200 bg-gray-50/80 p-6 dark:border-white/10 dark:bg-gray-800/50">
-        <div className="flex size-12 flex-none items-center justify-center rounded-lg bg-gray-100 ring-1 ring-gray-200 dark:bg-gray-700 dark:ring-white/10">
-          <Icon className="size-6 text-gray-500 dark:text-gray-300" />
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className={clsx(
+            "flex w-full items-center gap-x-4 bg-gray-50/80 p-6 transition hover:bg-gray-100/80 dark:bg-gray-800/50 dark:hover:bg-gray-700/40",
+            open ? "border-b border-gray-200 dark:border-white/10" : "",
+          )}
+          aria-expanded={open}
+        >
+          {headerContent}
+        </button>
+      ) : (
+        <div className="flex items-center gap-x-4 border-b border-gray-200 bg-gray-50/80 p-6 dark:border-white/10 dark:bg-gray-800/50">
+          {headerContent}
         </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm/6 font-medium text-gray-900 dark:text-white">{title}</h3>
-          {meta ? <p className="text-sm text-gray-400">{meta}</p> : null}
-        </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
-      </div>
-      <div className={flush ? "" : "px-6 py-4"}>{children}</div>
+      )}
+      {open || !collapsible ? <div className={flush ? "" : "px-6 py-4"}>{children}</div> : null}
     </section>
   );
 }
-
-const CalendarCardIcon = CalendarDaysIcon;

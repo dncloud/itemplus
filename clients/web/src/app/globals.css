@@ -12,6 +12,10 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
+.lucide {
+  stroke-width: 1.25;
+}
+
 /* MD editor resize handle */
 textarea {
   resize: vertical;

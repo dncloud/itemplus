@@ -17,25 +17,26 @@ import (
 )
 
 type setupDraft struct {
-	AppDomain        string
-	MagicLinkBaseURL string
-	AutoActivated    bool
-	CORSOrigins      string
-	TrustedProxies   string
-	DatabaseURL      string
-	UploadDir        string
-	LogDir           string
-	PrinterHost      string
-	PrinterPort      string
-	SMTPHost         string
-	SMTPPort         string
-	SMTPUser         string
-	SMTPPassword     string
-	SMTPFromEmail    string
-	SMTPFromName     string
-	SMTPUseTLS       bool
-	Host             string
-	Port             string
+	AppDomain            string
+	MagicLinkBaseURL     string
+	AutoActivated        bool
+	IOSReviewPermissions bool
+	CORSOrigins          string
+	TrustedProxies       string
+	DatabaseURL          string
+	UploadDir            string
+	LogDir               string
+	PrinterHost          string
+	PrinterPort          string
+	SMTPHost             string
+	SMTPPort             string
+	SMTPUser             string
+	SMTPPassword         string
+	SMTPFromEmail        string
+	SMTPFromName         string
+	SMTPUseTLS           bool
+	Host                 string
+	Port                 string
 }
 
 func trim(value string) string {
@@ -53,25 +54,26 @@ func RunInitialSetup() error {
 
 	current := config.CurrentSetupValues()
 	draft := setupDraft{
-		AppDomain:        current.AppDomain,
-		MagicLinkBaseURL: current.MagicLinkBaseURL,
-		AutoActivated:    current.AutoActivated,
-		CORSOrigins:      current.CORSOrigins,
-		TrustedProxies:   current.TrustedProxies,
-		DatabaseURL:      current.DatabaseURL,
-		UploadDir:        current.UploadDir,
-		LogDir:           current.LogDir,
-		PrinterHost:      current.PrinterHost,
-		PrinterPort:      strconv.Itoa(defaultInt(current.PrinterPort, 9100)),
-		SMTPHost:         current.SMTPHost,
-		SMTPPort:         strconv.Itoa(defaultInt(current.SMTPPort, 465)),
-		SMTPUser:         current.SMTPUser,
-		SMTPPassword:     current.SMTPPassword,
-		SMTPFromEmail:    current.SMTPFromEmail,
-		SMTPFromName:     defaultString(current.SMTPFromName, "item+"),
-		SMTPUseTLS:       current.SMTPUseTLS,
-		Host:             defaultString(current.Host, "0.0.0.0"),
-		Port:             strconv.Itoa(defaultInt(current.Port, config.DefaultPort)),
+		AppDomain:            current.AppDomain,
+		MagicLinkBaseURL:     current.MagicLinkBaseURL,
+		AutoActivated:        current.AutoActivated,
+		IOSReviewPermissions: current.IOSReviewPermissions,
+		CORSOrigins:          current.CORSOrigins,
+		TrustedProxies:       current.TrustedProxies,
+		DatabaseURL:          current.DatabaseURL,
+		UploadDir:            current.UploadDir,
+		LogDir:               current.LogDir,
+		PrinterHost:          current.PrinterHost,
+		PrinterPort:          strconv.Itoa(defaultInt(current.PrinterPort, 9100)),
+		SMTPHost:             current.SMTPHost,
+		SMTPPort:             strconv.Itoa(defaultInt(current.SMTPPort, 465)),
+		SMTPUser:             current.SMTPUser,
+		SMTPPassword:         current.SMTPPassword,
+		SMTPFromEmail:        current.SMTPFromEmail,
+		SMTPFromName:         defaultString(current.SMTPFromName, "item+"),
+		SMTPUseTLS:           current.SMTPUseTLS,
+		Host:                 defaultString(current.Host, "0.0.0.0"),
+		Port:                 strconv.Itoa(defaultInt(current.Port, config.DefaultPort)),
 	}
 	if strings.TrimSpace(draft.CORSOrigins) == "" {
 		draft.CORSOrigins = `["*"]`
@@ -96,6 +98,10 @@ func RunInitialSetup() error {
 				Title("Automatically activate new users?").
 				Description("When enabled, new Apple and magic-link users can sign in immediately. Permissions still decide what they may actually do.").
 				Value(&draft.AutoActivated),
+			huh.NewConfirm().
+				Title("Grant all permissions to new review users?").
+				Description("Development/App Review only. New non-admin accounts receive all regular app permissions automatically. Leave disabled for normal production setups.").
+				Value(&draft.IOSReviewPermissions),
 			huh.NewInput().
 				Title("CORS origins").
 				Description(`JSON array, for example ["https://itemplus.example.com"] or ["*"] for local development.`).
@@ -265,25 +271,26 @@ func (d setupDraft) toSetupValues() (config.SetupValues, error) {
 	}
 
 	return config.SetupValues{
-		AppDomain:        trim(d.AppDomain),
-		MagicLinkBaseURL: trim(d.MagicLinkBaseURL),
-		AutoActivated:    d.AutoActivated,
-		CORSOrigins:      trim(d.CORSOrigins),
-		TrustedProxies:   trim(d.TrustedProxies),
-		DatabaseURL:      trim(d.DatabaseURL),
-		UploadDir:        trim(d.UploadDir),
-		LogDir:           trim(d.LogDir),
-		PrinterHost:      trim(d.PrinterHost),
-		PrinterPort:      printerPort,
-		SMTPHost:         trim(d.SMTPHost),
-		SMTPPort:         smtpPort,
-		SMTPUser:         trim(d.SMTPUser),
-		SMTPPassword:     d.SMTPPassword,
-		SMTPFromEmail:    trim(d.SMTPFromEmail),
-		SMTPFromName:     trim(d.SMTPFromName),
-		SMTPUseTLS:       d.SMTPUseTLS,
-		Host:             trim(d.Host),
-		Port:             port,
+		AppDomain:            trim(d.AppDomain),
+		MagicLinkBaseURL:     trim(d.MagicLinkBaseURL),
+		AutoActivated:        d.AutoActivated,
+		IOSReviewPermissions: d.IOSReviewPermissions,
+		CORSOrigins:          trim(d.CORSOrigins),
+		TrustedProxies:       trim(d.TrustedProxies),
+		DatabaseURL:          trim(d.DatabaseURL),
+		UploadDir:            trim(d.UploadDir),
+		LogDir:               trim(d.LogDir),
+		PrinterHost:          trim(d.PrinterHost),
+		PrinterPort:          printerPort,
+		SMTPHost:             trim(d.SMTPHost),
+		SMTPPort:             smtpPort,
+		SMTPUser:             trim(d.SMTPUser),
+		SMTPPassword:         d.SMTPPassword,
+		SMTPFromEmail:        trim(d.SMTPFromEmail),
+		SMTPFromName:         trim(d.SMTPFromName),
+		SMTPUseTLS:           d.SMTPUseTLS,
+		Host:                 trim(d.Host),
+		Port:                 port,
 	}, nil
 }
 
@@ -388,7 +395,7 @@ func defaultInt(value, fallback int) int {
 func printSetupCompletion(values config.SetupValues, db *sqlx.DB, firstUserRequired bool, adminName, adminEmail string) {
 	fmt.Println()
 	fmt.Println("item+ setup finished successfully.")
-	fmt.Printf("Configuration file: %s\n", config.C.EnvPath)
+	fmt.Printf("Configuration file: %s\n", config.C.ConfigPath)
 
 	loginURL := setupLoginURL(values)
 	signInEmail := trim(adminEmail)

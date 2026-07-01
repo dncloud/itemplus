@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import { ArrowPathIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
-import { CheckoutFilterTabs, CheckoutRequestsList, CheckoutsPagination } from "./checkouts-sections";
+import { ChevronRight, RefreshCw } from "lucide-react";
+import { CheckoutRequestsList, CheckoutsPagination } from "./checkouts-sections";
 import {
   buildCheckoutsPageUrl,
   type CheckoutListEntry,
@@ -81,12 +81,21 @@ export default function CheckoutsPage() {
 
   const realmFiltered = filterCheckoutRequests(requests, filter, realm);
   const paginated = paginateCheckoutRequests(realmFiltered, page, itemsPerPage);
+  const realmRequests = requests.filter((request) => request.realm === realm);
+  const filterCards = [
+    { value: "all", label: t("checkouts.all"), count: realmRequests.filter((entry) => entry.status === "active" || entry.status === "pending").length },
+    { value: "active", label: t("checkouts.active"), count: realmRequests.filter((entry) => entry.status === "active").length },
+    { value: "pending", label: t("checkouts.pending"), count: realmRequests.filter((entry) => entry.status === "pending").length },
+    { value: "approved", label: t("checkouts.approved"), count: realmRequests.filter((entry) => entry.status === "approved").length },
+    { value: "rejected", label: t("checkouts.rejected"), count: realmRequests.filter((entry) => entry.status === "rejected").length },
+    { value: "completed", label: t("checkouts.completed"), count: realmRequests.filter((entry) => entry.status === "completed").length },
+  ];
 
   if (!can("checkout.manage")) return <p className="text-center text-gray-500 py-10">Keine Berechtigung</p>;
 
   return (
     <div className="space-y-6">
-      <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:border-b sm:border-gray-200 sm:text-left lg:mb-8 dark:border-white/10">
+      <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:text-left lg:mb-8">
         <div className="space-y-1 py-3">
           <nav className="text-sm font-medium dark:text-gray-100">
             <ol className="flex items-center justify-center sm:justify-start">
@@ -96,67 +105,103 @@ export default function CheckoutsPage() {
                 </Link>
               </li>
               <li className="flex items-center px-1 opacity-25">
-                <ChevronRightIcon className="inline-block h-5 w-5" />
+                <ChevronRight className="inline-block h-5 w-5" />
               </li>
-              <li className="text-gray-500 dark:text-gray-400">{realm === "archive" ? t("realm.archive") : t("realm.collection")}</li>
+              <li className="text-gray-500 dark:text-gray-400">{t(`realm.${realm}`)}</li>
               <li className="flex items-center px-1 opacity-25">
-                <ChevronRightIcon className="inline-block h-5 w-5" />
+                <ChevronRight className="inline-block h-5 w-5" />
               </li>
               <li className="text-gray-900 dark:text-white">{t("checkouts.title")}</li>
             </ol>
           </nav>
           <h2 className="text-2xl font-bold">{t("checkouts.title")}</h2>
         </div>
-
         <div className="flex items-center justify-center gap-2 rounded-sm px-2 py-3 sm:justify-end sm:bg-transparent sm:px-0">
           <button
             onClick={load}
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            title={t("common.refresh")}
+            title={t("checkouts.refresh")}
+            aria-label={t("checkouts.refresh")}
           >
-            <ArrowPathIcon className="h-4 w-4" />
+            <RefreshCw className="h-4 w-4" />
           </button>
         </div>
       </div>
 
-      <CheckoutFilterTabs
-        filter={filter}
-        requests={requests}
-        realm={realm}
-        onChange={(nextFilter) => router.push(buildCheckoutsPageUrl({ filter: nextFilter, page: 1 }))}
-        t={t}
-      />
-
-      {/* Requests List */}
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-        </div>
-      ) : paginated.total === 0 ? (
-        <p className="text-center text-gray-500 py-10">{t("checkouts.none")}</p>
-      ) : (
-        <>
-          <CheckoutRequestsList
-            requests={paginated.items}
-            canManage={can("checkout.manage")}
-            fmtDate={fmtDate}
-            fmtDateTime={fmtDateTime}
-            onOpenItem={openItem}
-            onApprove={approve}
-            onReject={reject}
-            t={t}
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-6">
+        {filterCards.map((entry) => (
+          <CompactStatCard
+            key={entry.value}
+            label={entry.label}
+            value={entry.count}
+            active={filter === entry.value}
+            onClick={() => router.push(buildCheckoutsPageUrl({ filter: entry.value, page: 1 }))}
           />
-          <CheckoutsPagination
-            page={paginated.page}
-            total={paginated.total}
-            itemsPerPage={itemsPerPage}
-            pages={paginated.pages}
-            t={t}
-            onPage={(nextPage) => router.push(buildCheckoutsPageUrl({ filter, page: nextPage }))}
-          />
-        </>
-      )}
+        ))}
+      </div>
 
+      <div className="rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10">
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+          </div>
+        ) : paginated.total === 0 ? (
+          <div className="px-4 py-6 text-sm text-gray-500 dark:text-gray-400 sm:px-6">
+            {t("checkouts.none")}
+          </div>
+        ) : (
+          <div className="overflow-hidden">
+            <CheckoutRequestsList
+              requests={paginated.items}
+              canManage={can("checkout.manage")}
+              fmtDate={fmtDate}
+              fmtDateTime={fmtDateTime}
+              onOpenItem={openItem}
+              onApprove={approve}
+              onReject={reject}
+              t={t}
+            />
+          </div>
+        )}
+      </div>
+
+      {!loading && paginated.total > 0 ? (
+        <CheckoutsPagination
+          page={paginated.page}
+          total={paginated.total}
+          itemsPerPage={itemsPerPage}
+          pages={paginated.pages}
+          t={t}
+          onPage={(nextPage) => router.push(buildCheckoutsPageUrl({ filter, page: nextPage }))}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function CompactStatCard({
+  label,
+  value,
+  active = false,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl px-4 py-4 text-left outline outline-1 -outline-offset-1 transition ${
+        active
+          ? "bg-blue-50 outline-blue-300 dark:bg-blue-500/10 dark:outline-blue-500/30"
+          : "bg-white outline-gray-200 hover:bg-gray-50 dark:bg-gray-800/50 dark:outline-white/10 dark:hover:bg-white/10"
+      }`}
+    >
+      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</div>
+      <div className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{value}</div>
+    </button>
   );
 }

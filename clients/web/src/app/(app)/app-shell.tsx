@@ -2,8 +2,7 @@
 
 import { useState, type ComponentType } from "react";
 import clsx from "clsx";
-import Link from "next/link";
-import { ArrowRightStartOnRectangleIcon, Bars3Icon, Cog6ToothIcon, DevicePhoneMobileIcon, MagnifyingGlassIcon, PrinterIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { Command, Menu, Smartphone, Search, Printer, Sparkles, X } from "lucide-react";
 import type { UpdateStatus } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 
@@ -38,7 +37,6 @@ export function AppShellHeader({
   showPrinterStatus,
   onOpenSidebar,
   onOpenSearch,
-  onLogout,
   updateStatus,
 }: {
   t: (key: string, vars?: Record<string, string | number>) => string;
@@ -51,7 +49,6 @@ export function AppShellHeader({
   showPrinterStatus: boolean;
   onOpenSidebar: () => void;
   onOpenSearch: () => void;
-  onLogout: () => Promise<void>;
   updateStatus: UpdateStatus | null;
 }) {
   const [dismissedUpdateKey, setDismissedUpdateKey] = useState(() => readSessionStorage(UPDATE_BANNER_DISMISSED_KEY));
@@ -80,7 +77,7 @@ export function AppShellHeader({
   return (
     <header id="page-header" className="sticky top-0 z-40">
       {showUpdateBanner ? (
-        <div className="border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-950 dark:border-blue-500/30 dark:bg-[#0f2137] dark:text-blue-100 sm:px-6 lg:px-8">
+        <div className="bg-blue-50 px-4 py-2 text-sm text-blue-950 dark:bg-[#0f2137] dark:text-blue-100 sm:px-6 lg:px-8">
           <div className="mx-auto flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="min-w-0 font-medium">
               {t("update.available")}
@@ -97,7 +94,7 @@ export function AppShellHeader({
                 {t("update.never")}
               </button>
               <button type="button" onClick={dismissUpdateBanner} className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium opacity-80 transition hover:bg-blue-100 hover:opacity-100 dark:hover:bg-blue-400/10">
-                <XMarkIcon className="size-3.5" />
+                <X className="size-3.5" />
                 {t("update.dismiss")}
               </button>
             </div>
@@ -110,7 +107,7 @@ export function AppShellHeader({
           onClick={onOpenSidebar}
           className="-m-2.5 p-2.5 text-gray-700 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white lg:hidden"
         >
-          <Bars3Icon className="h-6 w-6" />
+          <Menu className="h-6 w-6" />
         </button>
 
         <div aria-hidden="true" className="h-6 w-px bg-gray-200 dark:bg-white/10 lg:hidden" />
@@ -122,11 +119,11 @@ export function AppShellHeader({
             className="inline-flex items-center gap-x-3 self-center rounded-md px-2 py-1.5 text-left text-sm/6 text-gray-500 outline-hidden hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-200"
             aria-label={t("common.search")}
           >
-            <MagnifyingGlassIcon className="size-5 shrink-0 text-gray-400" />
+            <Search className="size-5 shrink-0 text-gray-400" />
             <span>{t("common.search")}</span>
             <span className="hidden items-center gap-x-1 lg:flex">
               <kbd className="flex h-5 min-w-5 items-center justify-center rounded border border-gray-200 bg-white px-1 text-[11px] font-semibold text-gray-400 dark:border-white/10 dark:bg-white/5 dark:text-gray-500">
-                ⌘
+                <Command className="size-3" />
               </kbd>
               <kbd className="flex h-5 min-w-5 items-center justify-center rounded border border-gray-200 bg-white px-1 text-[11px] font-semibold text-gray-400 dark:border-white/10 dark:bg-white/5 dark:text-gray-500">
                 K
@@ -148,40 +145,23 @@ export function AppShellHeader({
                     : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white",
                 )}
               >
-                <SparklesIcon className={clsx("size-4 shrink-0", aiAssistantBusy ? "animate-pulse" : "")} />
+                <Sparkles className={clsx("size-4 shrink-0", aiAssistantBusy ? "animate-pulse" : "")} />
               </button>
             ) : null}
             <ConnectionStatusIcon
               label="iPhone"
               status={iosBridgeStatus}
-              icon={DevicePhoneMobileIcon}
+              icon={Smartphone}
               t={t}
             />
             {showPrinterStatus ? (
               <ConnectionStatusIcon
                 label={t("settings.printerTitle")}
                 status={printerBridgeStatus}
-                icon={PrinterIcon}
+                icon={Printer}
                 t={t}
               />
             ) : null}
-            <Link
-              href="/settings"
-              title={t("nav.settings")}
-              aria-label={t("nav.settings")}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
-            >
-              <Cog6ToothIcon className="size-4 shrink-0" />
-            </Link>
-            <button
-              type="button"
-              onClick={() => void onLogout()}
-              title={t("nav.logout")}
-              aria-label={t("nav.logout")}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-red-50 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
-            >
-              <ArrowRightStartOnRectangleIcon className="size-4 shrink-0" />
-            </button>
           </div>
         </div>
       </div>
@@ -243,8 +223,8 @@ export function AppShellFooter() {
   const { brandingFooterText } = useApp();
 
   return (
-    <footer className="flex flex-none items-center border-t border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900">
-      <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-center gap-y-2 px-4 py-4 text-center lg:px-8">
+    <footer className="flex min-h-[60px] flex-none items-center bg-white dark:bg-gray-900">
+      <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-center gap-y-2 px-4 py-3 text-center lg:px-8">
         {brandingFooterText.trim() ? (
           <p className="max-w-3xl text-xs text-gray-500 dark:text-gray-400">{brandingFooterText}</p>
         ) : null}
@@ -264,22 +244,10 @@ export function AppShellFooter() {
           <a href="https://itemplus.app" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500">
             itemplus.app
           </a>
-          <span>.</span>
         </div>
       </div>
     </footer>
   );
-}
-
-export function AppSidebarOverlay({
-  sidebarOpen,
-  onClose,
-}: {
-  sidebarOpen: boolean;
-  onClose: () => void;
-}) {
-  if (!sidebarOpen) return null;
-  return <div className="fixed inset-0 z-40 bg-gray-900/40 dark:bg-black/30 lg:hidden" onClick={onClose} />;
 }
 
 export function AppShellContainer({ children }: { children: React.ReactNode }) {

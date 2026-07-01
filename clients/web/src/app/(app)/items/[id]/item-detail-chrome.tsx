@@ -1,20 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import SelectPicker from "@/components/select-picker";
+import SelectPicker from "@/components/ui/select-picker";
 import {
-  ArrowsRightLeftIcon,
-  CheckCircleIcon,
-  CheckIcon,
-  ChevronRightIcon,
-  DevicePhoneMobileIcon,
-  InformationCircleIcon,
-  PencilIcon,
-  PrinterIcon,
-  QrCodeIcon,
-  TrashIcon,
-  XMarkIcon,
-} from "@heroicons/react/24/outline";
+  ArrowLeftRight,
+  CircleCheck,
+  Check,
+  ChevronRight,
+  Smartphone,
+  Info,
+  Pencil,
+  Printer,
+  QrCode,
+  Trash2,
+  Wrench,
+  X,
+} from "lucide-react";
 import type { Item } from "@/lib/api";
 import { formatCheckoutRelativeState } from "@/lib/checkout-relative-time";
 
@@ -40,11 +41,11 @@ export function ItemDetailNotification({
           <div className="mt-0.5">
             {notification.tone === "error" ? (
               <div className="rounded-full bg-red-500/15 p-1">
-                <XMarkIcon className="h-4 w-4 text-red-400" />
+                <X className="h-4 w-4 text-red-400" />
               </div>
             ) : (
               <div className="rounded-full bg-emerald-500/15 p-1">
-                <CheckCircleIcon className="h-4 w-4 text-emerald-400" />
+                <CircleCheck className="h-4 w-4 text-emerald-400" />
               </div>
             )}
           </div>
@@ -57,7 +58,7 @@ export function ItemDetailNotification({
             onClick={clearNotification}
             className="rounded-md p-1 text-gray-400 transition hover:bg-white/5 hover:text-white"
           >
-            <XMarkIcon className="h-4 w-4" />
+            <X className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -74,6 +75,10 @@ export function ItemDetailHeader({
   showCheckout,
   setShowCheckout,
   canWriteItems,
+  canViewMaintenance,
+  showMaintenance,
+  setShowMaintenance,
+  maintenanceDueCount,
   canPrintActions,
   canRequestPhoto,
   printing,
@@ -86,7 +91,7 @@ export function ItemDetailHeader({
   pendingDelete,
   remove,
 }: {
-  t: (key: string) => string;
+  t: (key: string, vars?: Record<string, string | number>) => string;
   realm: "archive" | "collection";
   itemName: string;
   checkoutSent: boolean;
@@ -94,6 +99,10 @@ export function ItemDetailHeader({
   showCheckout: boolean;
   setShowCheckout: (value: boolean) => void;
   canWriteItems: boolean;
+  canViewMaintenance: boolean;
+  showMaintenance: boolean;
+  setShowMaintenance: (value: boolean) => void;
+  maintenanceDueCount: number;
   canPrintActions: boolean;
   canRequestPhoto: boolean;
   printing: boolean;
@@ -107,7 +116,7 @@ export function ItemDetailHeader({
   remove: () => void;
 }) {
   return (
-    <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:border-b sm:border-gray-200 sm:text-left lg:mb-8 dark:border-white/10">
+    <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:text-left lg:mb-8">
       <div className="space-y-1 py-3">
         <nav className="text-sm font-medium text-gray-500 dark:text-gray-400">
           <ol className="flex items-center justify-center sm:justify-start">
@@ -117,11 +126,11 @@ export function ItemDetailHeader({
               </Link>
             </li>
             <li className="flex items-center px-1 opacity-25">
-              <ChevronRightIcon className="inline-block h-4 w-4" />
+              <ChevronRight className="inline-block h-4 w-4" />
             </li>
             <li className="text-gray-500 dark:text-gray-400">{realm === "archive" ? t("realm.archive") : t("realm.collection")}</li>
             <li className="flex items-center px-1 opacity-25">
-              <ChevronRightIcon className="inline-block h-4 w-4" />
+              <ChevronRight className="inline-block h-4 w-4" />
             </li>
             <li>
               <Link href="/items" className="hover:text-gray-900 dark:hover:text-white">
@@ -129,7 +138,7 @@ export function ItemDetailHeader({
               </Link>
             </li>
             <li className="flex items-center px-1 opacity-25">
-              <ChevronRightIcon className="inline-block h-4 w-4" />
+              <ChevronRight className="inline-block h-4 w-4" />
             </li>
             <li className="text-gray-900 dark:text-white">{t("itemDetail.details")}</li>
           </ol>
@@ -139,7 +148,10 @@ export function ItemDetailHeader({
       <div className="flex items-center justify-center gap-2 rounded-sm px-2 py-3 sm:justify-end sm:bg-transparent sm:px-0">
         <button
           type="button"
-          onClick={() => setShowCheckout(!showCheckout)}
+          onClick={() => {
+            setShowCheckout(!showCheckout);
+            setShowMaintenance(false);
+          }}
           disabled={checkoutSent || checkoutBlocked}
           title={
             checkoutSent ? t("itemDetail.requested")
@@ -154,8 +166,31 @@ export function ItemDetailHeader({
                 : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
           }`}
         >
-          {checkoutSent ? <CheckIcon className="h-4 w-4" /> : <ArrowsRightLeftIcon className="h-4 w-4" />}
+          {checkoutSent ? <Check className="h-4 w-4" /> : <ArrowLeftRight className="h-4 w-4" />}
         </button>
+        {canViewMaintenance ? (
+          <button
+            type="button"
+            onClick={() => {
+              setShowMaintenance(!showMaintenance);
+              setShowCheckout(false);
+            }}
+            className={`relative inline-flex items-center justify-center rounded-lg border p-2 text-sm transition ${
+              showMaintenance || maintenanceDueCount > 0
+                ? "border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-500/50 dark:text-blue-300 dark:hover:bg-blue-500/10"
+                : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            }`}
+            title={t("maintenance.title")}
+            aria-pressed={showMaintenance}
+          >
+            <Wrench className="h-4 w-4" />
+            {maintenanceDueCount > 0 ? (
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-semibold text-white">
+                {maintenanceDueCount}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
         {canPrintActions ? (
           <button
             type="button"
@@ -167,9 +202,9 @@ export function ItemDetailHeader({
             {printing ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
             ) : printDone ? (
-              <QrCodeIcon className="h-4 w-4" />
+              <QrCode className="h-4 w-4" />
             ) : (
-              <PrinterIcon className="h-4 w-4" />
+              <Printer className="h-4 w-4" />
             )}
           </button>
         ) : null}
@@ -181,7 +216,7 @@ export function ItemDetailHeader({
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
             title={t("attachments.upload")}
           >
-            <DevicePhoneMobileIcon className="h-4 w-4" />
+            <Smartphone className="h-4 w-4" />
           </button>
         ) : null}
         {(canPrintActions || canRequestPhoto || canWriteItems || canDeleteItems) ? (
@@ -193,7 +228,7 @@ export function ItemDetailHeader({
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
             title={t("itemDetail.edit")}
           >
-            <PencilIcon className="h-4 w-4" />
+            <Pencil className="h-4 w-4" />
           </Link>
         ) : null}
         {canDeleteItems ? (
@@ -207,7 +242,7 @@ export function ItemDetailHeader({
             {pendingDelete ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
             ) : (
-              <TrashIcon className="h-4 w-4" />
+              <Trash2 className="h-4 w-4" />
             )}
           </button>
         ) : null}
@@ -261,7 +296,7 @@ export function ItemCheckoutRequestPanel({
   };
 
   return (
-    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3 dark:border-blue-800 dark:bg-blue-900/10">
+    <section className="space-y-4 border-b border-gray-200 pb-6 dark:border-white/10">
       <h3 className="text-sm font-semibold">{t("itemDetail.requestTitle")}</h3>
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -299,7 +334,7 @@ export function ItemCheckoutRequestPanel({
         </div>
       ) : null}
       {canManageCheckout && hasBundleComponents ? (
-        <div className="space-y-2 rounded-lg border border-blue-200/80 bg-white/70 p-3 dark:border-blue-800/80 dark:bg-gray-950/20">
+        <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50/70 p-3 dark:border-white/10 dark:bg-white/5">
           <div>
             <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{t("itemDetail.includeComponents")}</p>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t("itemDetail.includeComponentsHint")}</p>
@@ -357,15 +392,15 @@ export function ItemCheckoutRequestPanel({
           {t("common.cancel")}
         </button>
       </div>
-    </div>
+    </section>
   );
 }
 
 export function ItemCheckoutPendingBanner({ t }: { t: (key: string) => string }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-blue-200 bg-blue-50/70 dark:border-blue-400/20 dark:bg-blue-400/10">
-      <div className="flex items-start gap-3 px-4 py-4 sm:px-6">
-        <InformationCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
+    <section className="border-b border-gray-200 pb-6 dark:border-white/10">
+      <div className="flex items-start gap-3">
+        <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-blue-900 dark:text-blue-300">{t("itemDetail.requested")}</p>
           <p className="mt-1 text-sm text-blue-800/80 dark:text-blue-200/80">{t("itemDetail.requestTitle")}</p>
@@ -405,10 +440,10 @@ export function ItemCheckoutActiveBanner({
   });
 
   return (
-    <section className="overflow-hidden rounded-lg border border-emerald-200 bg-emerald-50/70 dark:border-emerald-400/20 dark:bg-emerald-400/10">
-      <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+    <section className="border-b border-gray-200 pb-6 dark:border-white/10">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <CheckCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <CircleCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <div className="min-w-0">
             <p className="text-sm font-medium text-emerald-900 dark:text-emerald-300">
               {t("itemDetail.checkedOutTo")} {checkoutLabel}
@@ -450,7 +485,7 @@ export function ItemCheckoutActiveBanner({
                           {returningCheckoutID === entry.checkout_id ? (
                             <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
                           ) : (
-                            <ArrowsRightLeftIcon className="h-3.5 w-3.5" />
+                            <ArrowLeftRight className="h-3.5 w-3.5" />
                           )}
                           {t("itemDetail.returnItem")}
                         </button>
@@ -487,7 +522,7 @@ export function ItemCheckoutActiveBanner({
             {returningCheckoutID !== null ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
             ) : (
-              <ArrowsRightLeftIcon className="h-4 w-4" />
+              <ArrowLeftRight className="h-4 w-4" />
             )}
             {t("itemDetail.returnItem")}
           </button>

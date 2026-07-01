@@ -13,9 +13,9 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { PlusIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import { Plus, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useDeleteFlow, ConfirmDelete } from "@/components/confirm-delete";
+import { useDeleteFlow, ConfirmDelete } from "@/components/ui/confirm-delete";
 import {
   LocationInlineForm,
   RecursiveNestedLocation,
@@ -296,7 +296,7 @@ export default function LocationsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:border-b sm:border-gray-200 sm:text-left lg:mb-8 dark:border-white/10">
+      <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:text-left lg:mb-8">
         <div className="space-y-1 py-3">
           <nav className="text-sm font-medium dark:text-gray-100">
             <ol className="flex items-center justify-center sm:justify-start">
@@ -306,11 +306,11 @@ export default function LocationsPage() {
                 </Link>
               </li>
               <li className="flex items-center px-1 opacity-25">
-                <ChevronRightIcon className="inline-block h-5 w-5" />
+                <ChevronRight className="inline-block h-5 w-5" />
               </li>
               <li className="text-gray-500 dark:text-gray-400">{realm === "archive" ? t("realm.archive") : t("realm.collection")}</li>
               <li className="flex items-center px-1 opacity-25">
-                <ChevronRightIcon className="inline-block h-5 w-5" />
+                <ChevronRight className="inline-block h-5 w-5" />
               </li>
               <li className="text-gray-900 dark:text-white">{t("locations.title")}</li>
             </ol>
@@ -328,7 +328,7 @@ export default function LocationsPage() {
               className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
               title={t("common.new")}
             >
-              <PlusIcon className="h-4 w-4" />
+              <Plus className="h-4 w-4" />
             </button>
           ) : null}
         </div>

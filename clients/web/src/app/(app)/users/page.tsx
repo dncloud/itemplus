@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useDeleteFlow, ConfirmDelete } from "@/components/confirm-delete";
+import { useDeleteFlow, ConfirmDelete } from "@/components/ui/confirm-delete";
 import { api, type User } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import { ChevronDownIcon } from "@heroicons/react/24/outline";
+import { ChevronRight } from "lucide-react";
 import { ActiveUsersSection, PendingUsersSection } from "@/app/(app)/users/users-page-sections";
 import {
   applyUpdatedCurrentUser,
@@ -105,12 +105,14 @@ export default function UsersPage() {
 
   const inactive = users.filter((u) => !u.is_active);
   const active = users.filter((u) => u.is_active);
+  const connected = active.filter((u) => u.last_session_online).length;
+  const admins = active.filter((u) => u.is_admin).length;
   const permissionLabels = buildPermissionLabels(t);
   const pendingDeleteUserId = deleteFlow.pending?.type === "user" ? deleteFlow.pending.id : null;
 
   return (
     <div className="space-y-8">
-      <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:border-b sm:border-gray-200 sm:text-left lg:mb-8 dark:border-white/10">
+      <div className="mb-4 text-center sm:text-left lg:mb-8">
         <div className="space-y-1 py-3">
           <nav className="text-sm font-medium dark:text-gray-100">
             <ol className="flex items-center justify-center sm:justify-start">
@@ -120,16 +122,37 @@ export default function UsersPage() {
                 </Link>
               </li>
               <li className="flex items-center px-1 opacity-25">
-                <ChevronDownIcon className="inline-block h-5 w-5 -rotate-90" />
+                <ChevronRight className="inline-block h-5 w-5" />
               </li>
-              <li className="text-gray-500 dark:text-gray-400">{realm === "archive" ? t("realm.archive") : t("realm.collection")}</li>
+              <li className="text-gray-500 dark:text-gray-400">{t("nav.systemGroup")}</li>
               <li className="flex items-center px-1 opacity-25">
-                <ChevronDownIcon className="inline-block h-5 w-5 -rotate-90" />
+                <ChevronRight className="inline-block h-5 w-5" />
               </li>
               <li className="text-gray-900 dark:text-white">{t("users.title")}</li>
             </ol>
           </nav>
           <h2 className="text-2xl font-bold">{t("users.title")}</h2>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10">
+        <div className="grid grid-cols-2 divide-x divide-y divide-gray-200 dark:divide-white/10 xl:grid-cols-4 xl:divide-y-0">
+          <div className="px-4 py-4 sm:px-5">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("users.totalActive")}</div>
+            <div className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{active.length}</div>
+          </div>
+          <div className="px-4 py-4 sm:px-5">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("users.pendingUsers")}</div>
+            <div className="mt-2 text-xl font-semibold text-amber-600 dark:text-amber-300">{inactive.length}</div>
+          </div>
+          <div className="px-4 py-4 sm:px-5">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("users.adminUsers")}</div>
+            <div className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{admins}</div>
+          </div>
+          <div className="px-4 py-4 sm:px-5">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("users.connectedUsers")}</div>
+            <div className="mt-2 text-xl font-semibold text-emerald-600 dark:text-emerald-300">{connected}</div>
+          </div>
         </div>
       </div>
 

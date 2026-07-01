@@ -9,51 +9,53 @@ import (
 )
 
 type SetupValues struct {
-	AppDomain        string `json:"app_domain"`
-	MagicLinkBaseURL string `json:"magic_link_base_url"`
-	AutoActivated    bool   `json:"auto_activated"`
-	CORSOrigins      string `json:"cors_origins"`
-	TrustedProxies   string `json:"trusted_proxies"`
-	DatabaseURL      string `json:"database_url"`
-	UploadDir        string `json:"upload_dir"`
-	LogDir           string `json:"log_dir"`
-	AdminDisplayName string `json:"admin_display_name"`
-	AdminEmail       string `json:"admin_email"`
-	PrinterHost      string `json:"printer_host"`
-	PrinterPort      int    `json:"printer_port"`
-	SMTPHost         string `json:"smtp_host"`
-	SMTPPort         int    `json:"smtp_port"`
-	SMTPUser         string `json:"smtp_user"`
-	SMTPPassword     string `json:"smtp_password"`
-	SMTPFromEmail    string `json:"smtp_from_email"`
-	SMTPFromName     string `json:"smtp_from_name"`
-	SMTPUseTLS       bool   `json:"smtp_use_tls"`
-	Host             string `json:"host"`
-	Port             int    `json:"port"`
+	AppDomain            string `json:"app_domain"`
+	MagicLinkBaseURL     string `json:"magic_link_base_url"`
+	AutoActivated        bool   `json:"auto_activated"`
+	IOSReviewPermissions bool   `json:"ios_review_permissions"`
+	CORSOrigins          string `json:"cors_origins"`
+	TrustedProxies       string `json:"trusted_proxies"`
+	DatabaseURL          string `json:"database_url"`
+	UploadDir            string `json:"upload_dir"`
+	LogDir               string `json:"log_dir"`
+	AdminDisplayName     string `json:"admin_display_name"`
+	AdminEmail           string `json:"admin_email"`
+	PrinterHost          string `json:"printer_host"`
+	PrinterPort          int    `json:"printer_port"`
+	SMTPHost             string `json:"smtp_host"`
+	SMTPPort             int    `json:"smtp_port"`
+	SMTPUser             string `json:"smtp_user"`
+	SMTPPassword         string `json:"smtp_password"`
+	SMTPFromEmail        string `json:"smtp_from_email"`
+	SMTPFromName         string `json:"smtp_from_name"`
+	SMTPUseTLS           bool   `json:"smtp_use_tls"`
+	Host                 string `json:"host"`
+	Port                 int    `json:"port"`
 }
 
 func CurrentSetupValues() SetupValues {
 	corsJSON, _ := json.Marshal(C.CORSOrigins)
 	return SetupValues{
-		AppDomain:        C.AppDomain,
-		MagicLinkBaseURL: C.MagicLinkBaseURL,
-		AutoActivated:    C.AutoActivated,
-		CORSOrigins:      string(corsJSON),
-		TrustedProxies:   strings.Join(C.TrustedProxies, ","),
-		DatabaseURL:      C.DatabaseURL,
-		UploadDir:        C.UploadDir,
-		LogDir:           C.LogDir,
-		PrinterHost:      C.PrinterHost,
-		PrinterPort:      C.PrinterPort,
-		SMTPHost:         C.SMTPHost,
-		SMTPPort:         C.SMTPPort,
-		SMTPUser:         C.SMTPUser,
-		SMTPPassword:     C.SMTPPassword,
-		SMTPFromEmail:    C.SMTPFromEmail,
-		SMTPFromName:     C.SMTPFromName,
-		SMTPUseTLS:       C.SMTPUseTLS,
-		Host:             C.Host,
-		Port:             C.Port,
+		AppDomain:            C.AppDomain,
+		MagicLinkBaseURL:     C.MagicLinkBaseURL,
+		AutoActivated:        C.AutoActivated,
+		IOSReviewPermissions: C.IOSReviewPermissions,
+		CORSOrigins:          string(corsJSON),
+		TrustedProxies:       strings.Join(C.TrustedProxies, ","),
+		DatabaseURL:          C.DatabaseURL,
+		UploadDir:            C.UploadDir,
+		LogDir:               C.LogDir,
+		PrinterHost:          C.PrinterHost,
+		PrinterPort:          C.PrinterPort,
+		SMTPHost:             C.SMTPHost,
+		SMTPPort:             C.SMTPPort,
+		SMTPUser:             C.SMTPUser,
+		SMTPPassword:         C.SMTPPassword,
+		SMTPFromEmail:        C.SMTPFromEmail,
+		SMTPFromName:         C.SMTPFromName,
+		SMTPUseTLS:           C.SMTPUseTLS,
+		Host:                 C.Host,
+		Port:                 C.Port,
 	}
 }
 
@@ -62,6 +64,7 @@ func SaveSetupValues(values SetupValues, complete bool) error {
 		"APP_DOMAIN":                strings.TrimSpace(values.AppDomain),
 		"MAGIC_LINK_BASE_URL":       strings.TrimSpace(values.MagicLinkBaseURL),
 		"AUTO_ACTIVATED":            strconv.FormatBool(values.AutoActivated),
+		"IOS_REVIEW_PERMISSIONS":    strconv.FormatBool(values.IOSReviewPermissions),
 		"CORS_ORIGINS":              strings.TrimSpace(values.CORSOrigins),
 		"TRUSTED_PROXIES":           strings.TrimSpace(values.TrustedProxies),
 		"DATABASE_URL":              strings.TrimSpace(values.DatabaseURL),
@@ -102,7 +105,7 @@ func SaveSetupValues(values SetupValues, complete bool) error {
 		removeKeys = append(removeKeys, "ITEMPLUS_SETUP_REQUIRED")
 	}
 
-	if err := updateConfigFile(C.EnvPath, updates, removeKeys); err != nil {
+	if err := updateConfigFile(C.ConfigPath, updates, removeKeys); err != nil {
 		return err
 	}
 	if complete {
@@ -150,6 +153,7 @@ func updateConfigFile(path string, updates map[string]string, removeKeys []strin
 		"APP_DOMAIN",
 		"MAGIC_LINK_BASE_URL",
 		"AUTO_ACTIVATED",
+		"IOS_REVIEW_PERMISSIONS",
 		"CORS_ORIGINS",
 		"TRUSTED_PROXIES",
 		"DATABASE_URL",

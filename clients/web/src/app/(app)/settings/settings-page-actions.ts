@@ -1,6 +1,6 @@
 import { api, type AIConnectionTestResult, type AIModelOption, type AIProfilePayload, type AISettings, type AISettingsPayload, type ExternalSource, type ExternalSourcePayload, type LabelTemplate, type LabelTemplatePayload, type PrinterStatus } from "@/lib/api";
-import { parseTSPLPreview } from "@/components/tspl-template-preview";
-import type { AIProfileDraft, AISettingsDraft, ExternalSourceDraft, LabelTemplateDraft } from "@/components/settings-drafts";
+import { parseTSPLPreview } from "@/components/settings/tspl-template";
+import type { AIProfileDraft, AISettingsDraft, ExternalSourceDraft, LabelTemplateDraft } from "@/components/settings/drafts";
 
 export type LocationHealthResult = {
   issues: { realm: string; id: number; name: string; type: string }[];
@@ -26,8 +26,41 @@ export async function fixLocationHealth() {
   }
 }
 
-export function buildBrandingPayload(logo: string | null, subtitle: string, footerText: string, width: number) {
-  return { logo, subtitle: subtitle.trim(), footerText: footerText.trim(), width };
+export function buildBrandingPayload({
+  logo,
+  title,
+  titleSize,
+  titlePosition,
+  subtitle,
+  footerText,
+  width,
+  logoBackground,
+  logoPadding,
+  logoRadius,
+}: {
+  logo: string | null;
+  title: string;
+  titleSize: number;
+  titlePosition: "right" | "below";
+  subtitle: string;
+  footerText: string;
+  width: number;
+  logoBackground: string;
+  logoPadding: number;
+  logoRadius: number;
+}) {
+  return {
+    logo,
+    title: title.trim(),
+    titleSize,
+    titlePosition,
+    subtitle: subtitle.trim(),
+    footerText: footerText.trim(),
+    width,
+    logoBackground: logoBackground.trim(),
+    logoPadding,
+    logoRadius,
+  };
 }
 
 export async function resetBrandingSettings() {
@@ -128,6 +161,7 @@ export function buildAIProfilePayload(aiDraft: AIProfileDraft): AIProfilePayload
     parse_item_prompt: aiDraft.parse_item_prompt.trim(),
     category_property_prompt: aiDraft.category_property_prompt.trim(),
     property_enhancement_prompt: aiDraft.property_enhancement_prompt.trim(),
+    vendor_prompt: aiDraft.vendor_prompt.trim(),
   };
 }
 

@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/itemplus/backend/internal/config"
+	core "github.com/itemplus/backend/internal/core"
 	"github.com/itemplus/backend/internal/database"
-	"github.com/itemplus/backend/internal/services"
 )
 
 func main() {
@@ -51,7 +51,7 @@ func main() {
 	client := &http.Client{Timeout: *timeoutFlag}
 	installedDisplay, installedSource := installedServerVersion(ctx, *serverFlag)
 
-	status, err := services.CheckForUpdatesForVersion(ctx, *repoFlag, client, installedDisplay)
+	status, err := core.CheckForUpdatesForVersion(ctx, *repoFlag, client, installedDisplay)
 	if status != nil {
 		status.InstalledSource = installedSource
 	}
@@ -81,20 +81,20 @@ func main() {
 	}
 }
 
-func saveStatus(status services.UpdateStatus) error {
+func saveStatus(status core.UpdateStatus) error {
 	data, err := json.Marshal(status)
 	if err != nil {
 		return err
 	}
-	return database.UpsertAppSetting(services.UpdateStatusSettingKey, string(data), time.Now().UTC().Format(time.RFC3339))
+	return database.UpsertAppSetting(core.UpdateStatusSettingKey, string(data), time.Now().UTC().Format(time.RFC3339))
 }
 
-func preserveDownloadedStatus(status *services.UpdateStatus) {
+func preserveDownloadedStatus(status *core.UpdateStatus) {
 	var raw string
-	if err := database.DB.Get(&raw, "SELECT value FROM app_settings WHERE `key` = ?", services.UpdateStatusSettingKey); err != nil {
+	if err := database.DB.Get(&raw, "SELECT value FROM app_settings WHERE `key` = ?", core.UpdateStatusSettingKey); err != nil {
 		return
 	}
-	var previous services.UpdateStatus
+	var previous core.UpdateStatus
 	if err := json.Unmarshal([]byte(raw), &previous); err != nil {
 		return
 	}
@@ -108,12 +108,12 @@ func preserveDownloadedStatus(status *services.UpdateStatus) {
 	status.DownloadedAssetName = previous.DownloadedAssetName
 }
 
-func downloadUpdate(ctx context.Context, client *http.Client, repo string, outputDir string, status *services.UpdateStatus) error {
-	release, err := services.FetchLatestRelease(ctx, client, repo)
+func downloadUpdate(ctx context.Context, client *http.Client, repo string, outputDir string, status *core.UpdateStatus) error {
+	release, err := core.FetchLatestRelease(ctx, client, repo)
 	if err != nil {
 		return err
 	}
-	asset, ok := services.SelectServerReleaseAsset(release.Assets, runtime.GOOS, runtime.GOARCH)
+	asset, ok := core.SelectServerReleaseAsset(release.Assets, runtime.GOOS, runtime.GOARCH)
 	if !ok {
 		return fmt.Errorf("no server binary asset found for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
@@ -164,8 +164,8 @@ func downloadUpdate(ctx context.Context, client *http.Client, repo string, outpu
 }
 
 func defaultDownloadDir() string {
-	if strings.TrimSpace(config.C.EnvPath) != "" {
-		return filepath.Join(filepath.Dir(config.C.EnvPath), "updates")
+	if strings.TrimSpace(config.C.ConfigPath) != "" {
+		return filepath.Join(filepath.Dir(config.C.ConfigPath), "updates")
 	}
 	if strings.TrimSpace(config.C.DataDir) != "" {
 		return filepath.Join(filepath.Dir(config.C.DataDir), "updates")
@@ -177,7 +177,7 @@ func defaultDownloadDir() string {
 	return filepath.Join(filepath.Dir(executable), "updates")
 }
 
-func printStatus(status services.UpdateStatus) {
+func printStatus(status core.UpdateStatus) {
 	fmt.Printf("Database: %s\n", database.CurrentConnectionSummary())
 	if status.InstalledSource != "" {
 		fmt.Printf("Installed source: %s\n", status.InstalledSource)

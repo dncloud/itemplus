@@ -1,42 +1,52 @@
 "use client";
 
-import { api } from "@/lib/api";
+import { api, type InventoryWarning, type LocationWarning, type MaintenanceReminder } from "@/lib/api";
 import { wsClient } from "@/lib/ws";
 
-export async function loadAppBadges(can: (perm: string) => boolean) {
+function filterWarningsByRealm<T extends { realm?: string }>(warnings: T[], realm: "archive" | "collection") {
+  return warnings.filter((warning) => warning.realm === realm);
+}
+
+export async function loadAppBadges(can: (perm: string) => boolean, realm: "archive" | "collection") {
   const badges: Record<string, number> = {};
   try {
     if (can("users.manage")) {
       const users = await api.getInactiveUsers().catch(() => []);
       if (users.length > 0) badges["/users"] = users.length;
     }
-    if (can("checkout.manage")) {
-      const requests = await api.getCheckoutRequests().catch(() => []);
-      const pending = requests.filter((request: { status: string }) => request.status === "pending").length;
-      if (pending > 0) badges["/checkouts"] = pending;
+
+    const canReadInventory = can("inventory.read");
+    const canViewInventoryWarnings = canReadInventory && can("inventory.write");
+    const canViewLocationWarnings = canReadInventory && can("inventory.write");
+    if (canReadInventory && (canViewInventoryWarnings || canViewLocationWarnings)) {
+      const [inventoryWarnings, locationWarnings] = await Promise.all([
+        canViewInventoryWarnings
+          ? api.getInventoryStats().then((response) => response.warnings || []).catch(() => [] as InventoryWarning[])
+          : Promise.resolve([] as InventoryWarning[]),
+        canViewLocationWarnings
+          ? api.getLocationStats().then((response) => response.warnings || []).catch(() => [] as LocationWarning[])
+          : Promise.resolve([] as LocationWarning[]),
+      ]);
+      const warningCount =
+        filterWarningsByRealm(inventoryWarnings, realm).length +
+        filterWarningsByRealm(locationWarnings, realm).length;
+      if (warningCount > 0) badges["/inventory-movements"] = warningCount;
     }
+
+    if (can("maintenance.read")) {
+      const maintenance = await api.getMaintenanceStats().catch(() => ({ items: [] as MaintenanceReminder[] }));
+      const maintenanceCount = filterWarningsByRealm(maintenance.items || [], realm).length;
+      if (maintenanceCount > 0) badges["/maintenance"] = maintenanceCount;
+    }
+
+    const overdueCheckouts = can("checkout.manage")
+      ? await api.getOverdueCheckouts().catch(() => [])
+      : await api.getMyOverdueCheckouts().catch(() => []);
+    if (overdueCheckouts.length > 0) badges["/checkouts"] = overdueCheckouts.length;
   } catch {
     // keep empty badge state on background fetch failures
   }
   return badges;
-}
-
-export async function loadIOSBridgeStatus(): Promise<"connected" | "offline" | "none"> {
-  try {
-    const response = await fetch(`${api.baseURL}/api/devices/sessions`, { credentials: "include" });
-    if (!response.ok) return "none";
-    const data = await response.json();
-    const sessions = Array.isArray(data)
-      ? data
-      : Array.isArray(data.sessions)
-        ? data.sessions
-        : [];
-    const iosSessions = sessions.filter((session: { device_type?: string }) => session.device_type === "ios");
-    if (iosSessions.length === 0) return "none";
-    return iosSessions.some((session: { is_online?: boolean }) => session.is_online) ? "connected" : "offline";
-  } catch {
-    return "none";
-  }
 }
 
 export async function verifySessionOrRedirect(onUnauthorized: () => void) {
@@ -84,6 +94,9 @@ function buildPresenceLabel(pathname: string, realm: "archive" | "collection") {
   if (pathname.startsWith("/categories")) return `${realmLabel} / Categories`;
   if (pathname.startsWith("/locations")) return `${realmLabel} / Locations`;
   if (pathname.startsWith("/vendors")) return `${realmLabel} / Master Data`;
+  if (pathname.startsWith("/inventory-checks")) return `${realmLabel} / Inventory audit`;
+  if (pathname.startsWith("/inventory-movements")) return `${realmLabel} / Stock`;
+  if (pathname.startsWith("/maintenance")) return `${realmLabel} / Maintenance`;
   if (pathname.startsWith("/checkouts")) return "Checkouts";
   if (pathname.startsWith("/users")) return "Users";
   if (pathname.startsWith("/settings")) return "Settings";
@@ -147,6 +160,9 @@ export function registerAppShellEvents({
   const unsub8 = wsClient.on("user.activated", refreshBadges);
   const unsub9 = wsClient.on("delete.done", refreshBadges);
   const unsub10 = wsClient.on("barcode.scanned", (data) => {
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/inventory-checks")) {
+      return;
+    }
     const code = typeof data.code === "string" ? data.code.trim() : "";
     const symbology = typeof data.symbology === "string" ? data.symbology.trim() : "";
     const nextRealm = typeof data.realm === "string" ? data.realm : realm;

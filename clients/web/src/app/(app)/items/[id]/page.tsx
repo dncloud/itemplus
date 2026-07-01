@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api, type Item, type Category, type Location, type Property } from "@/lib/api";
-import AttachmentManager from "@/components/attachment-manager";
-import { useDeleteFlow, ConfirmDelete } from "@/components/confirm-delete";
+import { Wrench } from "lucide-react";
+import { api, type Item, type Category, type Location, type MaintenanceReminderPayload, type Property } from "@/lib/api";
+import AttachmentManager from "@/components/attachments/attachment-manager";
+import { useDeleteFlow, ConfirmDelete } from "@/components/ui/confirm-delete";
 import { useApp } from "@/lib/app-context";
 import { wsClient } from "@/lib/ws";
-import { ItemDetailSections } from "@/app/(app)/items/[id]/item-detail-sections";
+import { ItemDetailSections, ItemMaintenancePanel } from "@/app/(app)/items/[id]/item-detail-sections";
 import {
   ItemCheckoutActiveBanner,
   ItemCheckoutPendingBanner,
@@ -52,6 +53,7 @@ export default function ItemDetailPage() {
   const [checkoutUsers, setCheckoutUsers] = useState<{ id: number; name: string }[]>([]);
   const [selectedCheckoutUserID, setSelectedCheckoutUserID] = useState<number | "">("");
   const [showCheckout, setShowCheckout] = useState(false);
+  const [showMaintenance, setShowMaintenance] = useState(false);
   const [checkoutSent, setCheckoutSent] = useState(false);
   const [checkoutBlocked, setCheckoutBlocked] = useState(false);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
@@ -116,6 +118,31 @@ export default function ItemDetailPage() {
   const showNotification = useCallback((title: string, message?: string, tone: "success" | "error" = "success") => {
     setNotification({ title, message, tone });
   }, []);
+
+  const createReminder = useCallback(async (payload: MaintenanceReminderPayload) => {
+    await api.createMaintenanceReminder(Number(id), payload);
+    await load();
+  }, [id, load]);
+
+  const updateReminder = useCallback(async (reminderId: number, payload: MaintenanceReminderPayload) => {
+    await api.updateMaintenanceReminder(Number(id), reminderId, payload);
+    await load();
+  }, [id, load]);
+
+  const completeReminder = useCallback(async (reminderId: number) => {
+    await api.completeMaintenanceReminder(Number(id), reminderId);
+    await load();
+  }, [id, load]);
+
+  const skipReminder = useCallback(async (reminderId: number) => {
+    await api.skipMaintenanceReminder(Number(id), reminderId);
+    await load();
+  }, [id, load]);
+
+  const deleteReminder = useCallback(async (reminderId: number) => {
+    await api.deleteMaintenanceReminder(Number(id), reminderId);
+    await load();
+  }, [id, load]);
 
   useEffect(() => {
     if (!notification) return;
@@ -233,6 +260,14 @@ export default function ItemDetailPage() {
   const canUploadAttachmentsOnDetail = can("attachments.write") && showAttachmentUploadOnItemDetail;
   const canPrintActions = can("print") && showPrintFeatures && printerBridgeStatus === "connected";
   const canRequestPhoto = can("attachments.write") && iosBridgeStatus === "connected";
+  const canReadInventory = can("inventory.read");
+  const canReadMaintenance = can("maintenance.read");
+  const canManageMaintenance = canReadMaintenance && can("maintenance.write");
+  const openMaintenance = canReadMaintenance
+    ? item.maintenance_reminders?.filter((reminder) => reminder.status === "open") || []
+    : [];
+  const dueMaintenanceCount = openMaintenance.filter((reminder) => reminder.is_due || reminder.is_overdue).length;
+  const overdueMaintenanceCount = openMaintenance.filter((reminder) => reminder.is_overdue).length;
 
   return (
     <div className="w-full space-y-6">
@@ -249,6 +284,10 @@ export default function ItemDetailPage() {
         showCheckout={showCheckout}
         setShowCheckout={setShowCheckout}
         canWriteItems={can("items.write")}
+        canViewMaintenance={canReadMaintenance}
+        showMaintenance={showMaintenance}
+        setShowMaintenance={setShowMaintenance}
+        maintenanceDueCount={dueMaintenanceCount}
         canPrintActions={canPrintActions}
         canRequestPhoto={canRequestPhoto}
         printing={printing}
@@ -261,6 +300,33 @@ export default function ItemDetailPage() {
         pendingDelete={pendingDelete}
         remove={remove}
       />
+
+      {!showMaintenance && canReadMaintenance && dueMaintenanceCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => {
+            setShowMaintenance(true);
+            setShowCheckout(false);
+          }}
+          className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition ${
+            overdueMaintenanceCount > 0
+              ? "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/15"
+              : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/15"
+          }`}
+        >
+          <span className="mt-0.5 rounded-full bg-current/10 p-1.5">
+            <Wrench className="h-4 w-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold">
+              {overdueMaintenanceCount > 0
+                ? t("maintenance.alertOverdue", { count: overdueMaintenanceCount })
+                : t("maintenance.alertDue", { count: dueMaintenanceCount })}
+            </span>
+            <span className="mt-0.5 block text-xs opacity-80">{t("maintenance.alertOpen")}</span>
+          </span>
+        </button>
+      ) : null}
 
       {showCheckout && (
         <ItemCheckoutRequestPanel
@@ -282,6 +348,21 @@ export default function ItemDetailPage() {
           close={() => setShowCheckout(false)}
         />
       )}
+
+      {showMaintenance && canReadMaintenance ? (
+        <ItemMaintenancePanel
+          reminders={item.maintenance_reminders || []}
+          history={item.maintenance_history || []}
+          canManage={canManageMaintenance}
+          fmtDate={fmtDate}
+          t={t}
+          onCreate={createReminder}
+          onUpdate={updateReminder}
+          onComplete={completeReminder}
+          onSkip={skipReminder}
+          onDelete={deleteReminder}
+        />
+      ) : null}
 
       {checkoutSent && !item.checked_out_to ? <ItemCheckoutPendingBanner t={t} /> : null}
 
@@ -369,7 +450,13 @@ export default function ItemDetailPage() {
         showFiles={false}
       />
 
-      <ItemDetailSections item={item} properties={properties} fmtDate={fmtDate} t={t} />
+      <ItemDetailSections
+        canViewInventory={canReadInventory}
+        item={item}
+        properties={properties}
+        fmtDate={fmtDate}
+        t={t}
+      />
 
       {/* Attachments */}
       <AttachmentManager

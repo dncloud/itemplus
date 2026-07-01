@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  CircleCheck,
+  Mail,
+  QrCode,
+} from "lucide-react";
 import { useApp } from "@/lib/app-context";
 import { api } from "@/lib/api";
-import { LogoIcon } from "@/components/logo";
+import { BrandTitle, LogoIcon } from "@/components/branding/logo";
 
 export default function AuthPage() {
-  const { t, ready } = useApp();
+  const { t, ready, brandingTitle, brandingSubtitle } = useApp();
   const [connected, setConnected] = useState(false);
 
   const [authMode, setAuthMode] = useState<"qr" | "email">("qr");
@@ -129,6 +134,8 @@ export default function AuthPage() {
 
   const authInputClass = "block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 sm:text-sm/6 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500";
   const authPrimaryButtonClass = "flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm/6 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:focus-visible:outline-indigo-500";
+  const authTitle = brandingTitle.trim() || "item+";
+  const authSubtitle = brandingSubtitle.trim() || "Inventory & Collection Management";
 
   return (
     <div className="flex min-h-full items-start justify-center px-4 pt-[15vh]">
@@ -137,10 +144,8 @@ export default function AuthPage() {
         {/* Logo */}
         <div className="text-center space-y-3">
           <LogoIcon size={80} className="mx-auto" />
-          <div className="text-3xl font-bold">
-            item<span className="text-red-400">+</span>
-          </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Inventory & Collection Management</p>
+          <BrandTitle title={authTitle} className="block text-3xl font-bold" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">{authSubtitle}</p>
         </div>
 
         {/* Login Methods */}
@@ -156,9 +161,7 @@ export default function AuthPage() {
                     : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
                 }`}
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM17 14.625v2.25m0 2.25v-2.25m0 0h2.25m-2.25 0h-2.25" />
-                </svg>
+                <QrCode className="h-4 w-4" />
                 {t("auth.qrTab")}
               </button>
               <button
@@ -169,9 +172,7 @@ export default function AuthPage() {
                     : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
                 }`}
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-                </svg>
+                <Mail className="h-4 w-4" />
                 {t("auth.emailTab")}
               </button>
             </div>
@@ -182,9 +183,7 @@ export default function AuthPage() {
                 {qrStatus === "confirmed" ? (
                   <div className="py-6 space-y-3">
                     <div className="h-16 w-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto">
-                      <svg className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
+                      <CircleCheck className="h-8 w-8 text-green-600" />
                     </div>
                     <p className="text-sm font-medium text-green-600">{t("settings.connected")}!</p>
                   </div>
@@ -228,9 +227,7 @@ export default function AuthPage() {
                 {emailStatus === "sent" ? (
                   <div className="text-center py-6 space-y-3">
                     <div className="h-16 w-16 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto">
-                      <svg className="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-                      </svg>
+                      <Mail className="h-8 w-8 text-blue-600" />
                     </div>
                     <p className="text-sm font-medium">{t("auth.emailSent")}</p>
                     <p className="text-xs text-gray-500">{t("auth.emailSentHint")}</p>

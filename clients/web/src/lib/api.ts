@@ -14,9 +14,22 @@ type Method = "GET" | "POST" | "PUT" | "DELETE";
 
 export interface BrandingSettings {
   logo: string | null;
+  title: string;
+  titleSize: number;
+  titlePosition: "right" | "below";
   subtitle: string;
   footerText: string;
   width: number;
+  logoBackground: string;
+  logoPadding: number;
+  logoRadius: number;
+}
+
+export interface SidebarFavorite {
+  id: string;
+  label: string;
+  icon: string;
+  href: string;
 }
 
 export interface PrinterStatus {
@@ -176,10 +189,12 @@ export interface AIProfile {
   parse_item_prompt: string;
   category_property_prompt: string;
   property_enhancement_prompt: string;
+  vendor_prompt: string;
   chat_prompt_default: string;
   parse_item_prompt_default: string;
   category_property_prompt_default: string;
   property_enhancement_prompt_default: string;
+  vendor_prompt_default: string;
 }
 
 export interface AISettings {
@@ -200,6 +215,7 @@ export interface AIProfilePayload {
   parse_item_prompt: string;
   category_property_prompt: string;
   property_enhancement_prompt: string;
+  vendor_prompt: string;
 }
 
 export interface AISettingsPayload {
@@ -295,6 +311,57 @@ export interface AIPropertyEnhancementSuggestionResult {
   questions: string[];
   notes: string[];
   property: AIPropertyProposal;
+  raw_prompt?: string;
+  raw_debug?: string;
+  transport?: string;
+  model?: string;
+  provider?: string;
+  usage?: AIUsage;
+  context?: Record<string, unknown>;
+}
+
+export interface AIVendorAddressProposal {
+  street?: string;
+  house_number?: string;
+  zip?: string;
+  city?: string;
+}
+
+export interface AIVendorProposal {
+  name?: string;
+  website?: string;
+  external_logo_url?: string;
+  email?: string;
+  phone?: string;
+  contact_person?: string;
+  customer_number?: string;
+  account_manager?: string;
+  support_email?: string;
+  support_phone?: string;
+  support_url?: string;
+  address?: AIVendorAddressProposal | null;
+}
+
+export interface VendorLogoPreviewCandidate {
+  data_url: string;
+  source_url?: string;
+  kind?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface VendorLogoPreviewResult {
+  domain: string;
+  candidates: VendorLogoPreviewCandidate[];
+}
+
+export interface AIVendorSuggestionResult {
+  confidence: number;
+  needs_confirmation: boolean;
+  assistant_message: string;
+  questions: string[];
+  notes: string[];
+  vendor: AIVendorProposal;
   raw_prompt?: string;
   raw_debug?: string;
   transport?: string;
@@ -430,6 +497,8 @@ class Api {
   getBranding = () => this.get<BrandingSettings>("/branding");
   updateBranding = (data: BrandingSettings) => this.put<BrandingSettings>("/admin/branding", data);
   resetBranding = () => this.del<BrandingSettings>("/admin/branding");
+  getMaintenanceSettings = () => this.get<MaintenanceSettings>("/admin/maintenance-settings");
+  updateMaintenanceSettings = (data: MaintenanceSettings) => this.put<MaintenanceSettings>("/admin/maintenance-settings", data);
   getAISettings = () => this.get<AISettings>("/admin/ai-settings");
   updateAISettings = (data: AISettingsPayload) => this.put<AISettings>("/admin/ai-settings", data);
   testAISettings = (data: AIProfilePayload) => this.post<AIConnectionTestResult>("/admin/ai-settings/test", data);
@@ -447,11 +516,19 @@ class Api {
     this.post<AICategoryPropertySuggestionResult>("/ai/suggest-category-properties", data);
   suggestPropertyEnhancement = (data: { realm: "archive" | "collection"; prompt: string; locale?: string; category_id: number; property_id: number; allow_web_search?: boolean }) =>
     this.post<AIPropertyEnhancementSuggestionResult>("/ai/suggest-property-enhancement", data);
+  suggestVendor = (data: { realm: "archive" | "collection"; entity_type: "manufacturer" | "supplier" | "vendor" | "sales_platform"; prompt: string; locale?: string; allow_web_search?: boolean; draft?: Partial<Vendor> }) =>
+    this.post<AIVendorSuggestionResult>("/ai/suggest-vendor", data);
+  resolveVendorLogo = (data: { name?: string; website?: string; support_url?: string; external_logo_url?: string }) =>
+    this.post<VendorLogoPreviewResult>("/ai/resolve-vendor-logo", data);
 
   // -- User --
   getMe = () => this.get<User>("/user");
   updateMe = (data: { display_name?: string; email?: string }) => this.put<User>("/user", data);
   deleteMe = () => this.del<void>("/user");
+  uploadMyAvatar = (file: File) => this.postForm<User>("/user/avatar", buildSingleFileForm(file));
+  deleteMyAvatar = () => this.del<User>("/user/avatar");
+  getSidebarFavorites = () => this.get<{ favorites: SidebarFavorite[] }>("/user/sidebar-favorites");
+  updateSidebarFavorites = (favorites: SidebarFavorite[]) => this.put<{ favorites: SidebarFavorite[] }>("/user/sidebar-favorites", { favorites });
   getUsers = () => this.get<User[]>("/users");
   getInactiveUsers = () => this.get<User[]>("/users/inactive");
   getUsersLookup = () => this.get<{ id: number; name: string }[]>("/users/lookup");
@@ -467,7 +544,34 @@ class Api {
   getOverview = () => this.get<StatsOverview>("/stats/overview");
   getInventoryStats = () => this.get<{ warnings: InventoryWarning[] }>("/stats/inventory");
   getLocationStats = () => this.get<{ warnings: LocationWarning[] }>("/stats/locations");
+  getMaintenanceStats = () => this.get<MaintenanceStats>("/stats/maintenance");
   getAIUsageStats = () => this.get<AIUsageStats>("/stats/ai-usage");
+  getInventoryMovements = (params?: { realm?: "archive" | "collection"; item_id?: number; type?: string; limit?: number }) =>
+    this.get<{ movements: InventoryMovement[] }>(
+      this.withQuery("/inventory-movements", {
+        realm: params?.realm,
+        item_id: params?.item_id,
+        type: params?.type,
+        limit: params?.limit,
+      }),
+    );
+  getInventoryChecks = (params?: { realm?: "archive" | "collection" }) =>
+    this.get<InventoryCheckListResponse>(
+      this.withQuery("/inventory-checks", {
+        realm: params?.realm,
+      }),
+    );
+  getInventoryCheck = (id: number) => this.get<InventoryCheckDetail>(`/inventory-checks/${id}`);
+  startInventoryCheck = (data: { realm: "archive" | "collection"; location_id?: number | null; title?: string }) =>
+    this.post<InventoryCheckDetail>("/inventory-checks/start", data);
+  scanInventoryCheck = (id: number, data: { item_id?: number; code?: string; symbology?: string; found_via?: "manual" | "scan" | string }) =>
+    this.post<InventoryCheckScanResult>(`/inventory-checks/${id}/scan`, data);
+  approveInventoryCheckEntry = (sessionId: number, entryId: number) =>
+    this.post<{ entry: InventoryCheckEntry }>(`/inventory-checks/${sessionId}/entries/${entryId}/approve`, {});
+  correctInventoryCheckEntryLocation = (sessionId: number, entryId: number) =>
+    this.post<{ entry: InventoryCheckEntry }>(`/inventory-checks/${sessionId}/entries/${entryId}/correct-location`, {});
+  finishInventoryCheck = (id: number) =>
+    this.post<InventoryCheckDetail>(`/inventory-checks/${id}/finish`, {});
 
   // -- Realm CRUD --
   getItems = (
@@ -501,6 +605,12 @@ class Api {
   updateItem = (id: number, data: Partial<Item>) => this.put<ItemWire>(`/${this.realm}/items/${id}`, serializeItemPayload(data)).then(normalizeItem);
   deleteItem = (id: number) => this.del(`/${this.realm}/items/${id}`);
   getItemsLookup = (excludeId?: number) => this.get<ItemComponent[]>(this.withQuery(`/${this.realm}/items/lookup`, { exclude_id: excludeId }));
+  getMaintenanceReminders = (itemId: number) => this.get<MaintenanceReminder[]>(`/${this.realm}/items/${itemId}/reminders`);
+  createMaintenanceReminder = (itemId: number, data: MaintenanceReminderPayload) => this.post<MaintenanceReminder>(`/${this.realm}/items/${itemId}/reminders`, data);
+  updateMaintenanceReminder = (itemId: number, reminderId: number, data: MaintenanceReminderPayload) => this.put<MaintenanceReminder>(`/${this.realm}/items/${itemId}/reminders/${reminderId}`, data);
+  completeMaintenanceReminder = (itemId: number, reminderId: number) => this.post<MaintenanceReminder>(`/${this.realm}/items/${itemId}/reminders/${reminderId}/complete`, {});
+  skipMaintenanceReminder = (itemId: number, reminderId: number) => this.post<MaintenanceReminder>(`/${this.realm}/items/${itemId}/reminders/${reminderId}/skip`, {});
+  deleteMaintenanceReminder = (itemId: number, reminderId: number) => this.del<void>(`/${this.realm}/items/${itemId}/reminders/${reminderId}`);
 
   getCategories = () => this.get<Category[]>(`/${this.realm}/categories`);
   createCategory = (data: Partial<Category>) => this.post<Category>(`/${this.realm}/categories`, data);
@@ -611,12 +721,16 @@ export interface User {
   sub?: string;
   email?: string;
   name?: string;
+  avatar_path?: string | null;
+  avatar_url?: string | null;
   is_admin: boolean;
   permissions?: string[];
   last_ip?: string;
+  current_ip?: string;
   last_device?: string;
   last_session_seen?: string;
   last_session_online?: boolean;
+  active_checkouts?: number;
   is_active: boolean;
   last_login?: string;
   created_at?: string;
@@ -675,9 +789,64 @@ export interface Item {
     is_overdue?: boolean;
     overdue_days?: number;
   };
+  maintenance_reminders?: MaintenanceReminder[];
+  maintenance_history?: MaintenanceReminder[];
+  inventory_movements?: InventoryMovement[];
+  maintenance_summary?: {
+    open_count?: number;
+    due_count?: number;
+    overdue_count?: number;
+    next_due_date?: string | null;
+  } | null;
   attachments?: Attachment[];
   created_at?: string;
   updated_at?: string;
+}
+
+export type MaintenanceReminderType = "maintenance" | "warranty" | "inspection" | "custom";
+export type MaintenanceRepeatUnit = "days" | "weeks" | "months" | "years";
+export type MaintenanceReminderStatus = "open" | "completed" | "skipped";
+
+export interface MaintenanceReminder {
+  id: number;
+  item_id: number;
+  realm?: "archive" | "collection" | string;
+  item_name?: string;
+  title: string;
+  reminder_type: MaintenanceReminderType;
+  custom_type_label?: string | null;
+  due_date: string;
+  repeat_interval?: number | null;
+  repeat_unit?: MaintenanceRepeatUnit | null;
+  status?: MaintenanceReminderStatus;
+  action?: MaintenanceReminderStatus;
+  notes?: string | null;
+  last_completed_at?: string | null;
+  completed_at?: string | null;
+  performed_by?: number | null;
+  performed_by_name?: string | null;
+  performed_at?: string | null;
+  created_by?: number | null;
+  created_by_name?: string | null;
+  category_name?: string | null;
+  category_color?: string | null;
+  location_name?: string | null;
+  location_color?: string | null;
+  is_due?: boolean;
+  is_overdue?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface MaintenanceReminderPayload {
+  title: string;
+  reminder_type: MaintenanceReminderType;
+  custom_type_label?: string | null;
+  due_date: string;
+  repeat_interval?: number | null;
+  repeat_unit?: MaintenanceRepeatUnit | "";
+  status?: MaintenanceReminderStatus;
+  notes?: string | null;
 }
 
 export interface ItemComponent {
@@ -750,6 +919,8 @@ export interface Vendor {
   id: number;
   name: string;
   logo?: string;
+  logo_background?: string;
+  external_logo_url?: string;
   website?: string;
   email?: string;
   phone?: string;
@@ -767,6 +938,117 @@ export interface Vendor {
 export interface StatsOverview {
   archive: RealmStats;
   collection: RealmStats;
+}
+
+export interface MaintenanceStats {
+  items: MaintenanceReminder[];
+  history?: MaintenanceReminder[];
+  due: number;
+  overdue: number;
+  reminder_lead_days?: number;
+}
+
+export interface MaintenanceSettings {
+  reminder_lead_days: number;
+}
+
+export type InventoryMovementType = "created" | "bought" | "consumed" | "adjusted" | "checked_out" | "returned" | "imported";
+
+export interface InventoryMovement {
+  id: number;
+  realm?: "archive" | "collection" | string;
+  item_id: number;
+  item_name?: string;
+  category_name?: string | null;
+  category_color?: string | null;
+  location_name?: string | null;
+  location_color?: string | null;
+  movement_type: InventoryMovementType | string;
+  quantity_delta: number;
+  quantity_before: number;
+  quantity_after: number;
+  checkout_id?: number | null;
+  source?: string | null;
+  notes?: string | null;
+  created_by?: number | null;
+  created_by_name?: string | null;
+  created_at: string;
+}
+
+export type InventoryCheckScopeType = "realm" | "location";
+export type InventoryCheckStatus = "active" | "completed";
+export type InventoryCheckEntryStatus = "pending" | "found" | "missing" | "unexpected" | "location_mismatch";
+
+export interface InventoryCheckSession {
+  id: number;
+  realm: "archive" | "collection" | string;
+  scope_type: InventoryCheckScopeType | string;
+  location_id?: number | null;
+  location_name?: string | null;
+  title?: string | null;
+  status: InventoryCheckStatus | string;
+  started_by?: number | null;
+  completed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface InventoryCheckEntry {
+  id: number;
+  session_id: number;
+  item_id?: number | null;
+  item_name: string;
+  category_id?: number | null;
+  category_name?: string | null;
+  category_color?: string | null;
+  location_id?: number | null;
+  location_name?: string | null;
+  location_color?: string | null;
+  current_location_id?: number | null;
+  current_location_name?: string | null;
+  current_location_color?: string | null;
+  expected_in_scope: boolean;
+  status: InventoryCheckEntryStatus | string;
+  found_via?: "manual" | "scan" | string | null;
+  found_code?: string | null;
+  location_corrected?: boolean;
+  corrected_location_id?: number | null;
+  corrected_location_name?: string | null;
+  notes?: string | null;
+  found_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface InventoryCheckCounts {
+  expected: number;
+  pending: number;
+  found: number;
+  missing: number;
+  unexpected: number;
+  location_mismatch: number;
+  corrected: number;
+}
+
+export interface InventoryCheckDetail {
+  session: InventoryCheckSession;
+  counts: InventoryCheckCounts;
+  entries: InventoryCheckEntry[];
+}
+
+export interface InventoryCheckSummary {
+  session: InventoryCheckSession;
+  counts: InventoryCheckCounts;
+}
+
+export interface InventoryCheckListResponse {
+  active_session?: InventoryCheckDetail | null;
+  recent_sessions: InventoryCheckSummary[];
+}
+
+export interface InventoryCheckScanResult {
+  entry: InventoryCheckEntry;
+  duplicate?: boolean;
 }
 
 export interface AIUsageStats {

@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import clsx from "clsx";
 import Link from "next/link";
-import { ChevronRightIcon } from "@heroicons/react/24/outline";
-import { ArrowPathIcon, PlusIcon, SparklesIcon } from "@heroicons/react/24/outline";
+import { ChevronRight } from "lucide-react";
+import { RefreshCw, Plus, Sparkles } from "lucide-react";
 import { useApp } from "@/lib/app-context";
 import { api, type AIChatMessage, type AIChatStreamEvent, type AIProfile, type AIUsage } from "@/lib/api";
-import { MarkdownView } from "@/components/markdown";
+import { MarkdownView } from "@/components/ui/markdown";
 
 type ChatEntry = {
   id: string;
@@ -332,8 +332,8 @@ export default function ChatPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-10rem)] flex-col space-y-6">
-      <div className="text-center sm:border-b sm:border-gray-200 sm:text-left dark:border-gray-700">
-        <div className="space-y-1">
+      <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:text-left lg:mb-8">
+        <div className="space-y-1 py-3">
           <nav className="text-sm font-medium dark:text-gray-100">
             <ol className="flex items-center justify-center sm:justify-start">
               <li>
@@ -341,22 +341,15 @@ export default function ChatPage() {
                   {t("nav.dashboard")}
                 </Link>
               </li>
-              <li className="flex items-center px-1 opacity-30">
-                <ChevronRightIcon className="h-4 w-4" />
+              <li className="flex items-center px-1 opacity-25">
+                <ChevronRight className="inline-block h-5 w-5" />
               </li>
-              <li>{t("chat.title")}</li>
+              <li className="text-gray-900 dark:text-white">{t("chat.title")}</li>
             </ol>
           </nav>
-          <div className="py-3 sm:flex sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t("chat.title")}</h1>
-            </div>
-          </div>
+          <h2 className="text-2xl font-bold">{t("chat.title")}</h2>
         </div>
-      </div>
-
-      <div className="flex min-h-0 flex-1 flex-col gap-4">
-        <div className="flex items-center gap-2 px-1">
+        <div className="mt-3 flex items-center justify-center gap-2 rounded-sm px-2 py-3 sm:mt-0 sm:justify-end sm:bg-transparent sm:px-0">
           <button
             type="button"
             onClick={() => setActiveTab("chat")}
@@ -382,7 +375,9 @@ export default function ChatPage() {
             {t("chat.tabRawDebug")}
           </button>
         </div>
+      </div>
 
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         {activeTab === "chat" ? (
           <div ref={messagesScrollRef} className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
             <div className="space-y-5 pb-2">
@@ -510,7 +505,7 @@ export default function ChatPage() {
                   onClick={() => fileInputRef.current?.click()}
                   className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"
                 >
-                  <PlusIcon className="h-4 w-4" />
+                  <Plus className="h-4 w-4" />
                   {t("chat.attach")}
                 </button>
                 <label className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-200">
@@ -537,7 +532,7 @@ export default function ChatPage() {
                 disabled={busy || (!composer.trim() && !pendingUpload)}
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {busy ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <SparklesIcon className="h-4 w-4" />}
+                {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 {t("common.send")}
               </button>
             </div>

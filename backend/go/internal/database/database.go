@@ -9,7 +9,7 @@ import (
 
 	_ "github.com/glebarez/go-sqlite"
 	"github.com/itemplus/backend/internal/config"
-	"github.com/itemplus/backend/internal/services"
+	printtemplates "github.com/itemplus/backend/internal/printing/templates"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -21,6 +21,7 @@ type driverAdapter interface {
 	connectionSummary(rawURL string) string
 	caseInsensitiveOrder(column string) string
 	upsertAppSetting(key, value, updatedAt string) error
+	upsertUserSetting(userID int, key, value, updatedAt string) error
 	schemaStatements() []string
 	shouldIgnoreSchemaError(err error) bool
 }
@@ -74,6 +75,10 @@ func CaseInsensitiveOrder(column string) string {
 
 func UpsertAppSetting(key, value, updatedAt string) error {
 	return adapterForURL(config.C.DatabaseURL).upsertAppSetting(key, value, updatedAt)
+}
+
+func UpsertUserSetting(userID int, key, value, updatedAt string) error {
+	return adapterForURL(config.C.DatabaseURL).upsertUserSetting(userID, key, value, updatedAt)
 }
 
 func OpenPrepared(url string) (*sqlx.DB, error) {
@@ -196,12 +201,62 @@ func schemaStatementsBase() []string {
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
+		`CREATE TABLE IF NOT EXISTS user_settings (
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			setting_key TEXT NOT NULL,
+			value TEXT,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (user_id, setting_key)
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS inventory_sessions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			realm TEXT NOT NULL,
+			scope_type TEXT NOT NULL DEFAULT 'realm',
+			location_id INTEGER,
+			location_name TEXT,
+			title TEXT,
+			status TEXT DEFAULT 'active',
+			started_by INTEGER,
+			completed_at TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_inventory_sessions_realm_status ON inventory_sessions(realm, status, created_at)`,
+
+		`CREATE TABLE IF NOT EXISTS inventory_session_entries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id INTEGER NOT NULL REFERENCES inventory_sessions(id) ON DELETE CASCADE,
+			item_id INTEGER,
+			item_name TEXT NOT NULL,
+			category_id INTEGER,
+			category_name TEXT,
+			category_color TEXT,
+			location_id INTEGER,
+			location_name TEXT,
+			location_color TEXT,
+			expected_in_scope BOOLEAN NOT NULL DEFAULT 1,
+			status TEXT DEFAULT 'pending',
+			found_via TEXT,
+			found_code TEXT,
+			location_corrected BOOLEAN NOT NULL DEFAULT 0,
+			corrected_location_id INTEGER,
+			corrected_location_name TEXT,
+			notes TEXT,
+			found_at TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_inventory_session_entries_session ON inventory_session_entries(session_id, status, expected_in_scope)`,
+		`CREATE INDEX IF NOT EXISTS idx_inventory_session_entries_item ON inventory_session_entries(item_id)`,
+
 		// Users
 		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			apple_sub TEXT UNIQUE NOT NULL,
 			email TEXT,
 			display_name TEXT,
+			avatar_path TEXT,
 			is_admin BOOLEAN DEFAULT 0,
 			is_active BOOLEAN DEFAULT 0,
 			permissions TEXT DEFAULT '[]',
@@ -415,7 +470,7 @@ func BackupTableNames() []string {
 
 func ensureDefaultLabelTemplates(db *sqlx.DB, driver string) error {
 	now := formatTimestampForDriver(driver, time.Now().UTC())
-	defaults := services.DefaultLabelTemplates()
+	defaults := printtemplates.DefaultLabelTemplates()
 
 	if _, err := db.Exec(
 		`UPDATE label_templates
@@ -595,11 +650,68 @@ func realmTables(p string) []string {
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
+		// Inventory movements
+		`CREATE TABLE IF NOT EXISTS ` + p + `_inventory_movements (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			item_id INTEGER NOT NULL REFERENCES ` + p + `_items(id) ON DELETE CASCADE,
+			movement_type TEXT NOT NULL,
+			quantity_delta INTEGER NOT NULL DEFAULT 0,
+			quantity_before INTEGER NOT NULL DEFAULT 0,
+			quantity_after INTEGER NOT NULL DEFAULT 0,
+			checkout_id INTEGER,
+			source TEXT NOT NULL DEFAULT 'manual',
+			notes TEXT,
+			created_by INTEGER,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_` + p + `_inventory_movements_item ON ` + p + `_inventory_movements(item_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_` + p + `_inventory_movements_type ON ` + p + `_inventory_movements(movement_type, created_at)`,
+
+		// Maintenance reminders
+		`CREATE TABLE IF NOT EXISTS ` + p + `_maintenance_reminders (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			item_id INTEGER NOT NULL REFERENCES ` + p + `_items(id) ON DELETE CASCADE,
+			title TEXT NOT NULL,
+			reminder_type TEXT NOT NULL DEFAULT 'maintenance',
+			custom_type_label TEXT,
+			due_date TEXT NOT NULL,
+			repeat_interval INTEGER,
+			repeat_unit TEXT,
+			status TEXT NOT NULL DEFAULT 'open',
+			notes TEXT,
+			last_completed_at TEXT,
+			completed_at TEXT,
+			created_by INTEGER,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_` + p + `_maintenance_reminders_due ON ` + p + `_maintenance_reminders(status, due_date)`,
+		`CREATE INDEX IF NOT EXISTS idx_` + p + `_maintenance_reminders_item ON ` + p + `_maintenance_reminders(item_id)`,
+
+		`CREATE TABLE IF NOT EXISTS ` + p + `_maintenance_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			reminder_id INTEGER NOT NULL,
+			item_id INTEGER NOT NULL REFERENCES ` + p + `_items(id) ON DELETE CASCADE,
+			action TEXT NOT NULL,
+			title TEXT NOT NULL,
+			reminder_type TEXT NOT NULL DEFAULT 'maintenance',
+			custom_type_label TEXT,
+			due_date TEXT NOT NULL,
+			notes TEXT,
+			performed_by INTEGER,
+			performed_at TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_` + p + `_maintenance_history_item ON ` + p + `_maintenance_history(item_id, performed_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_` + p + `_maintenance_history_reminder ON ` + p + `_maintenance_history(reminder_id, performed_at)`,
+
 		// Manufacturers
 		`CREATE TABLE IF NOT EXISTS ` + p + `_manufacturers (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			logo TEXT,
+			logo_background TEXT,
+			external_logo_url TEXT,
 			website TEXT,
 			email TEXT,
 			phone TEXT,
@@ -615,6 +727,8 @@ func realmTables(p string) []string {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			logo TEXT,
+			logo_background TEXT,
+			external_logo_url TEXT,
 			website TEXT,
 			email TEXT,
 			phone TEXT,
@@ -629,6 +743,8 @@ func realmTables(p string) []string {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			logo TEXT,
+			logo_background TEXT,
+			external_logo_url TEXT,
 			website TEXT,
 			email TEXT,
 			phone TEXT,
@@ -644,6 +760,8 @@ func realmTables(p string) []string {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			logo TEXT,
+			logo_background TEXT,
+			external_logo_url TEXT,
 			website TEXT,
 			email TEXT,
 			phone TEXT,

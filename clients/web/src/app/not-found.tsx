@@ -3,18 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowPathIcon,
-  ChevronDownIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ChevronUpIcon,
-  CubeIcon,
-  HomeIcon,
-  MagnifyingGlassIcon,
-  SparklesIcon,
-  XCircleIcon,
-} from "@heroicons/react/24/outline";
-import { LogoIcon } from "@/components/logo";
+  RefreshCw,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Box,
+  House,
+  Search,
+  Sparkles,
+  CircleX,
+} from "lucide-react";
+import { LogoIcon } from "@/components/branding/logo";
 import { useApp } from "@/lib/app-context";
 
 type Position = { x: number; y: number };
@@ -396,7 +396,7 @@ export default function NotFound() {
 
             <div className="rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-4 text-sm text-gray-600 dark:border-white/10 dark:bg-gray-900/30 dark:text-gray-300">
               <div className="flex items-start gap-3">
-                <MagnifyingGlassIcon className="mt-0.5 h-5 w-5 shrink-0 text-gray-400 dark:text-gray-500" />
+                <Search className="mt-0.5 h-5 w-5 shrink-0 text-gray-400 dark:text-gray-500" />
                 <div>
                   <p className="font-medium text-gray-900 dark:text-white">
                     {t("common.notFoundHintTitle")}
@@ -413,7 +413,7 @@ export default function NotFound() {
                 <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
                   <div className="max-w-sm space-y-4">
                     <div className="flex items-start gap-3">
-                      <SparklesIcon className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-300" />
+                      <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-300" />
                       <div>
                         <h2 className="text-base font-semibold text-gray-900 dark:text-white">
                           {t("common.notFoundGameTitle")}
@@ -461,7 +461,7 @@ export default function NotFound() {
                         onClick={() => setGame((current) => startGame(current.best))}
                         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
                       >
-                        {game.status === "over" ? <ArrowPathIcon className="h-4 w-4" /> : <CubeIcon className="h-4 w-4" />}
+                        {game.status === "over" ? <RefreshCw className="h-4 w-4" /> : <Box className="h-4 w-4" />}
                         {game.status === "over" ? t("common.notFoundGameRestart") : gameActionLabel}
                       </button>
                       <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -529,7 +529,7 @@ export default function NotFound() {
                         className="inline-flex h-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:bg-gray-900/60 dark:text-gray-200 dark:hover:bg-white/10"
                         aria-label={t("common.notFoundGameMoveUp")}
                       >
-                        <ChevronUpIcon className="h-5 w-5" />
+                        <ChevronUp className="h-5 w-5" />
                       </button>
                       <div />
                       <button
@@ -538,7 +538,7 @@ export default function NotFound() {
                         className="inline-flex h-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:bg-gray-900/60 dark:text-gray-200 dark:hover:bg-white/10"
                         aria-label={t("common.notFoundGameMoveLeft")}
                       >
-                        <ChevronLeftIcon className="h-5 w-5" />
+                        <ChevronLeft className="h-5 w-5" />
                       </button>
                       <button
                         type="button"
@@ -551,11 +551,11 @@ export default function NotFound() {
                         aria-label={game.status === "over" ? t("common.notFoundGameRestart") : t("common.notFoundGameStart")}
                       >
                         {game.status === "over" ? (
-                          <ArrowPathIcon className="h-5 w-5" />
+                          <RefreshCw className="h-5 w-5" />
                         ) : game.status === "playing" ? (
-                          <CubeIcon className="h-5 w-5" />
+                          <Box className="h-5 w-5" />
                         ) : (
-                          <SparklesIcon className="h-5 w-5" />
+                          <Sparkles className="h-5 w-5" />
                         )}
                       </button>
                       <button
@@ -564,7 +564,7 @@ export default function NotFound() {
                         className="inline-flex h-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:bg-gray-900/60 dark:text-gray-200 dark:hover:bg-white/10"
                         aria-label={t("common.notFoundGameMoveRight")}
                       >
-                        <ChevronRightIcon className="h-5 w-5" />
+                        <ChevronRight className="h-5 w-5" />
                       </button>
                       <div />
                       <button
@@ -573,14 +573,14 @@ export default function NotFound() {
                         className="inline-flex h-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:bg-gray-900/60 dark:text-gray-200 dark:hover:bg-white/10"
                         aria-label={t("common.notFoundGameMoveDown")}
                       >
-                        <ChevronDownIcon className="h-5 w-5" />
+                        <ChevronDown className="h-5 w-5" />
                       </button>
                       <div />
                     </div>
 
                     {game.status === "over" && (
                       <div className="mx-auto mt-4 flex max-w-md items-start gap-3 rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
-                        <XCircleIcon className="mt-0.5 h-5 w-5 shrink-0" />
+                        <CircleX className="mt-0.5 h-5 w-5 shrink-0" />
                         <p>{t("common.notFoundGameOverBody")}</p>
                       </div>
                     )}
@@ -594,7 +594,7 @@ export default function NotFound() {
                 href={isAdmin ? "/dashboard" : "/items"}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
               >
-                <HomeIcon className="h-4 w-4" />
+                <House className="h-4 w-4" />
                 {t("common.backHome")}
               </Link>
               <Link

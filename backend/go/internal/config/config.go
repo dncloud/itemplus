@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/rand"
+	_ "embed"
 	"encoding/base64"
 	"log"
 	"net"
@@ -15,15 +16,16 @@ import (
 )
 
 type Config struct {
-	AppName       string
-	AppVersion    string
-	AppDomain     string // e.g. "itemplus.example.ltd"
-	EnvPath       string
-	DataDir       string
-	Debug         bool
-	DebugHTTP     bool
-	SetupRequired bool
-	AutoActivated bool
+	AppName              string
+	AppVersion           string
+	AppDomain            string // e.g. "itemplus.example.ltd"
+	ConfigPath           string
+	DataDir              string
+	Debug                bool
+	DebugHTTP            bool
+	SetupRequired        bool
+	AutoActivated        bool
+	IOSReviewPermissions bool
 
 	DatabaseURL string
 
@@ -60,9 +62,12 @@ type Config struct {
 const DefaultPort = 17117
 
 var C Config
-var defaultAppVersion = "1.2"
+var defaultAppVersion = "1.3.0"
 var defaultAppBuild = "dev"
 var cliConfigPath string
+
+//go:embed templates/itemplus.conf
+var embeddedDefaultConfigTemplate string
 
 const sqlitePrefix = "sqlite+aiosqlite:///"
 
@@ -80,6 +85,7 @@ var managedConfigEnvKeys = []string{
 	"DEBUG",
 	"DEBUG_HTTP",
 	"AUTO_ACTIVATED",
+	"IOS_REVIEW_PERMISSIONS",
 	"DATABASE_URL",
 	"JWT_SECRET",
 	"JWT_ALGORITHM",
@@ -110,8 +116,8 @@ func SetConfigPath(path string) {
 }
 
 func configBaseDir() string {
-	if trimSpace(C.EnvPath) != "" {
-		return filepath.Dir(C.EnvPath)
+	if trimSpace(C.ConfigPath) != "" {
+		return filepath.Dir(C.ConfigPath)
 	}
 	return executableDir()
 }
@@ -251,22 +257,23 @@ func normalizeForwardedCandidate(raw string) string {
 }
 
 func Load() {
-	envPath, envBaseDir := loadEnv()
-	dataDir := defaultDataDir(envBaseDir)
-	versionDisplay := sharedVersionDisplay(envBaseDir)
+	configPath, configBaseDir := loadConfigFile()
+	dataDir := defaultDataDir(configBaseDir)
+	versionDisplay := sharedVersionDisplay(configBaseDir)
 
 	C = Config{
-		AppName:       envStr("APP_NAME", "item+"),
-		AppVersion:    envStr("APP_VERSION", versionDisplay),
-		AppDomain:     envStr("APP_DOMAIN", ""),
-		EnvPath:       envPath,
-		DataDir:       dataDir,
-		Debug:         envBool("DEBUG"),
-		DebugHTTP:     envBool("DEBUG_HTTP"),
-		SetupRequired: envStr("ITEMPLUS_SETUP_REQUIRED", "") != "",
-		AutoActivated: envBoolDefault("AUTO_ACTIVATED", true),
+		AppName:              envStr("APP_NAME", "item+"),
+		AppVersion:           envStr("APP_VERSION", versionDisplay),
+		AppDomain:            envStr("APP_DOMAIN", ""),
+		ConfigPath:           configPath,
+		DataDir:              dataDir,
+		Debug:                envBool("DEBUG"),
+		DebugHTTP:            envBool("DEBUG_HTTP"),
+		SetupRequired:        envStr("ITEMPLUS_SETUP_REQUIRED", "") != "",
+		AutoActivated:        envBoolDefault("AUTO_ACTIVATED", true),
+		IOSReviewPermissions: envBool("IOS_REVIEW_PERMISSIONS"),
 
-		DatabaseURL: normalizeDatabaseURL(envStr("DATABASE_URL", "sqlite+aiosqlite:///"+filepath.Join(dataDir, "itemplus.db")), envBaseDir),
+		DatabaseURL: normalizeDatabaseURL(envStr("DATABASE_URL", "sqlite+aiosqlite:///"+filepath.Join(dataDir, "itemplus.db")), configBaseDir),
 
 		JWTSecret:     envStr("JWT_SECRET", ""),
 		JWTAlgorithm:  envStr("JWT_ALGORITHM", "HS256"),
@@ -277,8 +284,8 @@ func Load() {
 		CORSOrigins:    envList("CORS_ORIGINS", []string{"*"}),
 		TrustedProxies: envList("TRUSTED_PROXIES", nil),
 
-		UploadDir:     resolveAbsolutePath(envStr("UPLOAD_DIR", filepath.Join(dataDir, "uploads")), envBaseDir),
-		LogDir:        resolveAbsolutePath(envStr("LOG_DIR", filepath.Join(dataDir, "..", "logs")), envBaseDir),
+		UploadDir:     resolveAbsolutePath(envStr("UPLOAD_DIR", filepath.Join(dataDir, "uploads")), configBaseDir),
+		LogDir:        resolveAbsolutePath(envStr("LOG_DIR", filepath.Join(dataDir, "..", "logs")), configBaseDir),
 		MaxUploadSize: envInt64("MAX_UPLOAD_SIZE", 200*1024*1024), // 200 MB default
 
 		PrinterHost: envStr("PRINTER_HOST", ""),
@@ -322,15 +329,18 @@ func Load() {
 	if C.MagicLinkBaseURL == "" && !C.SetupRequired && C.SMTPHost != "" && C.SMTPFromEmail != "" {
 		log.Println("Warning: MAGIC_LINK_BASE_URL not set and no APP_DOMAIN configured")
 	}
+	if C.IOSReviewPermissions {
+		log.Println("Warning: IOS_REVIEW_PERMISSIONS is enabled. New users will receive all regular permissions automatically. Use this only for development, demos, or App Review.")
+	}
 
 	if C.JWTSecret == "" {
-		C.JWTSecret = ensureJWTSecretInConfig(C.EnvPath)
+		C.JWTSecret = ensureJWTSecretInConfig(C.ConfigPath)
 	}
 
 	ensureRuntimePaths()
 }
 
-func loadEnv() (string, string) {
+func loadConfigFile() (string, string) {
 	execDir := executableDir()
 	cwd, _ := os.Getwd()
 
@@ -355,19 +365,19 @@ func loadEnv() (string, string) {
 		}
 	}
 
-	envPath := cliConfigPath
-	if envPath == "" {
-		envPath = filepath.Join(execDir, "itemplus.conf")
+	configPath := cliConfigPath
+	if configPath == "" {
+		configPath = filepath.Join(execDir, "itemplus.conf")
 	}
 	templatePath := findDefaultConfigTemplate(execDir, cwd)
 
-	if err := ensureEnvFileFromTemplate(envPath, templatePath); err != nil {
-		log.Fatalf("Failed to create %s: %v", envPath, err)
+	if err := ensureConfigFileFromTemplate(configPath, templatePath); err != nil {
+		log.Fatalf("Failed to create %s: %v", configPath, err)
 	}
 
 	clearManagedConfigEnv()
-	_ = godotenv.Load(envPath)
-	return envPath, filepath.Dir(envPath)
+	_ = godotenv.Load(configPath)
+	return configPath, filepath.Dir(configPath)
 }
 
 func clearManagedConfigEnv() {
@@ -386,8 +396,8 @@ func findDefaultConfigTemplate(execDir, cwd string) string {
 	return ""
 }
 
-func ensureEnvFileFromTemplate(envPath, templatePath string) error {
-	if _, err := os.Stat(envPath); err == nil {
+func ensureConfigFileFromTemplate(configPath, templatePath string) error {
+	if _, err := os.Stat(configPath); err == nil {
 		return nil
 	}
 
@@ -398,18 +408,18 @@ func ensureEnvFileFromTemplate(envPath, templatePath string) error {
 		}
 	}
 	if len(data) == 0 {
-		if strings.TrimSpace(embeddedDefaultConfig) == "" {
+		if strings.TrimSpace(embeddedDefaultConfigTemplate) == "" {
 			return os.ErrNotExist
 		}
-		data = []byte(embeddedDefaultConfig)
+		data = []byte(embeddedDefaultConfigTemplate)
 	}
-	if err := os.MkdirAll(filepath.Dir(envPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(envPath, data, 0644); err != nil {
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		return err
 	}
-	log.Printf("Created %s from the shared default configuration", envPath)
+	log.Printf("Created %s from the shared default configuration", configPath)
 	return nil
 }
 

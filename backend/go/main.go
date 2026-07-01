@@ -27,8 +27,7 @@ import (
 	"github.com/itemplus/backend/internal/bootstrap"
 	"github.com/itemplus/backend/internal/config"
 	"github.com/itemplus/backend/internal/database"
-	"github.com/itemplus/backend/internal/handlers"
-	_ "github.com/itemplus/backend/internal/middleware"
+	httpapi "github.com/itemplus/backend/internal/http"
 	"github.com/itemplus/backend/internal/storage"
 )
 
@@ -236,40 +235,42 @@ func main() {
 	})
 
 	if webappURL == "" {
-		r.GET("/", handlers.Root)
+		r.GET("/", httpapi.Root)
 	}
 
-	handlers.RegisterWebSocketRoute(r)
+	httpapi.RegisterWebSocketRoute(r)
 
 	api := r.Group("/api")
 	{
-		api.GET("/health", handlers.Health)
+		api.GET("/health", httpapi.Health)
 
-		api.GET("/branding", handlers.GetBranding)
-		handlers.RegisterCRUD(api.Group("/sales-platforms"), "generic_sales_platforms", "vendors.read", "vendors.write", "vendors.delete")
+		api.GET("/branding", httpapi.GetBranding)
+		httpapi.RegisterCRUD(api.Group("/sales-platforms"), "generic_sales_platforms", "vendors.read", "vendors.write", "vendors.delete")
 
 		for _, realm := range []string{"archive", "collection"} {
 			rg := api.Group("/" + realm)
-			handlers.RegisterCRUD(rg.Group("/categories"), realm+"_categories", "categories.read", "categories.write", "categories.delete")
-			handlers.RegisterCRUD(rg.Group("/locations"), realm+"_locations", "locations.read", "locations.write", "locations.delete")
-			handlers.RegisterCRUD(rg.Group("/manufacturers"), realm+"_manufacturers", "vendors.read", "vendors.write", "vendors.delete")
-			handlers.RegisterCRUD(rg.Group("/suppliers"), realm+"_suppliers", "vendors.read", "vendors.write", "vendors.delete")
-			handlers.RegisterCRUD(rg.Group("/vendors"), realm+"_vendors", "vendors.read", "vendors.write", "vendors.delete")
-			handlers.RegisterItemRoutes(rg.Group("/items"), realm)
-			handlers.RegisterAttachmentRoutes(rg.Group("/attachments"), realm)
-			handlers.RegisterPropertyRoutes(rg.Group("/properties"), realm)
+			httpapi.RegisterCRUD(rg.Group("/categories"), realm+"_categories", "categories.read", "categories.write", "categories.delete")
+			httpapi.RegisterCRUD(rg.Group("/locations"), realm+"_locations", "locations.read", "locations.write", "locations.delete")
+			httpapi.RegisterCRUD(rg.Group("/manufacturers"), realm+"_manufacturers", "vendors.read", "vendors.write", "vendors.delete")
+			httpapi.RegisterCRUD(rg.Group("/suppliers"), realm+"_suppliers", "vendors.read", "vendors.write", "vendors.delete")
+			httpapi.RegisterCRUD(rg.Group("/vendors"), realm+"_vendors", "vendors.read", "vendors.write", "vendors.delete")
+			httpapi.RegisterItemRoutes(rg.Group("/items"), realm)
+			httpapi.RegisterAttachmentRoutes(rg.Group("/attachments"), realm)
+			httpapi.RegisterPropertyRoutes(rg.Group("/properties"), realm)
 		}
 
-		handlers.RegisterAuthRoutes(api.Group("/auth"))
-		handlers.RegisterUserRoutes(api)
-		handlers.RegisterDeviceRoutes(api.Group("/devices"))
-		handlers.RegisterCheckoutRoutes(api)
-		handlers.RegisterQRLoginRoutes(api.Group("/login"))
-		handlers.RegisterAIRoutes(api.Group("/ai"))
-		handlers.RegisterPrinterRoutes(api.Group("/print"))
-		handlers.RegisterStatsRoutes(api)
-		handlers.RegisterUpdateStatusRoutes(api)
-		handlers.RegisterAdminRoutes(api.Group("/admin"))
+		httpapi.RegisterAuthRoutes(api.Group("/auth"))
+		httpapi.RegisterUserRoutes(api)
+		httpapi.RegisterDeviceRoutes(api.Group("/devices"))
+		httpapi.RegisterCheckoutRoutes(api)
+		httpapi.RegisterInventoryMovementRoutes(api)
+		httpapi.RegisterInventoryCheckRoutes(api)
+		httpapi.RegisterQRLoginRoutes(api.Group("/login"))
+		httpapi.RegisterAIRoutes(api.Group("/ai"))
+		httpapi.RegisterPrinterRoutes(api.Group("/print"))
+		httpapi.RegisterStatsRoutes(api)
+		httpapi.RegisterUpdateStatusRoutes(api)
+		httpapi.RegisterAdminRoutes(api.Group("/admin"))
 	}
 
 	if webappURL != "" {

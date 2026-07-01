@@ -4,7 +4,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import type { CheckoutListEntry } from "@/app/(app)/checkouts/checkouts-page-utils";
 import { formatCheckoutRelativeState } from "@/lib/checkout-relative-time";
-import { CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
+import { CircleCheck, CircleX } from "lucide-react";
 
 export const STATUS_STYLES: Record<string, { bg: string; text: string; labelKey: string }> = {
   active: { bg: "bg-sky-50 dark:bg-sky-900/30", text: "text-sky-800 dark:text-sky-300", labelKey: "checkouts.active" },
@@ -14,53 +14,6 @@ export const STATUS_STYLES: Record<string, { bg: string; text: string; labelKey:
   completed: { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-600 dark:text-gray-400", labelKey: "checkouts.completed" },
   expired: { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-500", labelKey: "checkouts.expired" },
 };
-
-export function CheckoutFilterTabs({
-  filter,
-  requests,
-  realm,
-  onChange,
-  t,
-}: {
-  filter: string;
-  requests: CheckoutListEntry[];
-  realm: string;
-  onChange: (value: string) => void;
-  t: (k: string) => string;
-}) {
-  const tabDefs = [
-    { key: "all", label: t("checkouts.all") },
-    { key: "active", label: t("checkouts.active") },
-    { key: "pending", label: t("checkouts.pending") },
-    { key: "approved", label: t("checkouts.approved") },
-    { key: "rejected", label: t("checkouts.rejected") },
-    { key: "completed", label: t("checkouts.completed") },
-  ];
-
-  return (
-    <div className="flex gap-2 flex-wrap">
-      {tabDefs.map(({ key, label }) => {
-        const count = key === "all"
-          ? requests.filter((r) => r.realm === realm && (r.status === "active" || r.status === "pending")).length
-          : requests.filter((r) => r.status === key && r.realm === realm).length;
-        return (
-          <button
-            key={key}
-            onClick={() => onChange(key)}
-            className={`px-3 py-1.5 text-sm rounded-lg transition ${
-              filter === key
-                ? "bg-blue-500 text-white"
-                : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-            }`}
-          >
-            {label}
-            {count > 0 ? <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs ${filter === key ? "bg-white/20" : "bg-gray-200 dark:bg-gray-700"}`}>{count}</span> : null}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 export function CheckoutRequestsList({
   requests,
@@ -81,32 +34,20 @@ export function CheckoutRequestsList({
   onReject: (id: number) => void;
   t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
-  const renderRequestSummary = (req: CheckoutListEntry) => {
-    const user = req.user_name || t("users.deletedUser");
-    const date = req.created_at ? fmtDateTime(req.created_at) : null;
-    const duration = req.requested_duration_days
-      ? req.requested_duration_days === 1
-        ? t("checkouts.requestedDurationOne")
-        : t("checkouts.requestedDurationMany", { days: req.requested_duration_days })
-      : null;
-
+  const renderRequestSubline = (req: CheckoutListEntry) => {
     if (req.entryType === "checkout") {
-      if (date) {
-        return t("checkouts.checkedOutToSummary", { user, date });
-      }
-      return t("checkouts.checkedOutToUser", { user });
+      return req.created_at ? fmtDateTime(req.created_at) : null;
     }
-
-    if (duration && date) {
-      return t("checkouts.requestSummary", { user, duration, date });
+    if (req.requested_duration_days && req.created_at) {
+      return `${req.requested_duration_days === 1 ? t("checkouts.requestedDurationOne") : t("checkouts.requestedDurationMany", { days: req.requested_duration_days })} · ${fmtDateTime(req.created_at)}`;
     }
-    if (duration) {
-      return t("checkouts.requestSummaryNoDate", { user, duration });
+    if (req.requested_duration_days) {
+      return req.requested_duration_days === 1 ? t("checkouts.requestedDurationOne") : t("checkouts.requestedDurationMany", { days: req.requested_duration_days });
     }
-    if (date) {
-      return t("checkouts.requestSummaryNoDuration", { user, date });
+    if (req.created_at) {
+      return fmtDateTime(req.created_at);
     }
-    return t("checkouts.requestedByUser", { user });
+    return null;
   };
 
   const renderLoanWindow = (req: CheckoutListEntry) => {
@@ -173,116 +114,174 @@ export function CheckoutRequestsList({
     return t(included ? "checkouts.includedComponent" : "checkouts.notIncludedComponent");
   };
 
-  return (
-    <div className="overflow-hidden divide-y divide-gray-100 bg-white shadow-xs outline outline-1 -outline-offset-1 outline-gray-900/5 sm:rounded-xl dark:divide-white/5 dark:bg-gray-800/50 dark:outline-white/10">
-      {requests.map((req) => {
-        const style = STATUS_STYLES[req.status] || STATUS_STYLES.pending;
-        const loanWindow = renderLoanWindow(req);
-        const relativeDueState = req.status === "completed" ? null : renderRelativeDueState(req);
-        const returnTiming = renderReturnTiming(req);
-        return (
-          <div key={req.id} className="px-4 py-5 hover:bg-gray-50 sm:px-6 dark:hover:bg-white/2.5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1.5 min-w-0">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <Link
-                    href={`/items/${req.item_id}`}
-                    onClick={() => onOpenItem(req)}
-                    className="text-sm/6 font-semibold text-gray-900 dark:text-white hover:underline truncate"
-                  >
-                    {req.item_name || `Item #${req.item_id}`}
-                  </Link>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${style.bg} ${style.text}`}>
-                    {t(style.labelKey)}
-                  </span>
-                  {req.is_overdue ? (
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-400">
-                      {t("checkouts.overdue")}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex gap-3 text-xs text-gray-500 flex-wrap">
-                  <span>{renderRequestSummary(req)}</span>
-                </div>
-                <div className="flex gap-3 text-xs text-gray-500 flex-wrap">
-                  <span>{t("checkouts.bundle")}: {renderBundleState(req)}</span>
-                </div>
-                {loanWindow || relativeDueState ? (
-                  <div className="flex gap-3 text-xs text-gray-500 flex-wrap">
-                    {loanWindow ? <span>{t("checkouts.period")}: {loanWindow}</span> : null}
-                    {relativeDueState ? (
-                      <span className={req.is_overdue ? "text-red-600 dark:text-red-400" : ""}>
-                        {relativeDueState}
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-                {req.status === "completed" && req.returned_at ? (
-                  <div className="flex gap-3 text-xs text-gray-500 flex-wrap">
-                    <span>{t("checkouts.returnedAt", { date: fmtDateTime(req.returned_at) })}</span>
-                    {returnTiming ? <span className={returnTiming.className}>{returnTiming.label}</span> : null}
-                  </div>
-                ) : null}
-                {req.bundle_component_names && req.bundle_component_names.length > 0 ? (
-                  <div className="space-y-1 text-xs text-gray-500 dark:text-gray-400">
-                    <p>{t("checkouts.includedComponents")}:</p>
-                    <ul className="space-y-1">
-                      {req.bundle_component_names.map((name, index) => {
-                        const componentID = req.bundle_component_item_ids?.[index];
-                        const included = componentID != null
-                          ? !!req.component_item_ids?.includes(componentID)
-                          : !!req.component_names?.includes(name);
-                        return (
-                          <li key={`${componentID ?? name}-${index}`} className="flex flex-wrap items-center gap-2">
-                            {componentID ? (
-                              <Link
-                                href={`/items/${componentID}`}
-                                onClick={() => onOpenItem({ ...req, item_id: componentID, item_name: name })}
-                                className="hover:underline text-gray-600 dark:text-gray-300"
-                              >
-                                {name}
-                              </Link>
-                            ) : (
-                              <span>{name}</span>
-                            )}
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                included
-                                  ? "bg-blue-50 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
-                                  : "bg-gray-100 text-gray-600 dark:bg-gray-700/60 dark:text-gray-300"
-                              }`}
-                            >
-                              {renderComponentStateLabel(req, included)}
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ) : null}
-                {req.notes ? <p className="text-xs text-gray-400">{req.notes}</p> : null}
-                {req.approved_by_name && req.status !== "pending" && req.entryType !== "checkout" ? (
-                  <p className="text-xs text-gray-400">
-                    {req.status === "completed" ? t("checkouts.returnedBy") : req.status === "approved" ? t("checkouts.approvedBy") : t("checkouts.rejectedBy")} {req.approved_by_name}
-                  </p>
-                ) : null}
-              </div>
+  const summarizeComponents = (req: CheckoutListEntry) => {
+    if (!req.bundle_component_names || req.bundle_component_names.length === 0) return null;
+    if (req.bundle_component_names.length <= 2) return req.bundle_component_names.join(", ");
+    return `${req.bundle_component_names.slice(0, 2).join(", ")} +${req.bundle_component_names.length - 2}`;
+  };
 
-              {req.status === "pending" && canManage ? (
-                <div className="flex gap-2 shrink-0">
-                  <button onClick={() => onApprove(req.id)} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-800 transition hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20">
-                    <CheckCircleIcon className="h-4 w-4" /> {t("checkouts.approve")}
-                  </button>
-                  <button onClick={() => onReject(req.id)} className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-700 transition hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20">
-                    <XCircleIcon className="h-4 w-4" /> {t("checkouts.reject")}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        );
-      })}
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full table-fixed divide-y divide-gray-200 dark:divide-white/10">
+          <thead className="bg-gray-50/90 dark:bg-white/5">
+            <tr>
+              <th className="w-[30%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                {t("checkouts.itemColumn")}
+              </th>
+              <th className="w-[21%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                {t("checkouts.userColumn")}
+              </th>
+              <th className="w-[23%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                {t("checkouts.timingColumn")}
+              </th>
+              <th className="w-[16%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                {t("checkouts.statusColumn")}
+              </th>
+              <th className="w-[10%] px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                {t("checkouts.actionsColumn")}
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200 dark:divide-white/10">
+            {requests.map((req) => {
+              const style = STATUS_STYLES[req.status] || STATUS_STYLES.pending;
+              const loanWindow = renderLoanWindow(req);
+              const relativeDueState = req.status === "completed" ? null : renderRelativeDueState(req);
+              const returnTiming = renderReturnTiming(req);
+              const user = req.user_name || t("users.deletedUser");
+              const requestSubline = renderRequestSubline(req);
+
+              return (
+                <tr key={req.id} className="align-top hover:bg-gray-50/80 dark:hover:bg-white/5">
+                  <td className="px-4 py-4">
+                    <div className="space-y-2">
+                      <Link
+                        href={`/items/${req.item_id}`}
+                        onClick={() => onOpenItem(req)}
+                        className="block truncate text-[13px] font-medium text-gray-900 hover:underline dark:text-white"
+                      >
+                        {req.item_name || `Item #${req.item_id}`}
+                      </Link>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <MetaPill label={`${t("checkouts.bundle")}: ${renderBundleState(req)}`} />
+                        {req.is_overdue ? <MetaPill label={t("checkouts.overdue")} tone="danger" /> : null}
+                      </div>
+                      {summarizeComponents(req) ? (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {t("checkouts.includedComponents")}: {summarizeComponents(req)}
+                        </div>
+                      ) : null}
+                      {req.notes ? (
+                        <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{req.notes}</div>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="space-y-1">
+                      <div className="truncate text-[13px] font-medium text-gray-900 dark:text-white">{user}</div>
+                      {requestSubline ? <div className="text-xs text-gray-500 dark:text-gray-400">{requestSubline}</div> : null}
+                      {req.approved_by_name && req.status !== "pending" && req.entryType !== "checkout" ? (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {req.status === "completed" ? t("checkouts.returnedBy") : req.status === "approved" ? t("checkouts.approvedBy") : t("checkouts.rejectedBy")} {req.approved_by_name}
+                        </div>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="space-y-2 text-xs text-gray-500 dark:text-gray-400">
+                      {loanWindow ? <div>{loanWindow}</div> : null}
+                      {relativeDueState ? (
+                        <div className={req.is_overdue ? "font-medium text-red-600 dark:text-red-400" : ""}>
+                          {relativeDueState}
+                        </div>
+                      ) : null}
+                      {req.status === "completed" && req.returned_at ? (
+                        <div>{t("checkouts.returnedAt", { date: fmtDateTime(req.returned_at) })}</div>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="space-y-2">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${style.bg} ${style.text}`}>
+                        {t(style.labelKey)}
+                      </span>
+                      {returnTiming ? (
+                        <div>
+                          <MetaPill
+                            label={returnTiming.label}
+                            tone={returnTiming.className.includes("emerald") ? "success" : "danger"}
+                          />
+                        </div>
+                      ) : null}
+                      {req.bundle_component_names && req.bundle_component_names.length > 0 ? (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {req.bundle_component_names.slice(0, 2).map((name, index) => {
+                            const componentID = req.bundle_component_item_ids?.[index];
+                            const included = componentID != null
+                              ? !!req.component_item_ids?.includes(componentID)
+                              : !!req.component_names?.includes(name);
+                            return (
+                              <div key={`${componentID ?? name}-${index}`} className="truncate">
+                                {name} · {renderComponentStateLabel(req, included)}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      {req.status === "pending" && canManage ? (
+                        <>
+                          <button
+                            onClick={() => onApprove(req.id)}
+                            title={t("checkouts.approve")}
+                            aria-label={t("checkouts.approve")}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 text-emerald-800 transition hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
+                          >
+                            <CircleCheck className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => onReject(req.id)}
+                            title={t("checkouts.reject")}
+                            aria-label={t("checkouts.reject")}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-700 transition hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
+                          >
+                            <CircleX className="h-4 w-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-gray-400 dark:text-gray-500">-</span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+      </table>
     </div>
+  );
+}
+
+function MetaPill({
+  label,
+  tone = "neutral",
+}: {
+  label: string;
+  tone?: "neutral" | "danger" | "success";
+}) {
+  const toneClass = {
+    neutral: "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300",
+    danger: "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+    success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+  }[tone];
+
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${toneClass}`}>
+      {label}
+    </span>
   );
 }
 

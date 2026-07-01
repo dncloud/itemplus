@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import ItemCreatePage from "@/components/item-create-page";
+import ItemCreatePage from "@/components/item-create/page";
 
 export default function EditItemPage() {
   const { id } = useParams<{ id: string }>();

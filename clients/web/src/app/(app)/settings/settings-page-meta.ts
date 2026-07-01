@@ -1,18 +1,17 @@
 import {
-  CircleStackIcon,
-  Cog6ToothIcon,
-  DevicePhoneMobileIcon,
-  HomeIcon,
-  PrinterIcon,
-  SparklesIcon,
-  WrenchScrewdriverIcon,
-  type AcademicCapIcon,
-} from "@heroicons/react/24/outline";
+  Database,
+  Monitor,
+  Printer,
+  Sparkles,
+  CircleUser,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 
 type SettingsSection = {
   id: string;
   label: string;
-  icon: typeof AcademicCapIcon;
+  icon: LucideIcon;
   show: boolean;
 };
 
@@ -30,25 +29,21 @@ export const settingsDangerButtonClass =
 export function buildSettingsSections({
   t,
   hasAccount,
-  hasSessions,
   canPrint,
   isAdmin,
 }: {
-  t: (key: string) => string;
+  t: (key: string, vars?: Record<string, string | number>) => string;
   hasAccount: boolean;
-  hasSessions: boolean;
   canPrint: boolean;
   isAdmin: boolean;
 }) {
   const sections: SettingsSection[] = [
-    { id: "account", label: t("settings.sectionAccount"), icon: Cog6ToothIcon, show: hasAccount },
-    { id: "devices", label: t("settings.sectionDevices"), icon: DevicePhoneMobileIcon, show: hasSessions },
-    { id: "app", label: t("settings.sectionApp"), icon: Cog6ToothIcon, show: true },
-    { id: "branding", label: t("settings.branding"), icon: HomeIcon, show: isAdmin },
-    { id: "printer", label: t("settings.printerTitle"), icon: PrinterIcon, show: canPrint || isAdmin },
-    { id: "storage", label: t("settings.externalSources"), icon: CircleStackIcon, show: isAdmin },
-    { id: "ai", label: t("settings.sectionAI"), icon: SparklesIcon, show: isAdmin },
-    { id: "system", label: t("settings.sectionSystem"), icon: WrenchScrewdriverIcon, show: isAdmin },
+    { id: "account", label: t("settings.sectionAccount"), icon: CircleUser, show: hasAccount },
+    { id: "app", label: t("settings.sectionApp"), icon: Monitor, show: true },
+    { id: "printer", label: t("settings.printerTitle"), icon: Printer, show: canPrint || isAdmin },
+    { id: "storage", label: t("settings.externalSources"), icon: Database, show: isAdmin },
+    { id: "ai", label: t("settings.sectionAI"), icon: Sparkles, show: isAdmin },
+    { id: "backup", label: t("settings.sectionSystem"), icon: Wrench, show: isAdmin },
   ];
 
   return sections.filter((section) => section.show);

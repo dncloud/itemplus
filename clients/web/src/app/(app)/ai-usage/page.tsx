@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { ArrowPathIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import { RefreshCw, ChevronRight } from "lucide-react";
 import { api, type AIUsageStats, type AIUsageStatsBucket, type AIUsageStatsPeriod } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 
@@ -226,8 +226,8 @@ export default function AIUsagePage() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col space-y-6">
-      <div className="text-center sm:border-b sm:border-gray-200 sm:text-left dark:border-gray-700">
-        <div className="space-y-1">
+      <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:text-left lg:mb-8">
+        <div className="space-y-1 py-3">
           <nav className="text-sm font-medium dark:text-gray-100">
             <ol className="flex items-center justify-center sm:justify-start">
               <li>
@@ -235,27 +235,25 @@ export default function AIUsagePage() {
                   {t("nav.dashboard")}
                 </Link>
               </li>
-              <li className="flex items-center px-1 opacity-30">
-                <ChevronRightIcon className="h-4 w-4" />
+              <li className="flex items-center px-1 opacity-25">
+                <ChevronRight className="inline-block h-5 w-5" />
               </li>
-              <li>{t("aiUsage.title")}</li>
+              <li className="text-gray-900 dark:text-white">{t("aiUsage.title")}</li>
             </ol>
           </nav>
-          <div className="py-3 sm:flex sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t("aiUsage.title")}</h1>
-              <p className="mt-1 max-w-3xl text-sm/6 text-gray-500 dark:text-gray-400">{t("aiUsage.intro")}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void loadStats()}
-              disabled={loading}
-              className="mt-3 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10 sm:mt-0"
-            >
-              <ArrowPathIcon className={clsx("h-4 w-4", loading && "animate-spin")} />
-              {t("aiUsage.refresh")}
-            </button>
-          </div>
+          <h2 className="text-2xl font-bold">{t("aiUsage.title")}</h2>
+        </div>
+        <div className="flex items-center justify-center gap-2 rounded-sm px-2 py-3 sm:justify-end sm:bg-transparent sm:px-0">
+          <button
+            type="button"
+            onClick={() => void loadStats()}
+            disabled={loading}
+            className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            title={t("aiUsage.refresh")}
+            aria-label={t("aiUsage.refresh")}
+          >
+            <RefreshCw className={clsx("h-4 w-4", loading && "animate-spin")} />
+          </button>
         </div>
       </div>
 

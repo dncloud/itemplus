@@ -4,8 +4,8 @@ import type React from "react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bars3Icon, ChevronDownIcon, CubeIcon, PencilIcon, PrinterIcon, TrashIcon } from "@heroicons/react/24/outline";
-import SelectPicker from "@/components/select-picker";
+import { GripVertical, ChevronDown, Box, Pencil, Printer, Trash2 } from "lucide-react";
+import SelectPicker from "@/components/ui/select-picker";
 import type { Location } from "@/lib/api";
 
 const locationInputClass = "w-full rounded-md bg-white px-3 py-1.5 text-sm text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500";
@@ -52,14 +52,14 @@ export function SortableLocation({
     <div ref={setNodeRef} style={style} className={`${isDragging ? "z-20 shadow-2xl opacity-90" : ""}`}>
       <div className="relative flex items-center gap-y-4 px-4 py-5 hover:bg-gray-50 sm:px-6 dark:hover:bg-white/2.5">
         <button {...attributes} {...listeners} className="mr-2 inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10 cursor-grab active:cursor-grabbing">
-          <Bars3Icon className="h-4 w-4 text-gray-400" />
+          <GripVertical className="h-4 w-4 text-gray-400" />
         </button>
         <button onClick={onToggle} className="flex-1 flex items-center gap-2 text-left min-w-0">
           <div className="min-w-0">
             <span className="text-sm/6 font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
               {loc.color ? <span className="inline-block h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: loc.color }} /> : null}
               {loc.name}
-              {hasChildren ? <ChevronDownIcon className={`h-4 w-4 text-gray-400 transition shrink-0 ${isOpen ? "rotate-180" : ""}`} /> : null}
+              {hasChildren ? <ChevronDown className={`h-4 w-4 text-gray-400 transition shrink-0 ${isOpen ? "rotate-180" : ""}`} /> : null}
             </span>
             {loc.capacity != null ? <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t("locations.capacity")} {loc.capacity}</span> : null}
             {loc.created_at ? (
@@ -72,9 +72,9 @@ export function SortableLocation({
         </button>
         {managerName ? <span className="mr-2 hidden rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 dark:bg-white/5 dark:text-gray-300 sm:inline">{managerName}</span> : null}
         <div className="flex items-center gap-1 shrink-0">
-          {canPrint ? <button onClick={onPrintQR} title={t("common.print")} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><PrinterIcon className="h-4 w-4 text-gray-400" /></button> : null}
-          <button onClick={onShowItems} title="Items" className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><CubeIcon className="h-4 w-4 text-gray-400" /></button>
-          {canWrite ? <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><PencilIcon className="h-4 w-4 text-gray-400" /></button> : null}
+          {canPrint ? <button onClick={onPrintQR} title={t("common.print")} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><Printer className="h-4 w-4 text-gray-400" /></button> : null}
+          <button onClick={onShowItems} title="Items" className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><Box className="h-4 w-4 text-gray-400" /></button>
+          {canWrite ? <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"><Pencil className="h-4 w-4 text-gray-400" /></button> : null}
           {canDelete ? (
             <button
               onClick={onDelete}
@@ -84,7 +84,7 @@ export function SortableLocation({
               {pendingDelete ? (
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
               ) : (
-                <TrashIcon className="h-4 w-4 text-red-400" />
+                <Trash2 className="h-4 w-4 text-red-400" />
               )}
             </button>
           ) : null}
@@ -136,13 +136,13 @@ export function SortableNestedLocation({
       <div>
         <div className="flex items-center gap-2 px-3 py-2">
           <button {...attributes} {...listeners} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10 cursor-grab active:cursor-grabbing">
-            <Bars3Icon className="h-3.5 w-3.5 text-gray-400" />
+            <GripVertical className="h-3.5 w-3.5 text-gray-400" />
           </button>
           <button onClick={hasChildren ? onToggle : onShowItems} className="flex-1 min-w-0 text-left transition">
             <span className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-1.5">
               {child.color ? <span className="inline-block h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: child.color }} /> : null}
               {child.name}
-              {hasChildren ? <ChevronDownIcon className={`h-3.5 w-3.5 text-gray-400 transition shrink-0 ${isOpen ? "rotate-180" : ""}`} /> : null}
+              {hasChildren ? <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition shrink-0 ${isOpen ? "rotate-180" : ""}`} /> : null}
             </span>
             {child.capacity != null ? <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t("locations.capacity")} {child.capacity}</span> : null}
             {child.created_at ? (
@@ -152,8 +152,8 @@ export function SortableNestedLocation({
               </span>
             ) : null}
           </button>
-          {canPrint ? <button onClick={onPrintQR} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10" title={t("common.print")}><PrinterIcon className="h-3.5 w-3.5 text-gray-400" /></button> : null}
-          {canWrite ? <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10"><PencilIcon className="h-3.5 w-3.5 text-gray-400" /></button> : null}
+          {canPrint ? <button onClick={onPrintQR} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10" title={t("common.print")}><Printer className="h-3.5 w-3.5 text-gray-400" /></button> : null}
+          {canWrite ? <button onClick={onEdit} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10"><Pencil className="h-3.5 w-3.5 text-gray-400" /></button> : null}
           {canDelete ? (
             <button
               onClick={onDelete}
@@ -163,7 +163,7 @@ export function SortableNestedLocation({
               {pendingDelete ? (
                 <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
               ) : (
-                <TrashIcon className="h-3.5 w-3.5 text-red-400" />
+                <Trash2 className="h-3.5 w-3.5 text-red-400" />
               )}
             </button>
           ) : null}
