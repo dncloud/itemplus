@@ -4,7 +4,7 @@ import type React from "react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, ChevronDown, Box, Pencil, Printer, Trash2 } from "lucide-react";
+import { ChevronDown, Box, GripVertical, Pencil, Printer, Trash2 } from "lucide-react";
 import SelectPicker from "@/components/ui/select-picker";
 import type { Location } from "@/lib/api";
 
@@ -51,8 +51,8 @@ export function SortableLocation({
   return (
     <div ref={setNodeRef} style={style} className={`${isDragging ? "z-20 shadow-2xl opacity-90" : ""}`}>
       <div className="relative flex items-center gap-y-4 px-4 py-5 hover:bg-gray-50 sm:px-6 dark:hover:bg-white/2.5">
-        <button {...attributes} {...listeners} className="mr-2 inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10 cursor-grab active:cursor-grabbing">
-          <GripVertical className="h-4 w-4 text-gray-400" />
+        <button {...attributes} {...listeners} className="mr-2 inline-flex items-center justify-center rounded-lg border border-gray-300/80 p-1.5 transition hover:bg-gray-50/80 dark:border-gray-700/80 dark:hover:bg-white/5 cursor-grab active:cursor-grabbing">
+          <GripVertical className="h-4 w-4 text-gray-400/90" />
         </button>
         <button onClick={onToggle} className="flex-1 flex items-center gap-2 text-left min-w-0">
           <div className="min-w-0">
@@ -135,8 +135,8 @@ export function SortableNestedLocation({
     <div ref={setNodeRef} style={style} className={`${isDragging ? "z-20 shadow-lg opacity-90" : ""}`}>
       <div>
         <div className="flex items-center gap-2 px-3 py-2">
-          <button {...attributes} {...listeners} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-white/10 cursor-grab active:cursor-grabbing">
-            <GripVertical className="h-3.5 w-3.5 text-gray-400" />
+          <button {...attributes} {...listeners} className="inline-flex items-center justify-center rounded-lg border border-gray-300/80 p-1.5 transition hover:bg-gray-100/80 dark:border-gray-700/80 dark:hover:bg-white/5 cursor-grab active:cursor-grabbing">
+            <GripVertical className="h-3.5 w-3.5 text-gray-400/90" />
           </button>
           <button onClick={hasChildren ? onToggle : onShowItems} className="flex-1 min-w-0 text-left transition">
             <span className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-1.5">

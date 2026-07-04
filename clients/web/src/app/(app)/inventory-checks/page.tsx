@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { ChevronRight, RefreshCw, ScanLine } from "lucide-react";
+import { ChevronRight, LoaderCircle, RefreshCw, ScanLine } from "lucide-react";
 import { FloatingNotification, type FloatingNotificationState } from "@/components/ui/floating-notification";
 import SelectPicker from "@/components/ui/select-picker";
 import {
@@ -17,7 +17,7 @@ import { useApp } from "@/lib/app-context";
 import { wsClient } from "@/lib/ws";
 
 export default function InventoryChecksPage() {
-  const { realm, t, fmtDateTime, can } = useApp();
+  const { realm, t, fmtDateTime, can, iosBridgeStatus } = useApp();
   const [activeSession, setActiveSession] = useState<InventoryCheckDetail | null>(null);
   const [recentSessions, setRecentSessions] = useState<InventoryCheckSummary[]>([]);
   const [reportDetail, setReportDetail] = useState<InventoryCheckDetail | null>(null);
@@ -26,6 +26,7 @@ export default function InventoryChecksPage() {
   const [title, setTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [scanPending, setScanPending] = useState(false);
   const [selectedReportID, setSelectedReportID] = useState<number | null>(null);
   const [notification, setNotification] = useState<FloatingNotificationState>(null);
   const canReadInventory = can("inventory.read");
@@ -40,6 +41,18 @@ export default function InventoryChecksPage() {
     const timer = window.setTimeout(() => setNotification(null), 2800);
     return () => window.clearTimeout(timer);
   }, [notification]);
+
+  useEffect(() => {
+    if (!scanPending) return;
+    const timer = window.setTimeout(() => setScanPending(false), 12000);
+    return () => window.clearTimeout(timer);
+  }, [scanPending]);
+
+  useEffect(() => {
+    if (iosBridgeStatus !== "connected") {
+      setScanPending(false);
+    }
+  }, [iosBridgeStatus]);
 
   const loadOverview = useCallback(async (reportID?: number | null) => {
     setLoading(true);
@@ -83,6 +96,7 @@ export default function InventoryChecksPage() {
       if (!activeSession) return;
       const nextRealm = typeof data.realm === "string" ? data.realm : realm;
       if (nextRealm !== realm) return;
+      setScanPending(false);
       const code = typeof data.code === "string" ? data.code : "";
       const symbology = typeof data.symbology === "string" ? data.symbology : "";
       try {
@@ -100,6 +114,7 @@ export default function InventoryChecksPage() {
       if (!activeSession) return;
       const nextRealm = typeof data.realm === "string" ? data.realm : realm;
       if (nextRealm !== realm) return;
+      setScanPending(false);
       const itemID = Number(data.item_id);
       if (!Number.isFinite(itemID) || itemID <= 0) return;
       try {
@@ -114,6 +129,7 @@ export default function InventoryChecksPage() {
     };
 
     const handleUnavailable = () => {
+      setScanPending(false);
       showNotification(t("inventoryChecks.scanUnavailable"), "error");
     };
 
@@ -202,6 +218,8 @@ export default function InventoryChecksPage() {
   };
 
   const requestScan = () => {
+    if (iosBridgeStatus !== "connected") return;
+    setScanPending(true);
     wsClient.send("barcode.capture_request", { realm });
   };
 
@@ -211,11 +229,15 @@ export default function InventoryChecksPage() {
     [visibleDetail],
   );
   const expectedMainEntries = useMemo(
-    () => expectedEntries.filter((entry) => entry.status !== "missing" && entry.status !== "location_mismatch"),
+    () => expectedEntries.filter((entry) => entry.status !== "missing" && entry.status !== "location_mismatch" && entry.status !== "checked_out"),
     [expectedEntries],
   );
   const mismatchEntries = useMemo(
     () => expectedEntries.filter((entry) => entry.status === "location_mismatch"),
+    [expectedEntries],
+  );
+  const checkedOutEntries = useMemo(
+    () => expectedEntries.filter((entry) => entry.status === "checked_out"),
     [expectedEntries],
   );
   const unexpectedEntries = useMemo(
@@ -226,6 +248,7 @@ export default function InventoryChecksPage() {
     () => expectedEntries.filter((entry) => entry.status === "missing"),
     [expectedEntries],
   );
+  const canScan = iosBridgeStatus === "connected";
 
   if (!canReadInventory) {
     return <p className="py-10 text-center text-gray-500 dark:text-gray-400">Keine Berechtigung</p>;
@@ -308,10 +331,11 @@ export default function InventoryChecksPage() {
 
       {visibleDetail ? (
         <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-7">
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             <StatCard label={t("inventoryChecks.expected")} value={visibleDetail.counts.expected} />
             <StatCard label={t("inventoryChecks.pending")} value={visibleDetail.counts.pending} />
             <StatCard label={t("inventoryChecks.found")} value={visibleDetail.counts.found} />
+            <StatCard label={t("inventoryChecks.checkedOut")} value={visibleDetail.counts.checked_out} />
             <StatCard label={t("inventoryChecks.missing")} value={visibleDetail.counts.missing} />
             <StatCard label={t("inventoryChecks.unexpected")} value={visibleDetail.counts.unexpected} />
             <StatCard label={t("inventoryChecks.locationMismatch")} value={visibleDetail.counts.location_mismatch} />
@@ -329,17 +353,27 @@ export default function InventoryChecksPage() {
                   {visibleDetail.session.location_name?.trim() || t("inventoryChecks.locationAll")}
                   {visibleDetail.session.completed_at ? ` · ${fmtDateTime(visibleDetail.session.completed_at)}` : ""}
                 </p>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                  {t("inventoryChecks.found")}: {visibleDetail.counts.found}
+                  {" · "}
+                  {t("inventoryChecks.checkedOut")}: {visibleDetail.counts.checked_out}
+                  {" · "}
+                  {t("inventoryChecks.missing")}: {visibleDetail.counts.missing}
+                  {" · "}
+                  {t("inventoryChecks.unexpected")}: {visibleDetail.counts.unexpected}
+                </p>
               </div>
               {activeSession ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={requestScan}
-                    disabled={busy}
+                    disabled={busy || scanPending || !canScan}
                     className="inline-flex h-[38px] items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 text-sm font-semibold text-gray-900 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-white dark:hover:bg-white/5"
+                    title={!canScan ? t("inventoryChecks.scanUnavailable") : undefined}
                   >
-                    <ScanLine className="h-4 w-4" />
-                    {t("inventoryChecks.scanButton")}
+                    {scanPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
+                    {scanPending ? t("inventoryChecks.scanWaiting") : t("inventoryChecks.scanButton")}
                   </button>
                   <button
                     type="button"
@@ -363,7 +397,20 @@ export default function InventoryChecksPage() {
             canCorrect={Boolean(canWriteInventory)}
             onCorrectLocation={(entryID) => void correctEntryLocation(entryID)}
             t={t}
+            fmtDateTime={fmtDateTime}
           />
+
+          {checkedOutEntries.length > 0 ? (
+            <EntriesTable
+              title={t("inventoryChecks.checkedOutItems")}
+              entries={checkedOutEntries}
+              activeSession={Boolean(activeSession)}
+              canApprove={canWriteInventory}
+              onApprove={(entryID) => void approveEntry(entryID)}
+              t={t}
+              fmtDateTime={fmtDateTime}
+            />
+          ) : null}
 
           {mismatchEntries.length > 0 ? (
             <EntriesTable
@@ -374,6 +421,7 @@ export default function InventoryChecksPage() {
               canCorrect={Boolean(canWriteInventory)}
               onCorrectLocation={(entryID) => void correctEntryLocation(entryID)}
               t={t}
+              fmtDateTime={fmtDateTime}
             />
           ) : null}
 
@@ -386,6 +434,7 @@ export default function InventoryChecksPage() {
               canCorrect={Boolean(activeSession && canWriteInventory)}
               onCorrectLocation={(entryID) => void correctEntryLocation(entryID)}
               t={t}
+              fmtDateTime={fmtDateTime}
             />
           ) : null}
 
@@ -396,6 +445,7 @@ export default function InventoryChecksPage() {
               activeSession={false}
               canApprove={false}
               t={t}
+              fmtDateTime={fmtDateTime}
             />
           ) : null}
         </>
@@ -417,6 +467,7 @@ export default function InventoryChecksPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("inventoryChecks.sessionTitle")}</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("inventoryChecks.locationLabel")}</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("inventoryChecks.found")}</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("inventoryChecks.checkedOut")}</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("inventoryChecks.missing")}</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("inventoryChecks.unexpected")}</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("inventoryChecks.action")}</th>
@@ -431,6 +482,7 @@ export default function InventoryChecksPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{summary.session.location_name?.trim() || t("inventoryChecks.locationAll")}</td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{summary.counts.found}</td>
+                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{summary.counts.checked_out}</td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{summary.counts.missing}</td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{summary.counts.unexpected}</td>
                     <td className="px-4 py-3 text-right">
@@ -474,6 +526,7 @@ function EntriesTable({
   onApprove,
   onCorrectLocation,
   t,
+  fmtDateTime,
 }: {
   title: string;
   entries: InventoryCheckEntry[];
@@ -483,6 +536,7 @@ function EntriesTable({
   onApprove?: (entryID: number) => void;
   onCorrectLocation?: (entryID: number) => void;
   t: (key: string, vars?: Record<string, string | number>) => string;
+  fmtDateTime: (value?: string | null) => string;
 }) {
   if (entries.length === 0) return null;
 
@@ -508,6 +562,19 @@ function EntriesTable({
               <tr key={entry.id} className="hover:bg-gray-50/80 dark:hover:bg-white/5">
                 <td className="px-4 py-3 text-gray-900 dark:text-white">
                   <div className="font-medium">{entry.item_name}</div>
+                  {entry.status === "checked_out" ? (
+                    <div className="mt-1 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                      {entry.checkout_user_name ? (
+                        <div>{t("inventoryChecks.checkedOutBy", { name: entry.checkout_user_name })}</div>
+                      ) : null}
+                      {entry.active_checkout_count > 1 ? (
+                        <div>{t("inventoryChecks.checkedOutCount", { count: entry.active_checkout_count })}</div>
+                      ) : null}
+                      {entry.checkout_due_date ? (
+                        <div>{t("inventoryChecks.checkedOutDue", { date: fmtDateTime(entry.checkout_due_date) })}</div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {entry.found_via ? <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{entry.found_via === "manual" ? t("inventoryChecks.foundByManual") : t("inventoryChecks.foundByScan")}</div> : null}
                 </td>
                 <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{entry.category_name || "—"}</td>
@@ -527,7 +594,7 @@ function EntriesTable({
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex justify-end gap-2">
-                    {activeSession && canApprove && entry.expected_in_scope && entry.status === "pending" ? (
+                    {activeSession && canApprove && entry.expected_in_scope && (entry.status === "pending" || entry.status === "checked_out") ? (
                       <button
                         type="button"
                         onClick={() => onApprove?.(entry.id)}
@@ -567,6 +634,8 @@ function statusLabel(status: string, t: (key: string, vars?: Record<string, stri
       return t("inventoryChecks.statusMissing");
     case "unexpected":
       return t("inventoryChecks.statusUnexpected");
+    case "checked_out":
+      return t("inventoryChecks.statusCheckedOut");
     default:
       return t("inventoryChecks.statusPending");
   }
@@ -582,6 +651,8 @@ function statusClass(status: string) {
       return "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300";
     case "unexpected":
       return "bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300";
+    case "checked_out":
+      return "bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300";
     default:
       return "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300";
   }

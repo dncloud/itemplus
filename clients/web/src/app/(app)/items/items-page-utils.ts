@@ -58,6 +58,7 @@ export function getListPropValues(item: Item, listProps: Property[]) {
   return listProps
     .filter((property) => property.category_id === item.category_id && item.properties?.[String(property.id)] != null)
     .map((property) => ({
+      id: property.id,
       name: property.name,
       unit: property.unit,
       value: item.properties![String(property.id)],

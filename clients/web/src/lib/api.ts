@@ -977,7 +977,7 @@ export interface InventoryMovement {
 
 export type InventoryCheckScopeType = "realm" | "location";
 export type InventoryCheckStatus = "active" | "completed";
-export type InventoryCheckEntryStatus = "pending" | "found" | "missing" | "unexpected" | "location_mismatch";
+export type InventoryCheckEntryStatus = "pending" | "found" | "missing" | "unexpected" | "location_mismatch" | "checked_out";
 
 export interface InventoryCheckSession {
   id: number;
@@ -1007,6 +1007,9 @@ export interface InventoryCheckEntry {
   current_location_id?: number | null;
   current_location_name?: string | null;
   current_location_color?: string | null;
+  active_checkout_count: number;
+  checkout_user_name?: string | null;
+  checkout_due_date?: string | null;
   expected_in_scope: boolean;
   status: InventoryCheckEntryStatus | string;
   found_via?: "manual" | "scan" | string | null;
@@ -1024,6 +1027,7 @@ export interface InventoryCheckCounts {
   expected: number;
   pending: number;
   found: number;
+  checked_out: number;
   missing: number;
   unexpected: number;
   location_mismatch: number;

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -31,6 +32,15 @@ func runMigrations(db *sqlx.DB, driver string) error {
 		return err
 	}
 	if _, err := db.Exec(inventorySessionEntriesItemIndexSQL(driver)); err != nil && !isDuplicateIndexError(err) {
+		return err
+	}
+	if err := addColumnIfMissing(db, "ALTER TABLE inventory_session_entries ADD COLUMN active_checkout_count INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "ALTER TABLE inventory_session_entries ADD COLUMN checkout_user_name TEXT"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "ALTER TABLE inventory_session_entries ADD COLUMN checkout_due_date TEXT"); err != nil {
 		return err
 	}
 
@@ -203,7 +213,12 @@ func migrateUserSettingsKeyColumn(db *sqlx.DB, driver string) error {
 	}
 
 	type tableColumn struct {
-		Name string `db:"name"`
+		CID       int            `db:"cid"`
+		Name      string         `db:"name"`
+		Type      string         `db:"type"`
+		NotNull   int            `db:"notnull"`
+		Default   sql.NullString `db:"dflt_value"`
+		PrimaryKey int           `db:"pk"`
 	}
 	var columns []tableColumn
 	if err := db.Select(&columns, "PRAGMA table_info(user_settings)"); err != nil {
@@ -316,6 +331,9 @@ func inventorySessionEntriesTableMigrationSQL(driver string) string {
 		location_id INTEGER,
 		location_name TEXT,
 		location_color TEXT,
+		active_checkout_count INTEGER NOT NULL DEFAULT 0,
+		checkout_user_name TEXT,
+		checkout_due_date TEXT,
 		expected_in_scope BOOLEAN NOT NULL DEFAULT 1,
 		status TEXT DEFAULT 'pending',
 		found_via TEXT,

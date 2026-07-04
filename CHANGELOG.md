@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3.1 - 2026-07-04
+
+### Inventory audit and operations polish
+- Improved inventory audit handling so checked-out items remain visible during audits and can be tracked explicitly as loaned items instead of disappearing from the expected list.
+- Refined scan action behavior during inventory audits with clearer in-progress feedback and safer disabled states when no connected iPhone scanner is available.
+- Polished inventory-audit summaries and recent stock activity previews so counters, labels, and operational details stay easier to scan during daily use.
+
+### Web app polish
+- Reverted an experimental item-detail QR placement and kept the earlier hover-preview behavior after testing showed the alternative layout felt more distracting than helpful.
+- Softened category and location drag handles so they still read as reorder controls without drawing too much visual attention.
+- Fixed the recent stock activity preview on item detail pages so actor names remain in the correct row instead of dropping into a second line.
+
+### SQLite startup reliability
+- Fixed a SQLite migration regression in `1.3.0` where reading `PRAGMA table_info(user_settings)` could fail at startup with `missing destination name cid in *[]database.tableColumn`.
+
 ## 1.3.0 - 2026-07-02
 
 ### Operations, stock, and reminders

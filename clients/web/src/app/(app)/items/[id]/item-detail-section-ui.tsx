@@ -41,8 +41,8 @@ export function ItemInventoryMovementsPreview({
     <DetailSection title={t("inventoryMovements.recent")}>
       <div className="divide-y divide-gray-100 dark:divide-white/5">
         {movements.slice(0, 5).map((movement) => (
-          <div key={`${movement.realm}-${movement.id}`} className="grid grid-cols-1 gap-2 px-6 py-3 text-sm sm:grid-cols-5 sm:items-center">
-            <div className="sm:col-span-2">
+          <div key={`${movement.realm}-${movement.id}`} className="grid grid-cols-1 gap-2 px-6 py-3 text-sm sm:grid-cols-[minmax(0,1.8fr)_80px_120px_minmax(0,1fr)] sm:items-center sm:gap-4">
+            <div className="min-w-0">
               <p className="font-medium text-gray-900 dark:text-white">{t(`inventoryMovements.movementType.${movement.movement_type}`)}</p>
               <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{fmtDate(movement.created_at)}</p>
             </div>
@@ -60,7 +60,9 @@ export function ItemInventoryMovementsPreview({
             <p className="text-gray-600 dark:text-gray-300">
               {movement.quantity_before} → {movement.quantity_after}
             </p>
-            <p className="text-gray-500 dark:text-gray-400">{movement.created_by_name || "—"}</p>
+            <p className="min-w-0 truncate text-gray-500 dark:text-gray-400 sm:text-right" title={movement.created_by_name || "—"}>
+              {movement.created_by_name || "—"}
+            </p>
           </div>
         ))}
       </div>

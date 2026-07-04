@@ -28,6 +28,9 @@ type SessionEntry struct {
 	CurrentLocationID     *int    `db:"current_location_id" json:"current_location_id,omitempty"`
 	CurrentLocationName   *string `db:"current_location_name" json:"current_location_name,omitempty"`
 	CurrentLocationColor  *string `db:"current_location_color" json:"current_location_color,omitempty"`
+	ActiveCheckoutCount   int     `db:"active_checkout_count" json:"active_checkout_count"`
+	CheckoutUserName      *string `db:"checkout_user_name" json:"checkout_user_name,omitempty"`
+	CheckoutDueDate       *string `db:"checkout_due_date" json:"checkout_due_date,omitempty"`
 	ExpectedInScope       bool    `db:"expected_in_scope" json:"expected_in_scope"`
 	Status                string  `db:"status" json:"status"`
 	FoundVia              *string `db:"found_via" json:"found_via,omitempty"`
@@ -45,6 +48,7 @@ type SessionCounts struct {
 	Expected         int `json:"expected"`
 	Pending          int `json:"pending"`
 	Found            int `json:"found"`
+	CheckedOut       int `json:"checked_out"`
 	Missing          int `json:"missing"`
 	Unexpected       int `json:"unexpected"`
 	LocationMismatch int `json:"location_mismatch"`

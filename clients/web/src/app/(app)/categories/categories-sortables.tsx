@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, ChevronDown, Box, Eye, EyeOff, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, Box, Eye, EyeOff, GripVertical, Pencil, Trash2 } from "lucide-react";
 import type { Category, Property } from "@/lib/api";
 
 export function SortableProperty({
@@ -132,8 +132,8 @@ export function SortableCategory({
     <div ref={setNodeRef} style={style} className="overflow-hidden">
       <div className="relative flex items-center gap-y-4 px-4 py-5 hover:bg-gray-50 sm:px-6 dark:hover:bg-white/2.5">
         {canReorder ? (
-          <button {...attributes} {...listeners} className="mr-2 inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10 cursor-grab active:cursor-grabbing">
-            <GripVertical className="h-4 w-4 text-gray-400" />
+          <button {...attributes} {...listeners} className="mr-2 inline-flex items-center justify-center rounded-lg border border-gray-300/80 p-1.5 transition hover:bg-gray-50/80 dark:border-gray-700/80 dark:hover:bg-white/5 cursor-grab active:cursor-grabbing">
+            <GripVertical className="h-4 w-4 text-gray-400/90" />
           </button>
         ) : null}
         <button onClick={onToggle} className="flex-1 flex items-center gap-2 text-left min-w-0">

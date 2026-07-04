@@ -3,6 +3,7 @@
 import { useState, type ComponentType } from "react";
 import clsx from "clsx";
 import { Command, Menu, Smartphone, Search, Printer, Sparkles, X } from "lucide-react";
+import { BrandTitle, LogoIcon } from "@/components/branding/logo";
 import type { UpdateStatus } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 
@@ -10,14 +11,19 @@ const UPDATE_BANNER_DISMISSED_KEY = "itemplus.updateBanner.dismissed";
 const UPDATE_BANNER_IGNORED_KEY = "itemplus.updateBanner.ignored";
 
 export function AppShellLoading() {
+  const { brandingTitle } = useApp();
+
   return (
     <div className="flex min-h-dvh items-center justify-center bg-gray-900 px-6 text-center text-gray-100">
       <div className="space-y-5">
         <div className="mx-auto flex items-center justify-center">
           <div className="rounded-2xl border border-white/10 bg-gray-800/80 px-6 py-5 shadow-2xl shadow-black/20">
             <div className="mx-auto flex w-fit flex-col items-center gap-y-4">
+              <LogoIcon size={48} className="shrink-0" />
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-              <p className="text-sm text-gray-400">Loading item+</p>
+              <p className="text-sm text-gray-400">
+                Loading <BrandTitle title={brandingTitle || "item+"} className="inline font-medium text-gray-300" />
+              </p>
             </div>
           </div>
         </div>

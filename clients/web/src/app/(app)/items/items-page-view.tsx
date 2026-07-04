@@ -284,9 +284,9 @@ export function ItemsGrid({
             {showItemProperties && (() => {
               const pv = getListPropValues(item, listProps);
               return pv.length > 0 ? (
-                <div className="mt-2 space-y-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  <div className="mt-2 space-y-0.5 text-xs text-gray-500 dark:text-gray-400">
                   {pv.map((p) => (
-                    <div key={p.name} className="break-words">
+                    <div key={p.id} className="break-words">
                       <span className="font-semibold text-gray-700 dark:text-gray-300">{p.name}:</span>{" "}
                       <span className="whitespace-normal">{formatPropShort(p.value, p.type, locale)}{p.unit ? ` ${p.unit}` : ""}</span>
                     </div>

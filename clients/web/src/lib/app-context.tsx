@@ -208,25 +208,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     api.baseURL = ""; // Same origin — relative /api/ calls
   }, [realm]);
 
-  // Initialize user role once for the mounted app shell
-  useEffect(() => {
-    api.baseURL = "";
-    api.getMe().then((u) => {
-      setIsAdmin(u.is_admin);
-      setCurrentUserLabel((u.name || u.email || "").trim());
-      setPermissions(u.permissions || []);
-    }).catch(() => {}).finally(() => setReady(true));
-  }, []);
-
+  // Initialize user role and branding before the app shell becomes ready.
   useEffect(() => {
     let cancelled = false;
-    api.getBranding().then((branding) => {
+    api.baseURL = "";
+
+    void Promise.allSettled([api.getMe(), api.getBranding()]).then(([meResult, brandingResult]) => {
       if (cancelled) return;
-      applyBrandingState(branding);
-    }).catch(() => {
-      if (cancelled) return;
-      applyBrandingState();
+
+      if (meResult.status === "fulfilled") {
+        const u = meResult.value;
+        setIsAdmin(u.is_admin);
+        setCurrentUserLabel((u.name || u.email || "").trim());
+        setPermissions(u.permissions || []);
+      }
+
+      if (brandingResult.status === "fulfilled") {
+        applyBrandingState(brandingResult.value);
+      } else {
+        applyBrandingState();
+      }
+
+      setReady(true);
     });
+
     return () => {
       cancelled = true;
     };
