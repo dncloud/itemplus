@@ -1,6 +1,7 @@
 "use client";
 
 import { api, type LabelTemplate, type ExternalSource, type LabelTemplateMeta, type MaintenanceSettings, type PrinterStatus, type SidebarFavorite, type User } from "@/lib/api";
+import { fetchWithSession } from "@/lib/api-helpers";
 import { draftFromAISettings } from "@/components/settings/drafts";
 import type { AISettingsDraft } from "@/components/settings/drafts";
 
@@ -14,7 +15,7 @@ export type DeviceSession = {
 };
 
 export async function fetchDeviceSessions() {
-  const response = await fetch(`${api.baseURL}/api/devices/sessions`, { credentials: "include" });
+  const response = await fetchWithSession(`${api.baseURL}/api/devices/sessions`, { credentials: "include" });
   if (!response.ok) return [] as DeviceSession[];
   const data = await response.json();
   return (data.sessions || []) as DeviceSession[];

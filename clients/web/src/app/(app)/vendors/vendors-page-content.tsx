@@ -60,11 +60,11 @@ export default function VendorsPageContent() {
     loadingRef.current = true;
     setLoading(true);
     try {
-      setAllItems(await fetchVendorsPageData(tab));
+      setAllItems(await fetchVendorsPageData(realm, tab));
     } catch {}
     setLoading(false);
     loadingRef.current = false;
-  }, [tab]);
+  }, [realm, tab]);
 
   useEffect(() => {
     void load();
@@ -120,7 +120,14 @@ export default function VendorsPageContent() {
 
   useEffect(() => {
     resetAISession();
-  }, [tab, editItem?.id, isNew, resetAISession]);
+  }, [realm, tab, editItem?.id, isNew, resetAISession]);
+
+  useEffect(() => {
+    setSearch("");
+    setEditItem(null);
+    setIsNew(false);
+    setValidationError(null);
+  }, [realm]);
 
   useEffect(() => {
     setLogoSourceUrl("");
@@ -148,29 +155,44 @@ export default function VendorsPageContent() {
 
   useEffect(() => {
     const vendorName = String(aiResult?.vendor?.name || editItem?.name || "").trim();
-    const website = String(aiResult?.vendor?.website || "").trim();
-    const supportURL = String(aiResult?.vendor?.support_url || "").trim();
-    const externalLogoURL = String(aiResult?.vendor?.external_logo_url || "").trim();
-    if (!vendorName && !website && !supportURL && !externalLogoURL) {
+    const website = String(aiResult?.vendor?.website || editItem?.website || "").trim();
+    const supportURL = String(aiResult?.vendor?.support_url || editItem?.support_url || "").trim();
+    const externalLogoURL = String(aiResult?.vendor?.external_logo_url || editItem?.external_logo_url || "").trim();
+    const hasAIProposal = !!aiResult?.vendor;
+    const hasUsableWebsite = looksLikeVendorLogoSource(website);
+    const hasUsableSupportURL = looksLikeVendorLogoSource(supportURL);
+    const hasUsableExternalLogoURL = looksLikeVendorLogoSource(externalLogoURL);
+    const hasUsableSource = hasUsableWebsite || hasUsableSupportURL || hasUsableExternalLogoURL;
+    const allowNameOnlyLookup = hasAIProposal && vendorName.length >= 3;
+
+    if (!hasUsableSource && !allowNameOnlyLookup) {
       setAiLogoSuggestion(null);
       return;
     }
 
     let cancelled = false;
-    void api.resolveVendorLogo({ name: vendorName, website, support_url: supportURL, external_logo_url: externalLogoURL })
-      .then((result) => {
-        if (cancelled) return;
-        setAiLogoSuggestion(result);
+    const timer = window.setTimeout(() => {
+      void api.resolveVendorLogo({
+        name: vendorName,
+        website: hasUsableWebsite ? website : "",
+        support_url: hasUsableSupportURL ? supportURL : "",
+        external_logo_url: hasUsableExternalLogoURL ? externalLogoURL : "",
       })
-      .catch(() => {
-        if (cancelled) return;
-        setAiLogoSuggestion(null);
-      });
+        .then((result) => {
+          if (cancelled) return;
+          setAiLogoSuggestion(result);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setAiLogoSuggestion(null);
+        });
+    }, 650);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [aiResult?.vendor?.external_logo_url, aiResult?.vendor?.name, aiResult?.vendor?.support_url, aiResult?.vendor?.website, editItem?.name]);
+  }, [aiResult?.vendor, editItem?.external_logo_url, editItem?.name, editItem?.support_url, editItem?.website]);
 
   useEffect(() => {
     if (!aiLogoSuggestion || aiSuggestionAnchorMessageId) return;
@@ -638,4 +660,11 @@ export default function VendorsPageContent() {
       )}
     </div>
   );
+}
+
+function looksLikeVendorLogoSource(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/^https?:\/\/.+/i.test(trimmed)) return true;
+  return /^[a-z0-9.-]+\.[a-z]{2,}(?:\/.*)?$/i.test(trimmed);
 }

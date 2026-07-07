@@ -1,4 +1,5 @@
 import { api, type AIConnectionTestResult, type AIModelOption, type AIProfilePayload, type AISettings, type AISettingsPayload, type ExternalSource, type ExternalSourcePayload, type LabelTemplate, type LabelTemplatePayload, type PrinterStatus } from "@/lib/api";
+import { fetchWithSession } from "@/lib/api-helpers";
 import { parseTSPLPreview } from "@/components/settings/tspl-template";
 import type { AIProfileDraft, AISettingsDraft, ExternalSourceDraft, LabelTemplateDraft } from "@/components/settings/drafts";
 
@@ -8,7 +9,7 @@ export type LocationHealthResult = {
 };
 
 export async function fetchLocationHealth() {
-  const res = await fetch(`${api.baseURL}/api/admin/health/locations`, {
+  const res = await fetchWithSession(`${api.baseURL}/api/admin/health/locations`, {
     credentials: "include",
   });
   if (!res.ok) return null;
@@ -16,7 +17,7 @@ export async function fetchLocationHealth() {
 }
 
 export async function fixLocationHealth() {
-  const res = await fetch(`${api.baseURL}/api/admin/health/locations/fix`, {
+  const res = await fetchWithSession(`${api.baseURL}/api/admin/health/locations/fix`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -202,12 +203,12 @@ export async function savePrinterConfig(printer: PrinterStatus) {
 }
 
 export async function calibratePrinter() {
-  const res = await fetch(`${api.baseURL}/api/print/calibrate`, { method: "POST", credentials: "include" });
+  const res = await fetchWithSession(`${api.baseURL}/api/print/calibrate`, { method: "POST", credentials: "include" });
   return res.ok;
 }
 
 export async function printTemplateNow(templateDraft: LabelTemplateDraft) {
-  const res = await fetch(`${api.baseURL}/api/print/test`, {
+  const res = await fetchWithSession(`${api.baseURL}/api/print/test`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -219,7 +220,7 @@ export async function printTemplateNow(templateDraft: LabelTemplateDraft) {
 }
 
 export async function fetchDefaultTSPLPreview() {
-  const res = await fetch(`${api.baseURL}/api/print/test/preview`, { credentials: "include" });
+  const res = await fetchWithSession(`${api.baseURL}/api/print/test/preview`, { credentials: "include" });
   if (!res.ok) return null;
   return (await res.json()) as { tspl: string };
 }

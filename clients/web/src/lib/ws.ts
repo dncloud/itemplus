@@ -2,6 +2,8 @@
  * WebSocket client service — singleton that connects once and routes events.
  */
 
+import { fetchWithSession } from "./api-helpers";
+
 type EventHandler = (data: Record<string, unknown>) => void;
 
 /** Whitelist of valid server-sent event names. Only these are dispatched to handlers. */
@@ -78,7 +80,7 @@ class WSClient {
 
   private async fetchTicket() {
     try {
-      const res = await fetch("/api/auth/ws-ticket", { method: "POST", credentials: "include" });
+      const res = await fetchWithSession("/api/auth/ws-ticket", { method: "POST", credentials: "include" });
       if (!res.ok) return null;
       const data = await res.json();
       return typeof data.ticket === "string" ? data.ticket : null;

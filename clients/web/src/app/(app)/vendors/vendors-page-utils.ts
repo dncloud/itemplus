@@ -1,17 +1,8 @@
 "use client";
 
 import { api, type AIVendorSuggestionResult, type Vendor } from "@/lib/api";
+import { fetchWithSession } from "@/lib/api-helpers";
 import type { EntityType } from "./vendors-sections";
-
-function getVendorFetcher(tab: EntityType) {
-  return tab === "manufacturers"
-    ? api.getManufacturers
-    : tab === "suppliers"
-      ? api.getSuppliers
-      : tab === "vendors"
-        ? api.getVendors
-        : api.getSalesPlatforms;
-}
 
 function getVendorEndpoint(realm: string, tab: EntityType, vendorId?: number) {
   const base = tab === "sales-platforms"
@@ -20,8 +11,17 @@ function getVendorEndpoint(realm: string, tab: EntityType, vendorId?: number) {
   return vendorId ? `${base}/${vendorId}` : base;
 }
 
-export async function fetchVendorsPageData(tab: EntityType) {
-  return getVendorFetcher(tab)();
+export async function fetchVendorsPageData(realm: string, tab: EntityType) {
+  if (tab === "sales-platforms") {
+    return api.getSalesPlatforms();
+  }
+  const response = await fetchWithSession(getVendorEndpoint(realm, tab), {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response.json();
 }
 
 export function filterVendors(vendors: Vendor[], search: string) {
@@ -66,7 +66,7 @@ export async function saveVendorDraft({
   const endpoint = getVendorEndpoint(realm, tab, isNew ? undefined : draft.id);
   const cleanDraft = { ...draft };
   delete cleanDraft.external_logo_url;
-  await fetch(endpoint, {
+  await fetchWithSession(endpoint, {
     method: isNew ? "POST" : "PUT",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -75,7 +75,7 @@ export async function saveVendorDraft({
 }
 
 export async function deleteVendorDraft(realm: string, tab: EntityType, vendorId: number) {
-  await fetch(getVendorEndpoint(realm, tab, vendorId), {
+  await fetchWithSession(getVendorEndpoint(realm, tab, vendorId), {
     method: "DELETE",
     credentials: "include",
   });

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.2 - 2026-07-07
+
+### Session and UI hotfixes
+- Fixed expired web sessions so the running app now reacts to background `401 Unauthorized` responses and cleanly returns to the login screen without requiring a full page reload.
+- Reduced noisy vendor-logo preview traffic while typing by waiting for a short pause and only resolving logos automatically when a meaningful source such as a website, support URL, or explicit logo URL is available.
+- Increased vendor logos in the master-data list for better readability and recognition during daily use.
+- Refined the web app footer with the new `Created with love in Uelzen` line and the currently running server version on a dedicated status line above the standard links.
+
 ## 1.3.1 - 2026-07-04
 
 ### Inventory audit and operations polish

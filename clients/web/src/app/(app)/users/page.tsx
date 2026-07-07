@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useDeleteFlow, ConfirmDelete } from "@/components/ui/confirm-delete";
 import { api, type User } from "@/lib/api";
+import { fetchWithSession } from "@/lib/api-helpers";
 import { useApp } from "@/lib/app-context";
 import { ChevronRight } from "lucide-react";
 import { ActiveUsersSection, PendingUsersSection } from "@/app/(app)/users/users-page-sections";
@@ -69,7 +70,7 @@ export default function UsersPage() {
 
   const updateUser = async (userId: number, data: Record<string, unknown>) => {
     try {
-      const response = await fetch(`${api.baseURL}/api/users/${userId}`, {
+      const response = await fetchWithSession(`${api.baseURL}/api/users/${userId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -83,7 +84,7 @@ export default function UsersPage() {
 
   const activateUser = async (userId: number) => {
     try {
-      const response = await fetch(`${api.baseURL}/api/users/${userId}/activate`, {
+      const response = await fetchWithSession(`${api.baseURL}/api/users/${userId}/activate`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -179,7 +180,7 @@ export default function UsersPage() {
           t={t}
           onConfirm={async () => {
             try {
-              await fetch(`${api.baseURL}/api/users/${deleteFlow.confirm!.id}`, {
+              await fetchWithSession(`${api.baseURL}/api/users/${deleteFlow.confirm!.id}`, {
                 method: "DELETE",
                 credentials: "include",
               });

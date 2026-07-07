@@ -28,6 +28,7 @@ import {
   type Theme,
 } from "./app-context-storage";
 import { formatAppDate, formatAppDateTime } from "./app-context-format";
+import { fetchWithSession } from "./api-helpers";
 
 interface AppContextValue {
   iosBridgeStatus: "connected" | "disconnected";
@@ -169,7 +170,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const fetchDeviceSessions = useCallback(async (): Promise<BridgeSession[]> => {
     try {
-      const response = await fetch("/api/devices/sessions", { credentials: "include" });
+      const response = await fetchWithSession("/api/devices/sessions", { credentials: "include" });
       if (!response.ok) return [];
       const data = await response.json();
       return Array.isArray(data)

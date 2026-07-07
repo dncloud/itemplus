@@ -62,7 +62,7 @@ type Config struct {
 const DefaultPort = 17117
 
 var C Config
-var defaultAppVersion = "1.3.1"
+var defaultAppVersion = "1.3.2"
 var defaultAppBuild = "dev"
 var cliConfigPath string
 

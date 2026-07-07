@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import SearchDialog from "@/components/search/dialog";
 import { api, type UpdateStatus } from "@/lib/api";
+import { SESSION_UNAUTHORIZED_EVENT } from "@/lib/api-helpers";
 import { useApp } from "@/lib/app-context";
 import { AppShellContainer, AppShellFooter, AppShellHeader, AppShellLoading } from "@/app/(app)/app-shell";
 import { AppSidebar } from "@/app/(app)/app-sidebar";
@@ -44,6 +45,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       router.replace("/auth");
     });
   }, [ready, router]);
+
+  useEffect(() => {
+    if (!ready) return;
+
+    let handled = false;
+    const handleUnauthorized = () => {
+      if (handled) return;
+      handled = true;
+      void logoutAppSession();
+    };
+
+    window.addEventListener(SESSION_UNAUTHORIZED_EVENT, handleUnauthorized);
+    return () => {
+      window.removeEventListener(SESSION_UNAUTHORIZED_EVENT, handleUnauthorized);
+    };
+  }, [ready]);
 
   useEffect(() => {
     if (!ready) return;
@@ -146,7 +163,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </main>
 
-      <AppShellFooter />
+      <AppShellFooter
+        serverVersion={
+          updateStatus?.installed_version
+            ? `${updateStatus.installed_version}${updateStatus.installed_build ? ` build ${updateStatus.installed_build}` : ""}`
+            : null
+        }
+      />
 
       <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
       <Suspense fallback={null}>

@@ -6,6 +6,7 @@ import {
   buildQueryString,
   buildRecoverBackupForm,
   buildSingleFileForm,
+  fetchWithSession,
   parseApiError,
   readEventStream,
 } from "@/lib/api-helpers";
@@ -424,16 +425,12 @@ class Api {
   private async request<T>(method: Method, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
 
-    const res = await fetch(this.apiURL(path), {
+    const res = await fetchWithSession(this.apiURL(path), {
       method,
       headers,
       credentials: "include",
       body: body ? JSON.stringify(body) : undefined,
     });
-
-    if (res.status === 401) {
-      throw new Error("Unauthorized");
-    }
 
     if (res.status === 204) return undefined as T;
     if (!res.ok) {
@@ -443,7 +440,7 @@ class Api {
   }
 
   private async postForm<T>(path: string, form: FormData): Promise<T> {
-    const res = await fetch(this.apiURL(path), {
+    const res = await fetchWithSession(this.apiURL(path), {
       method: "POST",
       credentials: "include",
       body: form,
@@ -455,7 +452,7 @@ class Api {
   }
 
   private async downloadBlob(path: string): Promise<Blob> {
-    const res = await fetch(this.apiURL(path), {
+    const res = await fetchWithSession(this.apiURL(path), {
       credentials: "include",
     });
     if (!res.ok) {
@@ -478,7 +475,7 @@ class Api {
     body: unknown,
     onEvent: (event: AIParseStreamEvent) => void,
   ) {
-    const res = await fetch(`${this.getStreamBaseURL()}/api${path}`, {
+    const res = await fetchWithSession(`${this.getStreamBaseURL()}/api${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",

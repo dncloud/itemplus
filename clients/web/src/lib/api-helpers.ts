@@ -1,5 +1,38 @@
 import type { AIParseStreamEvent } from "@/lib/api";
 
+export const SESSION_UNAUTHORIZED_EVENT = "itemplus:session-unauthorized";
+
+export class UnauthorizedError extends Error {
+  constructor() {
+    super("Unauthorized");
+    this.name = "UnauthorizedError";
+  }
+}
+
+let unauthorizedDispatched = false;
+
+export function notifySessionUnauthorized() {
+  if (typeof window === "undefined" || unauthorizedDispatched) return;
+  unauthorizedDispatched = true;
+  window.dispatchEvent(new CustomEvent(SESSION_UNAUTHORIZED_EVENT));
+  window.setTimeout(() => {
+    unauthorizedDispatched = false;
+  }, 0);
+}
+
+export async function fetchWithSession(input: RequestInfo | URL, init?: RequestInit) {
+  const response = await fetch(input, init);
+  if (response.status === 401) {
+    notifySessionUnauthorized();
+    throw new UnauthorizedError();
+  }
+  return response;
+}
+
+export function isUnauthorizedError(error: unknown) {
+  return error instanceof UnauthorizedError || (error instanceof Error && error.message === "Unauthorized");
+}
+
 export function buildQueryString(values: Record<string, string | number | boolean | undefined | null>) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) {

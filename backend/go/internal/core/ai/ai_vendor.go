@@ -16,8 +16,8 @@ func ResolveVendorLogoPreview(name string, website string, supportURL string, ex
 	if baseURL == "" {
 		baseURL = normalizeVendorPreviewBaseURL(supportURL)
 	}
-	if baseURL == "" && externalLogoURL == "" {
-		return nil, errors.New("website is required")
+	if baseURL == "" && externalLogoURL == "" && name == "" {
+		return nil, errors.New("name, website, or logo source is required")
 	}
 
 	var parsedBase *url.URL

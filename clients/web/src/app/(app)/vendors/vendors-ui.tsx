@@ -158,8 +158,8 @@ export function VendorList({
             <VendorLogoThumb
               logo={item.logo}
               background={item.logo_background}
-              sizeClass="h-9 w-9"
-              fallback={<CurrentTabIcon className="h-5 w-5 text-gray-400" />}
+              sizeClass="h-12 w-12"
+              fallback={<CurrentTabIcon className="h-6 w-6 text-gray-400" />}
             />
             <div className="flex-1 min-w-0">
               <p className="text-sm/6 font-semibold text-gray-900 dark:text-white truncate">{item.name}</p>

@@ -2,7 +2,7 @@
 
 import { useState, type ComponentType } from "react";
 import clsx from "clsx";
-import { Command, Menu, Smartphone, Search, Printer, Sparkles, X } from "lucide-react";
+import { Command, Heart, Menu, Smartphone, Search, Printer, Sparkles, X } from "lucide-react";
 import { BrandTitle, LogoIcon } from "@/components/branding/logo";
 import type { UpdateStatus } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
@@ -225,7 +225,7 @@ function ConnectionStatusIcon({
   );
 }
 
-export function AppShellFooter() {
+export function AppShellFooter({ serverVersion = null }: { serverVersion?: string | null }) {
   const { brandingFooterText } = useApp();
 
   return (
@@ -234,9 +234,14 @@ export function AppShellFooter() {
         {brandingFooterText.trim() ? (
           <p className="max-w-3xl text-xs text-gray-500 dark:text-gray-400">{brandingFooterText}</p>
         ) : null}
+        <div className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-[11px] text-gray-400 dark:text-gray-600">
+          <span>&copy; 2025–2026 Oliver Cermann.</span>
+          <span>Created with</span>
+          <Heart className="size-3 text-red-400" fill="currentColor" />
+          <span>in Uelzen.</span>
+          {serverVersion ? <span>Version {serverVersion}</span> : null}
+        </div>
         <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] text-gray-400 dark:text-gray-600">
-          <span>&copy; 2025–2026 Oliver Cermann</span>
-          <span>·</span>
           <a href="https://itemplus.app/imprint" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500">
             Impressum
           </a>
