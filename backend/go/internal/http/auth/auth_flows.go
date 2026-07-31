@@ -19,6 +19,7 @@ func appleLogin(c *gin.Context) {
 		IdentityToken string  `json:"identity_token"`
 		Email         *string `json:"email"`
 		DisplayName   *string `json:"display_name"`
+		Locale        *string `json:"locale"`
 		CreateAccount *bool   `json:"create_account"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -45,8 +46,15 @@ func appleLogin(c *gin.Context) {
 		}
 		if email != nil && *email != "" {
 			if emailErr := database.DB.Get(&user, "SELECT * FROM users WHERE email = ? AND "+VisibleUsersWhereClause(""), *email); emailErr == nil {
-				database.DB.Exec("UPDATE users SET apple_sub = ? WHERE id = ?", appleSub, user.ID)
+				if normalizedLocale := normalizedUserLocale(body.Locale); normalizedLocale != nil {
+					database.DB.Exec("UPDATE users SET apple_sub = ?, locale = ?, updated_at = ? WHERE id = ?", appleSub, *normalizedLocale, database.TimestampNow(), user.ID)
+				} else {
+					database.DB.Exec("UPDATE users SET apple_sub = ? WHERE id = ?", appleSub, user.ID)
+				}
 				user.AppleSub = appleSub
+				if normalizedLocale := normalizedUserLocale(body.Locale); normalizedLocale != nil {
+					user.Locale = normalizedLocale
+				}
 				err = nil
 			}
 		}
@@ -62,7 +70,7 @@ func appleLogin(c *gin.Context) {
 			})
 			return
 		}
-		createdUser, _, insertErr := createUserForLogin(appleSub, email, body.DisplayName)
+		createdUser, _, insertErr := createUserForLogin(appleSub, email, body.DisplayName, body.Locale)
 		if insertErr != nil {
 			log.Printf("Apple login user insert failed: %v", insertErr)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Benutzer konnte nicht angelegt werden"})
@@ -75,6 +83,13 @@ func appleLogin(c *gin.Context) {
 		return
 	}
 
+	if err == nil {
+		normalizedLocale := normalizedUserLocale(body.Locale)
+		if normalizedLocale != nil {
+			database.DB.Exec("UPDATE users SET locale = ?, updated_at = ? WHERE id = ?", *normalizedLocale, database.TimestampNow(), user.ID)
+			user.Locale = normalizedLocale
+		}
+	}
 	database.DB.Exec("UPDATE users SET last_login = ? WHERE id = ?", database.TimestampNow(), user.ID)
 
 	token, _ := authcore.CreateToken(user.ID, user.AppleSub, user.IsAdmin)
@@ -104,7 +119,8 @@ func authStatus(c *gin.Context) {
 
 func magicLinkRequest(c *gin.Context) {
 	var body struct {
-		Email string `json:"email"`
+		Email  string  `json:"email"`
+		Locale *string `json:"locale"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
@@ -125,15 +141,14 @@ func magicLinkRequest(c *gin.Context) {
 	expiry := time.Now().UTC().Add(time.Duration(config.C.MagicLinkExpiryMinutes) * time.Minute)
 
 	database.DB.Exec(
-		"INSERT INTO magic_link_tokens (email, token, expires_at, used) VALUES (?, ?, ?, 0)",
-		email, token, database.TimestampAt(expiry),
+		"INSERT INTO magic_link_tokens (email, locale, token, expires_at, used) VALUES (?, ?, ?, ?, 0)",
+		email, normalizedUserLocale(body.Locale), token, database.TimestampAt(expiry),
 	)
 
 	var existing middleware.User
 	isNew := database.DB.Get(&existing, "SELECT * FROM users WHERE email = ? AND "+VisibleUsersWhereClause(""), email) != nil
 
-	sent := authcore.SendMagicLink(email, token, isNew)
-	if !sent {
+	if err := authcore.SendMagicLink(email, token, isNew, stringValueOrDefault(body.Locale, "")); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "E-Mail konnte nicht gesendet werden"})
 		return
 	}
@@ -156,9 +171,10 @@ func magicLinkVerify(c *gin.Context) {
 	var ml struct {
 		ID        int    `db:"id"`
 		Email     string `db:"email"`
+		Locale    string `db:"locale"`
 		ExpiresAt string `db:"expires_at"`
 	}
-	err := database.DB.Get(&ml, "SELECT id, email, expires_at FROM magic_link_tokens WHERE token = ? AND used = 0", token)
+	err := database.DB.Get(&ml, "SELECT id, email, locale, expires_at FROM magic_link_tokens WHERE token = ? AND used = 0", token)
 	if err != nil {
 		log.Printf("Magic link verify failed: %v (token=%s...)", err, token[:min(len(token), 10)])
 		c.JSON(http.StatusUnauthorized, gin.H{"detail": "Ungültiger oder abgelaufener Link"})
@@ -177,7 +193,7 @@ func magicLinkVerify(c *gin.Context) {
 	var user middleware.User
 	err = database.DB.Get(&user, "SELECT * FROM users WHERE email = ? AND "+VisibleUsersWhereClause(""), ml.Email)
 	if err == sql.ErrNoRows {
-		createdUser, _, insertErr := createUserForLogin("magic_"+ml.Email, &ml.Email, nil)
+		createdUser, _, insertErr := createUserForLogin("magic_"+ml.Email, &ml.Email, nil, stringPointerOrNil(ml.Locale))
 		if insertErr != nil {
 			log.Printf("Magic link user insert failed: %v (email=%s)", insertErr, ml.Email)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Benutzer konnte nicht angelegt werden"})
@@ -188,6 +204,12 @@ func magicLinkVerify(c *gin.Context) {
 		log.Printf("Magic link user lookup failed: %v (email=%s)", err, ml.Email)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Benutzer konnte nicht geladen werden"})
 		return
+	}
+	if strings.TrimSpace(ml.Locale) != "" {
+		if normalizedLocale := normalizedUserLocale(&ml.Locale); normalizedLocale != nil {
+			database.DB.Exec("UPDATE users SET locale = ?, updated_at = ? WHERE id = ?", *normalizedLocale, database.TimestampNow(), user.ID)
+			user.Locale = normalizedLocale
+		}
 	}
 
 	if _, err := database.DB.Exec("UPDATE magic_link_tokens SET used = 1 WHERE id = ?", ml.ID); err != nil {
@@ -215,4 +237,23 @@ func authLogout(c *gin.Context) {
 	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie("itemplus_token", "", -1, "/", "", secure, true)
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func stringValueOrDefault(value *string, fallback string) string {
+	if value == nil {
+		return fallback
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return fallback
+	}
+	return trimmed
+}
+
+func stringPointerOrNil(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }

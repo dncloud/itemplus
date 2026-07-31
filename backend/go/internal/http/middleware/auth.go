@@ -16,6 +16,7 @@ type User struct {
 	AppleSub    string  `db:"apple_sub" json:"sub"`
 	Email       *string `db:"email" json:"email"`
 	DisplayName *string `db:"display_name" json:"name"`
+	Locale      *string `db:"locale" json:"locale"`
 	AvatarPath  *string `db:"avatar_path" json:"avatar_path"`
 	IsAdmin     bool    `db:"is_admin" json:"is_admin"`
 	IsActive    bool    `db:"is_active" json:"is_active"`

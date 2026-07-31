@@ -204,6 +204,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [applyBrandingState]);
 
+  const applyLocale = useCallback((value: Locale) => {
+    setStoredString(_setLocale, "itemplus_locale", value);
+  }, []);
+
   useEffect(() => {
     api.realm = realm;
     api.baseURL = ""; // Same origin — relative /api/ calls
@@ -222,6 +226,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setIsAdmin(u.is_admin);
         setCurrentUserLabel((u.name || u.email || "").trim());
         setPermissions(u.permissions || []);
+        if (u.locale === "de" || u.locale === "en") {
+          applyLocale(u.locale);
+        }
       }
 
       if (brandingResult.status === "fulfilled") {
@@ -236,7 +243,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [applyBrandingState]);
+  }, [applyBrandingState, applyLocale]);
 
   // Apply theme to <html> element
   useEffect(() => {
@@ -270,7 +277,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const setLocale = (l: Locale) => {
-    setStoredString(_setLocale, "itemplus_locale", l);
+    applyLocale(l);
   };
 
   const setDateFormat = (f: DateFormat) => {

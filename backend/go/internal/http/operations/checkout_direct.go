@@ -87,7 +87,8 @@ func checkoutItem(c *gin.Context) {
 	}
 
 	newID, _ := result.LastInsertId()
-	if err := itemscore.RecordInventoryMovementTx(tx, realm, itemIDInt, "checked_out", rootQuantity, rootQuantity, newID, "checkout", body.Notes, user.ID, now); err != nil {
+	rootBeforeQty, rootAfterQty := checkoutMovementQuantities(rootQuantity, "checked_out")
+	if err := itemscore.RecordInventoryMovementTx(tx, realm, itemIDInt, "checked_out", rootBeforeQty, rootAfterQty, newID, "checkout", body.Notes, user.ID, now); err != nil {
 		log.Printf("DB inventory movement insert error in checkoutItem: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
@@ -109,7 +110,8 @@ func checkoutItem(c *gin.Context) {
 			return
 		}
 		componentCheckoutID, _ := componentResult.LastInsertId()
-		if err := itemscore.RecordInventoryMovementTx(tx, realm, componentID, "checked_out", componentQuantity, componentQuantity, componentCheckoutID, "checkout", body.Notes, user.ID, now); err != nil {
+		componentBeforeQty, componentAfterQty := checkoutMovementQuantities(componentQuantity, "checked_out")
+		if err := itemscore.RecordInventoryMovementTx(tx, realm, componentID, "checked_out", componentBeforeQty, componentAfterQty, componentCheckoutID, "checkout", body.Notes, user.ID, now); err != nil {
 			log.Printf("DB inventory child movement insert error in checkoutItem: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 			return
@@ -294,7 +296,8 @@ func checkinItem(c *gin.Context) {
 	user := middleware.GetUser(c)
 	for _, row := range returnedRows {
 		quantity := middleware.AsInt(row["quantity"])
-		if err := itemscore.RecordInventoryMovement(realm, row["item_id"], "returned", quantity, quantity, row["id"], "checkout", checkoutcore.NormalizeNullableDBValue(row["notes"]), user.ID, now); err != nil {
+		beforeQty, afterQty := checkoutMovementQuantities(quantity, "returned")
+		if err := itemscore.RecordInventoryMovement(realm, row["item_id"], "returned", beforeQty, afterQty, row["id"], "checkout", checkoutcore.NormalizeNullableDBValue(row["notes"]), user.ID, now); err != nil {
 			log.Printf("DB inventory movement insert error in checkinItem: %v", err)
 		}
 	}

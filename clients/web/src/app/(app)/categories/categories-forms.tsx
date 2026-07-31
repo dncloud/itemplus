@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { ArrowDownWideNarrow, Sparkles } from "lucide-react";
+import ColorPreviewBadge from "@/components/ui/color-preview-badge";
 import SelectPicker from "@/components/ui/select-picker";
 import type { Category, Property } from "@/lib/api";
 import { getPropertyOptionConfig } from "@/lib/property-options";
@@ -184,6 +185,7 @@ export function CategoryInlineForm({
         <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("common.color")}</label>
         <div className="flex items-center gap-2">
           <input type="color" value={category.color || "#6b7280"} onChange={(e) => onChange({ ...category, color: e.target.value })} className="h-8 w-10 rounded border border-gray-300 dark:border-gray-700 cursor-pointer" />
+          <ColorPreviewBadge color={category.color} label={t("common.preview")} />
           {category.color ? (
             <button type="button" onClick={() => onChange({ ...category, color: undefined })} className="text-xs text-gray-400 hover:text-red-500">
               {t("common.remove")}

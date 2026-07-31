@@ -85,6 +85,10 @@ export function SettingsAppSection({
   setItemStockWarningPercent,
   itemStockCriticalPercent,
   setItemStockCriticalPercent,
+  inventoryCheckoutAffectsMovementQuantity,
+  setInventoryCheckoutAffectsMovementQuantity,
+  inventorySettingsSaving,
+  onSaveInventorySettings,
   maintenanceLeadDays,
   setMaintenanceLeadDays,
   maintenanceSettingsSaving,
@@ -134,6 +138,10 @@ export function SettingsAppSection({
   setItemStockWarningPercent: (value: number) => void;
   itemStockCriticalPercent: number;
   setItemStockCriticalPercent: (value: number) => void;
+  inventoryCheckoutAffectsMovementQuantity?: boolean;
+  setInventoryCheckoutAffectsMovementQuantity?: (value: boolean) => void;
+  inventorySettingsSaving?: boolean;
+  onSaveInventorySettings?: () => void;
   maintenanceLeadDays?: number;
   setMaintenanceLeadDays?: (value: number) => void;
   maintenanceSettingsSaving?: boolean;
@@ -342,6 +350,29 @@ export function SettingsAppSection({
           </div>
         </div>
       </AppSettingsSection>
+
+      {inventoryCheckoutAffectsMovementQuantity !== undefined && setInventoryCheckoutAffectsMovementQuantity && onSaveInventorySettings ? (
+        <AppSettingsSection title={t("settings.inventoryCheckoutMovementTitle")} description={t("settings.inventoryCheckoutMovementHint")}>
+          <div className="space-y-4">
+            <ToggleRow
+              title={t("settings.inventoryCheckoutMovementToggle")}
+              description={t("settings.inventoryCheckoutMovementToggleHint")}
+              checked={inventoryCheckoutAffectsMovementQuantity}
+              onToggle={() => setInventoryCheckoutAffectsMovementQuantity(!inventoryCheckoutAffectsMovementQuantity)}
+            />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onSaveInventorySettings}
+                disabled={inventorySettingsSaving}
+                className={primaryButtonClass}
+              >
+                {inventorySettingsSaving ? t("settings.saving") : t("common.save")}
+              </button>
+            </div>
+          </div>
+        </AppSettingsSection>
+      ) : null}
 
       {maintenanceLeadDays !== undefined && setMaintenanceLeadDays && onSaveMaintenanceSettings ? (
         <AppSettingsSection title={t("settings.maintenanceReminderLeadTitle")} description={t("settings.maintenanceReminderLeadHint")}>

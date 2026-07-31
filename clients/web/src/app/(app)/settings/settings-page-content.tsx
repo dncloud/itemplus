@@ -84,6 +84,8 @@ export default function SettingsPageContent() {
   const [aiTesting, setAiTesting] = useState(false);
   const [aiModelsLoading, setAiModelsLoading] = useState(false);
   const [maintenanceLeadDays, setMaintenanceLeadDays] = useState(0);
+  const [inventoryCheckoutAffectsMovementQuantity, setInventoryCheckoutAffectsMovementQuantity] = useState(false);
+  const [inventorySettingsSaving, setInventorySettingsSaving] = useState(false);
   const [maintenanceSettingsSaving, setMaintenanceSettingsSaving] = useState(false);
   const [sidebarFavorites, setSidebarFavorites] = useState<SidebarFavorite[]>([]);
   const [sidebarFavoritesSaving, setSidebarFavoritesSaving] = useState(false);
@@ -145,6 +147,9 @@ export default function SettingsPageContent() {
         }
         if (data.maintenanceSettings) {
           setMaintenanceLeadDays(data.maintenanceSettings.reminder_lead_days || 0);
+        }
+        if (data.inventorySettings) {
+          setInventoryCheckoutAffectsMovementQuantity(!!data.inventorySettings.checkout_affects_movement_quantity);
         }
         setSidebarFavorites(data.sidebarFavorites);
       })
@@ -310,6 +315,19 @@ export default function SettingsPageContent() {
       setEmailDraft(updated.email || "");
       showNotification(t("settings.accountSaved"));
     } catch (err) {
+      const message = messageFromError(err, t("common.error"));
+      showNotification(message, undefined, "error");
+    }
+  };
+
+  const updateLocalePreference = async (value: typeof locale) => {
+    const previous = locale;
+    setLocale(value);
+    try {
+      const updated = await api.updateMe({ locale: value });
+      setMe(updated);
+    } catch (err) {
+      setLocale(previous);
       const message = messageFromError(err, t("common.error"));
       showNotification(message, undefined, "error");
     }
@@ -517,6 +535,22 @@ export default function SettingsPageContent() {
     }
   };
 
+  const saveInventorySettings = async () => {
+    setInventorySettingsSaving(true);
+    try {
+      const saved = await api.updateInventorySettings({
+        checkout_affects_movement_quantity: inventoryCheckoutAffectsMovementQuantity,
+      });
+      setInventoryCheckoutAffectsMovementQuantity(!!saved.checkout_affects_movement_quantity);
+      showNotification(t("settings.inventorySettingsSaved"));
+    } catch (err) {
+      const message = messageFromError(err, t("settings.inventorySettingsSaveFailed"));
+      showNotification(message, undefined, "error");
+    } finally {
+      setInventorySettingsSaving(false);
+    }
+  };
+
   const testAISettings = async () => {
     setAiTesting(true);
     try {
@@ -621,7 +655,9 @@ export default function SettingsPageContent() {
     can,
     isAdmin,
     locale,
-    setLocale: (value) => setLocale(value as typeof locale),
+    setLocale: (value) => {
+      void updateLocalePreference(value as typeof locale);
+    },
     dateFormat,
     setDateFormat,
     itemsPerPage,
@@ -656,6 +692,10 @@ export default function SettingsPageContent() {
     setItemStockWarningPercent,
     itemStockCriticalPercent,
     setItemStockCriticalPercent,
+    inventoryCheckoutAffectsMovementQuantity,
+    setInventoryCheckoutAffectsMovementQuantity,
+    inventorySettingsSaving,
+    saveInventorySettings,
     maintenanceLeadDays,
     setMaintenanceLeadDays,
     maintenanceSettingsSaving,

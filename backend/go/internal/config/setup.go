@@ -29,6 +29,7 @@ type SetupValues struct {
 	SMTPFromEmail        string `json:"smtp_from_email"`
 	SMTPFromName         string `json:"smtp_from_name"`
 	SMTPUseTLS           bool   `json:"smtp_use_tls"`
+	EmailLocale          string `json:"email_locale"`
 	Host                 string `json:"host"`
 	Port                 int    `json:"port"`
 }
@@ -54,6 +55,7 @@ func CurrentSetupValues() SetupValues {
 		SMTPFromEmail:        C.SMTPFromEmail,
 		SMTPFromName:         C.SMTPFromName,
 		SMTPUseTLS:           C.SMTPUseTLS,
+		EmailLocale:          C.EmailLocale,
 		Host:                 C.Host,
 		Port:                 C.Port,
 	}
@@ -79,6 +81,7 @@ func SaveSetupValues(values SetupValues, complete bool) error {
 		"SMTP_FROM_EMAIL":           strings.TrimSpace(values.SMTPFromEmail),
 		"SMTP_FROM_NAME":            strings.TrimSpace(values.SMTPFromName),
 		"SMTP_USE_TLS":              strconv.FormatBool(values.SMTPUseTLS),
+		"EMAIL_LOCALE":              strings.TrimSpace(values.EmailLocale),
 		"HOST":                      strings.TrimSpace(values.Host),
 		"PORT":                      strconv.Itoa(values.Port),
 		"MAGIC_LINK_EXPIRY_MINUTES": strconv.Itoa(C.MagicLinkExpiryMinutes),
@@ -168,6 +171,7 @@ func updateConfigFile(path string, updates map[string]string, removeKeys []strin
 		"SMTP_FROM_EMAIL",
 		"SMTP_FROM_NAME",
 		"SMTP_USE_TLS",
+		"EMAIL_LOCALE",
 		"HOST",
 		"PORT",
 	}

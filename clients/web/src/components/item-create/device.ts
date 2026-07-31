@@ -11,7 +11,7 @@ export function requestItemBarcodeCapture(realm: Realm) {
 
 export function requestItemPhotoLookup(realm: Realm, itemName: string, barcodeCode?: string | null) {
   wsClient.send("photo.request", {
-    item_name: (itemName || barcodeCode || "Foto fuer KI").trim(),
+    item_name: (itemName || barcodeCode || "Foto für KI").trim(),
     realm,
     purpose: "ai_lookup",
     from_session: wsClient.sessionId ?? undefined,

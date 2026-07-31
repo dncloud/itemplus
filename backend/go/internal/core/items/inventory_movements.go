@@ -54,12 +54,15 @@ func LoadItemInventoryMovements(realm, itemID string, limit int) []map[string]in
 		limit = 10
 	}
 	rows, err := database.DB.Queryx(
-		fmt.Sprintf(`SELECT m.*, COALESCE(u.display_name, u.email) AS created_by_name
+		fmt.Sprintf(`SELECT m.*, COALESCE(u.display_name, u.email) AS created_by_name,
+				COALESCE(cu.display_name, cu.email) AS checkout_user_name
 			FROM %s m
 			LEFT JOIN users u ON m.created_by = u.id
+			LEFT JOIN %s co ON m.checkout_id = co.id
+			LEFT JOIN users cu ON co.user_id = cu.id
 			WHERE m.item_id = ?
 			ORDER BY m.created_at DESC, m.id DESC
-			LIMIT ?`, InventoryMovementTable(realm)),
+			LIMIT ?`, InventoryMovementTable(realm), realm+"_checkouts"),
 		itemID, limit,
 	)
 	if err != nil {

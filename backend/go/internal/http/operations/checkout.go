@@ -10,6 +10,7 @@ func RegisterCheckoutRoutes(api *gin.RouterGroup) {
 	api.POST("/checkout/:realm/:item_id", middleware.Auth(), middleware.RequirePermission("checkout.manage"), checkoutItem)
 	api.POST("/checkin/:realm/:item_id", middleware.Auth(), middleware.RequirePermission("checkout.manage"), checkinItem)
 	api.PUT("/checkout/:realm/:id", middleware.Auth(), middleware.RequireAdmin(), updateCheckout)
+	api.POST("/checkouts/:realm/:id/remind", middleware.Auth(), middleware.RequirePermission("checkout.manage"), remindCheckout)
 
 	// Checkout lists
 	api.GET("/checkouts/:realm/active", middleware.Auth(), listActiveCheckouts)

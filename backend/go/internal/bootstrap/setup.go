@@ -35,6 +35,7 @@ type setupDraft struct {
 	SMTPFromEmail        string
 	SMTPFromName         string
 	SMTPUseTLS           bool
+	EmailLocale          string
 	Host                 string
 	Port                 string
 }
@@ -72,6 +73,7 @@ func RunInitialSetup() error {
 		SMTPFromEmail:        current.SMTPFromEmail,
 		SMTPFromName:         defaultString(current.SMTPFromName, "item+"),
 		SMTPUseTLS:           current.SMTPUseTLS,
+		EmailLocale:          defaultString(current.EmailLocale, "en"),
 		Host:                 defaultString(current.Host, "0.0.0.0"),
 		Port:                 strconv.Itoa(defaultInt(current.Port, config.DefaultPort)),
 	}
@@ -176,6 +178,17 @@ func RunInitialSetup() error {
 			huh.NewConfirm().
 				Title("Use TLS instead of SSL?").
 				Value(&draft.SMTPUseTLS),
+			huh.NewInput().
+				Title("E-mail language").
+				Description("Used for magic links, registration, and reminder e-mails. Supported values: en or de.").
+				Value(&draft.EmailLocale).
+				Validate(func(value string) error {
+					value = strings.ToLower(strings.TrimSpace(value))
+					if value == "en" || value == "de" {
+						return nil
+					}
+					return fmt.Errorf("please enter en or de")
+				}),
 		),
 	).WithShowHelp(false).WithTheme(huh.ThemeFunc(huh.ThemeCharm))
 
@@ -289,6 +302,7 @@ func (d setupDraft) toSetupValues() (config.SetupValues, error) {
 		SMTPFromEmail:        trim(d.SMTPFromEmail),
 		SMTPFromName:         trim(d.SMTPFromName),
 		SMTPUseTLS:           d.SMTPUseTLS,
+		EmailLocale:          trim(d.EmailLocale),
 		Host:                 trim(d.Host),
 		Port:                 port,
 	}, nil

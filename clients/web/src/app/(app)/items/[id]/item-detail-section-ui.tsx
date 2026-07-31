@@ -25,6 +25,18 @@ function movementDeltaLabel(value: number) {
   return value > 0 ? `+${value}` : String(value);
 }
 
+function isNeutralLoanMovement(movement: InventoryMovement) {
+  const isLoan = movement.movement_type === "checked_out" || movement.movement_type === "returned";
+  return isLoan && movement.quantity_delta === 0 && movement.quantity_before === movement.quantity_after;
+}
+
+function movementUserLabel(movement: InventoryMovement) {
+  if (movement.movement_type === "checked_out" || movement.movement_type === "returned") {
+    return movement.checkout_user_name || movement.created_by_name || "—";
+  }
+  return movement.created_by_name || "—";
+}
+
 export function ItemInventoryMovementsPreview({
   itemID,
   movements,
@@ -48,20 +60,22 @@ export function ItemInventoryMovementsPreview({
             </div>
             <p
               className={`font-semibold ${
-                movement.quantity_delta > 0
-                  ? "text-emerald-600 dark:text-emerald-300"
-                  : movement.quantity_delta < 0
-                    ? "text-rose-600 dark:text-rose-300"
-                    : "text-gray-500 dark:text-gray-400"
+                isNeutralLoanMovement(movement)
+                  ? "text-gray-500 dark:text-gray-400"
+                  : movement.quantity_delta > 0
+                    ? "text-emerald-600 dark:text-emerald-300"
+                    : movement.quantity_delta < 0
+                      ? "text-rose-600 dark:text-rose-300"
+                      : "text-gray-500 dark:text-gray-400"
               }`}
             >
-              {movementDeltaLabel(movement.quantity_delta)}
+              {isNeutralLoanMovement(movement) ? "—" : movementDeltaLabel(movement.quantity_delta)}
             </p>
             <p className="text-gray-600 dark:text-gray-300">
               {movement.quantity_before} → {movement.quantity_after}
             </p>
-            <p className="min-w-0 truncate text-gray-500 dark:text-gray-400 sm:text-right" title={movement.created_by_name || "—"}>
-              {movement.created_by_name || "—"}
+            <p className="min-w-0 truncate text-gray-500 dark:text-gray-400 sm:text-right" title={movementUserLabel(movement)}>
+              {movementUserLabel(movement)}
             </p>
           </div>
         ))}

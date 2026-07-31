@@ -90,11 +90,27 @@ func resolvedLoginEmail(explicit *string, fallback string) *string {
 	return &fallback
 }
 
-func createUserForLogin(appleSub string, email *string, displayName *string) (*middleware.User, bool, error) {
+func normalizedUserLocale(locale *string) *string {
+	if locale == nil {
+		return nil
+	}
+	trimmed := strings.ToLower(strings.TrimSpace(*locale))
+	if trimmed == "" {
+		return nil
+	}
+	normalized := "en"
+	if strings.HasPrefix(trimmed, "de") {
+		normalized = "de"
+	}
+	return &normalized
+}
+
+func createUserForLogin(appleSub string, email *string, displayName *string, locale *string) (*middleware.User, bool, error) {
 	count := countVisibleUsers()
 	isFirst := count == 0
 	isActive := isFirst || config.C.AutoActivated
 	permissions := "[]"
+	userLocale := normalizedUserLocale(locale)
 	if !isFirst && config.C.IOSReviewPermissions {
 		if data, err := json.Marshal(middleware.PERMISSIONS); err == nil {
 			permissions = string(data)
@@ -103,8 +119,8 @@ func createUserForLogin(appleSub string, email *string, displayName *string) (*m
 	now := database.TimestampNow()
 
 	result, err := database.DB.Exec(
-		"INSERT INTO users (apple_sub, email, display_name, is_admin, is_active, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		appleSub, email, displayName, isFirst, isActive, permissions, now, now,
+		"INSERT INTO users (apple_sub, email, display_name, locale, is_admin, is_active, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		appleSub, email, displayName, userLocale, isFirst, isActive, permissions, now, now,
 	)
 	if err != nil {
 		return nil, false, err

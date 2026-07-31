@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.3.3 - 2026-07-31
+
+### Checkouts and reminder workflow
+- Added manual return reminders for overdue checkouts, including a direct `Notify` action for active overdue loans, cooldown handling, reminder timestamps, and clearer status feedback in the checkout list.
+- Improved checkout reminder mails so they respect the configured installation language instead of always sending mixed bilingual text, and documented the shared mail locale behavior through configuration.
+- Refined overdue checkout presentation across item details and operations screens so overdue states stand out more clearly and reminder actions fit the existing item+ button language better.
+
+### Maintenance and stock workflow
+- Moved item-specific maintenance handling into dedicated per-item maintenance pages instead of keeping reminder management embedded inside the item detail view, keeping item details calmer while giving maintenance its own focused workspace.
+- Added completion-note handling to maintenance history and improved how notes and status history are shown for finished reminders.
+- Tightened stock movement and stock-detail navigation so operational views link to the stock perspective where it makes more sense than jumping back to the generic item detail page.
+- Clarified stock movement semantics for checkout-related events by treating loan and return entries as availability changes instead of fake quantity mutations in the global stock count.
+
+### Navigation and embedded web app stability
+- Fixed sidebar behavior so favorites stay open when a page was entered through favorites, while inventory, operations, system, and settings stay open when the same target was opened through their normal section.
+- Extended that navigation memory across the whole app instead of only solving it for one page, making the sidebar feel more intentional during deeper navigation.
+- Fixed long-running embedded web app setups by extracting the internal Next.js build into a persistent runtime directory instead of macOS/Linux temp storage, which could be cleaned up after days of uptime.
+- Routed embedded web app output back into the normal item+ logging stream so future runtime issues can be diagnosed without blind spots.
+
+### UI polish and master data
+- Improved master-data logo handling with larger list previews and continued cleanup around vendor logo resolution behavior.
+- Refined item detail action shortcuts and operational links so maintenance and stock actions are easier to reach directly from the item context.
+- Added and refreshed support-page content in the public docs to better match the current product and review/support expectations.
+
 ## 1.3.2 - 2026-07-07
 
 ### Session and UI hotfixes

@@ -21,6 +21,18 @@ function deltaLabel(value: number) {
   return String(value);
 }
 
+function isNeutralLoanMovement(movement: InventoryMovement) {
+  const isLoan = movement.movement_type === "checked_out" || movement.movement_type === "returned";
+  return isLoan && movement.quantity_delta === 0 && movement.quantity_before === movement.quantity_after;
+}
+
+function movementUserLabel(movement: InventoryMovement) {
+  if (movement.movement_type === "checked_out" || movement.movement_type === "returned") {
+    return movement.checkout_user_name || movement.created_by_name || "—";
+  }
+  return movement.created_by_name || "—";
+}
+
 export default function InventoryMovementsPage() {
   const { realm, setRealm, t, fmtDate, can } = useApp();
   const searchParams = useSearchParams();
@@ -81,8 +93,9 @@ function InventoryMovementsPageContent({
   const [inventoryWarnings, setInventoryWarnings] = useState<InventoryWarning[]>([]);
   const [locationWarnings, setLocationWarnings] = useState<LocationWarning[]>([]);
   const [loading, setLoading] = useState(true);
-  const canViewInventoryWarnings = canWriteInventory;
-  const canViewLocationWarnings = canWriteInventory;
+  const isItemView = !!itemID;
+  const canViewInventoryWarnings = canWriteInventory && !isItemView;
+  const canViewLocationWarnings = canWriteInventory && !isItemView;
 
   useEffect(() => {
     let cancelled = false;
@@ -167,13 +180,16 @@ function InventoryMovementsPageContent({
         </div>
       </div>
 
-      <WarningGrid
-        inventoryWarnings={realmInventoryWarnings}
-        locationWarnings={realmLocationWarnings}
-        canOpenItems={canReadItems}
-        canOpenLocations={canReadLocations}
-        t={t}
-      />
+      {!isItemView ? (
+        <WarningGrid
+          inventoryWarnings={realmInventoryWarnings}
+          locationWarnings={realmLocationWarnings}
+          maintenanceWarnings={[]}
+          canOpenItems={canReadItems}
+          canOpenLocations={canReadLocations}
+          t={t}
+        />
+      ) : null}
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
         {movementStats.map((entry) => (
@@ -214,7 +230,10 @@ function InventoryMovementsPageContent({
                   </td>
                   <td className="px-4 py-3">
                     {canReadItems ? (
-                      <Link href={`/items/${movement.item_id}`} className="font-medium text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-300">
+                      <Link
+                        href={`/inventory-movements?realm=${movement.realm || realm}&item_id=${movement.item_id}`}
+                        className="font-medium text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-300"
+                      >
                         {movement.item_name || `#${movement.item_id}`}
                       </Link>
                     ) : (
@@ -222,13 +241,23 @@ function InventoryMovementsPageContent({
                     )}
                     {movement.category_name ? <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{movement.category_name}</p> : null}
                   </td>
-                  <td className={`px-4 py-3 font-semibold ${movement.quantity_delta > 0 ? "text-emerald-600 dark:text-emerald-300" : movement.quantity_delta < 0 ? "text-rose-600 dark:text-rose-300" : "text-gray-500 dark:text-gray-400"}`}>
-                    {deltaLabel(movement.quantity_delta)}
+                  <td
+                    className={`px-4 py-3 font-semibold ${
+                      isNeutralLoanMovement(movement)
+                        ? "text-gray-500 dark:text-gray-400"
+                        : movement.quantity_delta > 0
+                          ? "text-emerald-600 dark:text-emerald-300"
+                          : movement.quantity_delta < 0
+                            ? "text-rose-600 dark:text-rose-300"
+                            : "text-gray-500 dark:text-gray-400"
+                    }`}
+                  >
+                    {isNeutralLoanMovement(movement) ? "—" : deltaLabel(movement.quantity_delta)}
                   </td>
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
                     {movement.quantity_before} → {movement.quantity_after}
                   </td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{movement.created_by_name || "—"}</td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{movementUserLabel(movement)}</td>
                   <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{fmtDate(movement.created_at)}</td>
                 </tr>
               ))}

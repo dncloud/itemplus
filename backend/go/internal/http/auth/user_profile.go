@@ -34,6 +34,7 @@ func userResponse(user *middleware.User) gin.H {
 		"sub":         user.AppleSub,
 		"email":       user.Email,
 		"name":        user.DisplayName,
+		"locale":      user.Locale,
 		"avatar_path": user.AvatarPath,
 		"is_admin":    user.IsAdmin,
 		"is_active":   user.IsActive,
@@ -113,6 +114,7 @@ func updateMe(c *gin.Context) {
 		DisplayName *string `json:"display_name"`
 		Name        *string `json:"name"`
 		Email       *string `json:"email"`
+		Locale      *string `json:"locale"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
@@ -129,6 +131,9 @@ func updateMe(c *gin.Context) {
 	}
 	if body.Email != nil {
 		database.DB.Exec("UPDATE users SET email = ?, updated_at = ? WHERE id = ?", *body.Email, now, user.ID)
+	}
+	if normalizedLocale := normalizedUserLocale(body.Locale); normalizedLocale != nil {
+		database.DB.Exec("UPDATE users SET locale = ?, updated_at = ? WHERE id = ?", *normalizedLocale, now, user.ID)
 	}
 
 	updated, err := loadVisibleUserByID(user.ID)

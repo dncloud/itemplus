@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+const ReminderCooldownDays = 7
+
 func EnrichCheckoutRow(row map[string]interface{}, realm string) {
 	row["realm"] = realm
 	now := time.Now().In(time.Local)
@@ -51,6 +53,17 @@ func EnrichCheckoutRow(row map[string]interface{}, realm string) {
 			}
 		}
 	}
+
+	if v, ok := row["last_reminder_sent_at"]; ok && v != nil {
+		lastReminder := ParseCheckoutTime(v)
+		if !lastReminder.IsZero() {
+			nextReminderAt := NextReminderTime(lastReminder)
+			row["reminder_cooldown_active"] = IsReminderCooldownActive(now, lastReminder)
+			if !nextReminderAt.IsZero() {
+				row["next_reminder_at"] = nextReminderAt.Format(time.RFC3339)
+			}
+		}
+	}
 }
 
 func NormalizeCheckoutDate(value time.Time, loc *time.Location) time.Time {
@@ -72,6 +85,32 @@ func CalculateOverdueDays(reference, due time.Time) float64 {
 		overdueDays = 0
 	}
 	return math.Round(overdueDays*10) / 10
+}
+
+func NextReminderTime(lastReminder time.Time) time.Time {
+	if lastReminder.IsZero() {
+		return time.Time{}
+	}
+	return lastReminder.In(time.Local).AddDate(0, 0, ReminderCooldownDays)
+}
+
+func IsReminderCooldownActive(now, lastReminder time.Time) bool {
+	if lastReminder.IsZero() {
+		return false
+	}
+	return now.In(time.Local).Before(NextReminderTime(lastReminder))
+}
+
+func ReminderCooldownRemainingDays(now, lastReminder time.Time) int {
+	if !IsReminderCooldownActive(now, lastReminder) {
+		return 0
+	}
+	nextReminder := NextReminderTime(lastReminder)
+	remaining := nextReminder.Sub(now.In(time.Local)).Hours() / 24
+	if remaining <= 1 {
+		return 1
+	}
+	return int(math.Ceil(remaining))
 }
 
 func ParseCheckoutTime(v interface{}) time.Time {

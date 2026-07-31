@@ -5,7 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { useState } from "react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import type { InventoryWarning, LocationWarning } from "@/lib/api";
+import type { InventoryWarning, LocationWarning, MaintenanceReminder } from "@/lib/api";
 import {
   Archive,
   Banknote,
@@ -35,12 +35,14 @@ function ColorBadge({
 export function WarningGrid({
   inventoryWarnings,
   locationWarnings,
+  maintenanceWarnings = [],
   canOpenItems = true,
   canOpenLocations = true,
   t,
 }: {
   inventoryWarnings: InventoryWarning[];
   locationWarnings: LocationWarning[];
+  maintenanceWarnings?: MaintenanceReminder[];
   canOpenItems?: boolean;
   canOpenLocations?: boolean;
   t: (key: string, vars?: Record<string, string | number>) => string;
@@ -51,7 +53,7 @@ export function WarningGrid({
     warning: t("dashboard.warningHigh"),
   };
 
-  if (inventoryWarnings.length === 0 && locationWarnings.length === 0) return null;
+  if (inventoryWarnings.length === 0 && locationWarnings.length === 0 && maintenanceWarnings.length === 0) return null;
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-8">
@@ -87,6 +89,25 @@ export function WarningGrid({
               )}{" "}
               <span className="text-rose-700 dark:text-rose-300">
                 {locationLabelMap[warning.level]} · {warning.used}/{warning.capacity}
+              </span>
+            </li>
+          ))}
+        </SignalCard>
+      ) : null}
+
+      {maintenanceWarnings.length > 0 ? (
+        <SignalCard title={t("dashboard.maintenanceTitle")} tone="red">
+          {maintenanceWarnings.map((warning) => (
+            <li key={`${warning.realm || "realm"}-${warning.id}`}>
+              {canOpenItems ? (
+                <Link prefetch={enableDashboardPrefetch} href={`/items/${warning.item_id}`} className="text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-300">
+                  {warning.item_name || warning.title}
+                </Link>
+              ) : (
+                <span>{warning.item_name || warning.title}</span>
+              )}{" "}
+              <span className="text-rose-700 dark:text-rose-300">
+                {warning.title} · {t("maintenance.dueOn", { date: warning.due_date })}
               </span>
             </li>
           ))}

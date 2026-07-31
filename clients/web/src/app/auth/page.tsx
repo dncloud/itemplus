@@ -11,7 +11,7 @@ import { api } from "@/lib/api";
 import { BrandTitle, LogoIcon } from "@/components/branding/logo";
 
 export default function AuthPage() {
-  const { t, ready, brandingTitle, brandingSubtitle } = useApp();
+  const { t, ready, brandingTitle, brandingSubtitle, locale } = useApp();
   const [connected, setConnected] = useState(false);
 
   const [authMode, setAuthMode] = useState<"qr" | "email">("qr");
@@ -119,7 +119,7 @@ export default function AuthPage() {
       const res = await fetch("/api/auth/magic/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, locale }),
       });
       setEmailStatus(res.ok ? "sent" : "error");
     } catch {

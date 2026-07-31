@@ -52,6 +52,7 @@ type Config struct {
 	SMTPFromEmail          string
 	SMTPFromName           string
 	SMTPUseTLS             bool
+	EmailLocale            string
 	MagicLinkExpiryMinutes int
 	MagicLinkBaseURL       string
 
@@ -62,7 +63,7 @@ type Config struct {
 const DefaultPort = 17117
 
 var C Config
-var defaultAppVersion = "1.3.2"
+var defaultAppVersion = "1.3.3"
 var defaultAppBuild = "dev"
 var cliConfigPath string
 
@@ -104,6 +105,7 @@ var managedConfigEnvKeys = []string{
 	"SMTP_FROM_EMAIL",
 	"SMTP_FROM_NAME",
 	"SMTP_USE_TLS",
+	"EMAIL_LOCALE",
 	"MAGIC_LINK_EXPIRY_MINUTES",
 	"MAGIC_LINK_BASE_URL",
 	"HOST",
@@ -298,6 +300,7 @@ func Load() {
 		SMTPFromEmail:          envStr("SMTP_FROM_EMAIL", ""),
 		SMTPFromName:           envStr("SMTP_FROM_NAME", "item+"),
 		SMTPUseTLS:             envBool("SMTP_USE_TLS"),
+		EmailLocale:            normalizeEmailLocale(envStr("EMAIL_LOCALE", "en")),
 		MagicLinkExpiryMinutes: envInt("MAGIC_LINK_EXPIRY_MINUTES", 15),
 		MagicLinkBaseURL:       envStr("MAGIC_LINK_BASE_URL", ""),
 
@@ -338,6 +341,14 @@ func Load() {
 	}
 
 	ensureRuntimePaths()
+}
+
+func normalizeEmailLocale(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if strings.HasPrefix(value, "de") {
+		return "de"
+	}
+	return "en"
 }
 
 func loadConfigFile() (string, string) {

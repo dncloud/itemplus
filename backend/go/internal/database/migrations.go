@@ -47,7 +47,13 @@ func runMigrations(db *sqlx.DB, driver string) error {
 	if err := addColumnIfMissing(db, "ALTER TABLE label_templates ADD COLUMN dpi INTEGER NOT NULL DEFAULT 600"); err != nil {
 		return err
 	}
+	if err := addColumnIfMissing(db, "ALTER TABLE users ADD COLUMN locale TEXT"); err != nil {
+		return err
+	}
 	if err := addColumnIfMissing(db, "ALTER TABLE users ADD COLUMN avatar_path TEXT"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "ALTER TABLE magic_link_tokens ADD COLUMN locale TEXT"); err != nil {
 		return err
 	}
 	if err := addColumnIfMissing(db, "ALTER TABLE checkout_requests ADD COLUMN component_item_ids TEXT"); err != nil {
@@ -114,6 +120,9 @@ func runMigrations(db *sqlx.DB, driver string) error {
 			return err
 		}
 		if err := addColumnIfMissing(db, "ALTER TABLE "+checkoutsTable+" ADD COLUMN bundle_parent_item_id INTEGER"); err != nil {
+			return err
+		}
+		if err := addColumnIfMissing(db, "ALTER TABLE "+checkoutsTable+" ADD COLUMN last_reminder_sent_at TEXT"); err != nil {
 			return err
 		}
 		if err := addColumnIfMissing(db, "ALTER TABLE "+manufacturersTable+" ADD COLUMN external_logo_url TEXT"); err != nil {
@@ -213,12 +222,12 @@ func migrateUserSettingsKeyColumn(db *sqlx.DB, driver string) error {
 	}
 
 	type tableColumn struct {
-		CID       int            `db:"cid"`
-		Name      string         `db:"name"`
-		Type      string         `db:"type"`
-		NotNull   int            `db:"notnull"`
-		Default   sql.NullString `db:"dflt_value"`
-		PrimaryKey int           `db:"pk"`
+		CID        int            `db:"cid"`
+		Name       string         `db:"name"`
+		Type       string         `db:"type"`
+		NotNull    int            `db:"notnull"`
+		Default    sql.NullString `db:"dflt_value"`
+		PrimaryKey int            `db:"pk"`
 	}
 	var columns []tableColumn
 	if err := db.Select(&columns, "PRAGMA table_info(user_settings)"); err != nil {

@@ -7,6 +7,7 @@ import {
   CircleCheck,
   Check,
   ChevronRight,
+  ClipboardList,
   Smartphone,
   Info,
   Pencil,
@@ -75,9 +76,10 @@ export function ItemDetailHeader({
   showCheckout,
   setShowCheckout,
   canWriteItems,
+  canViewInventory,
+  inventoryHref,
   canViewMaintenance,
-  showMaintenance,
-  setShowMaintenance,
+  maintenanceHref,
   maintenanceDueCount,
   canPrintActions,
   canRequestPhoto,
@@ -99,9 +101,10 @@ export function ItemDetailHeader({
   showCheckout: boolean;
   setShowCheckout: (value: boolean) => void;
   canWriteItems: boolean;
+  canViewInventory: boolean;
+  inventoryHref: string;
   canViewMaintenance: boolean;
-  showMaintenance: boolean;
-  setShowMaintenance: (value: boolean) => void;
+  maintenanceHref: string;
   maintenanceDueCount: number;
   canPrintActions: boolean;
   canRequestPhoto: boolean;
@@ -150,7 +153,6 @@ export function ItemDetailHeader({
           type="button"
           onClick={() => {
             setShowCheckout(!showCheckout);
-            setShowMaintenance(false);
           }}
           disabled={checkoutSent || checkoutBlocked}
           title={
@@ -168,20 +170,24 @@ export function ItemDetailHeader({
         >
           {checkoutSent ? <Check className="h-4 w-4" /> : <ArrowLeftRight className="h-4 w-4" />}
         </button>
+        {canViewInventory ? (
+          <Link
+            href={inventoryHref}
+            className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            title={t("nav.inventoryMovements")}
+          >
+            <ClipboardList className="h-4 w-4" />
+          </Link>
+        ) : null}
         {canViewMaintenance ? (
-          <button
-            type="button"
-            onClick={() => {
-              setShowMaintenance(!showMaintenance);
-              setShowCheckout(false);
-            }}
+          <Link
+            href={maintenanceHref}
             className={`relative inline-flex items-center justify-center rounded-lg border p-2 text-sm transition ${
-              showMaintenance || maintenanceDueCount > 0
+              maintenanceDueCount > 0
                 ? "border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-500/50 dark:text-blue-300 dark:hover:bg-blue-500/10"
                 : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
             }`}
             title={t("maintenance.title")}
-            aria-pressed={showMaintenance}
           >
             <Wrench className="h-4 w-4" />
             {maintenanceDueCount > 0 ? (
@@ -189,7 +195,7 @@ export function ItemDetailHeader({
                 {maintenanceDueCount}
               </span>
             ) : null}
-          </button>
+          </Link>
         ) : null}
         {canPrintActions ? (
           <button
@@ -410,6 +416,51 @@ export function ItemCheckoutPendingBanner({ t }: { t: (key: string) => string })
   );
 }
 
+export function ItemMaintenanceBanner({
+  dueCount,
+  overdueCount,
+  t,
+  maintenanceHref,
+}: {
+  dueCount: number;
+  overdueCount: number;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+  maintenanceHref: string;
+}) {
+  const hasOverdue = overdueCount > 0;
+
+  return (
+    <section className="border-b border-gray-200 pb-6 dark:border-white/10">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <Wrench className={`mt-0.5 h-5 w-5 shrink-0 ${hasOverdue ? "text-rose-500" : "text-amber-500"}`} />
+          <div className="min-w-0">
+            <p className={hasOverdue ? "text-sm font-medium text-rose-300" : "text-sm font-medium text-amber-300"}>
+              {hasOverdue
+                ? t("maintenance.alertOverdue", { count: overdueCount })
+                : t("maintenance.alertDue", { count: dueCount })}
+            </p>
+            <p className={hasOverdue ? "mt-1 text-sm text-rose-200/85" : "mt-1 text-sm text-amber-200/85"}>
+              {t("maintenance.summaryHint", { count: dueCount })}
+            </p>
+          </div>
+        </div>
+        <Link
+          href={maintenanceHref}
+          className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-white ${
+            hasOverdue
+              ? "bg-rose-600 hover:bg-rose-500 focus-visible:outline-rose-600 dark:bg-rose-500 dark:hover:bg-rose-400 dark:focus-visible:outline-rose-500"
+              : "bg-amber-600 hover:bg-amber-500 focus-visible:outline-amber-600 dark:bg-amber-500 dark:hover:bg-amber-400 dark:focus-visible:outline-amber-500"
+          } focus-visible:outline-2 focus-visible:outline-offset-2`}
+        >
+          <Wrench className="h-4 w-4" />
+          {t("maintenance.openPanel")}
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 export function ItemCheckoutActiveBanner({
   item,
   canManageCheckout,
@@ -438,18 +489,28 @@ export function ItemCheckoutActiveBanner({
     t,
     compact: true,
   });
+  const isOverdue = Boolean(item.checked_out_to.is_overdue);
+  const bannerIconClass = isOverdue
+    ? "mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400"
+    : "mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400";
+  const bannerTitleClass = isOverdue
+    ? "text-sm font-medium text-amber-900 dark:text-amber-300"
+    : "text-sm font-medium text-emerald-900 dark:text-emerald-300";
+  const bannerMetaClass = isOverdue
+    ? "mt-1 text-sm text-amber-800/90 dark:text-amber-200/90"
+    : "mt-1 text-sm text-emerald-800/80 dark:text-emerald-200/80";
 
   return (
     <section className="border-b border-gray-200 pb-6 dark:border-white/10">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <CircleCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <CircleCheck className={bannerIconClass} />
           <div className="min-w-0">
-            <p className="text-sm font-medium text-emerald-900 dark:text-emerald-300">
+            <p className={bannerTitleClass}>
               {t("itemDetail.checkedOutTo")} {checkoutLabel}
             </p>
             {(item.checked_out_to.since || item.checked_out_to.due_date) ? (
-              <p className="mt-1 text-sm text-emerald-800/80 dark:text-emerald-200/80">
+              <p className={bannerMetaClass}>
                 {item.checked_out_to.since ? `${t("itemDetail.since")} ${fmtDate(item.checked_out_to.since)}.` : ""}
                 {item.checked_out_to.since && item.checked_out_to.due_date ? " " : ""}
                 {item.checked_out_to.due_date ? `${t("itemDetail.dueDate")} ${fmtDate(item.checked_out_to.due_date)}` : ""}

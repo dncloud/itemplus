@@ -129,9 +129,6 @@ func main() {
 			webappURL = fmt.Sprintf("http://127.0.0.1:%d", webappPort)
 			defer func() {
 				stopEmbeddedWebApp(webappCmd, 3*time.Second)
-				if webappTmpDir != "" {
-					os.RemoveAll(webappTmpDir)
-				}
 			}()
 		}
 	}
@@ -463,6 +460,10 @@ func setupLogging() *os.File {
 
 // ── Embedded WebApp ──
 
+func embeddedWebAppRuntimeDir() string {
+	return filepath.Join(config.C.DataDir, "webapp-runtime")
+}
+
 func startEmbeddedWebApp(preferredPort int) (*exec.Cmd, string, int) {
 	entries, err := fs.ReadDir(webappFS, "build/webapp")
 	if err != nil || len(entries) == 0 {
@@ -485,31 +486,27 @@ func startEmbeddedWebApp(preferredPort int) (*exec.Cmd, string, int) {
 		log.Printf("WebApp port %d is in use — falling back to %d", preferredPort, port)
 	}
 
-	// Clean up leftover temp dirs from previous runs
-	if matches, _ := filepath.Glob(filepath.Join(os.TempDir(), "itemplus-webapp-*")); len(matches) > 0 {
-		for _, m := range matches {
-			os.RemoveAll(m)
-		}
-		log.Printf("Cleaned up %d old temp dirs", len(matches))
+	runtimeDir := embeddedWebAppRuntimeDir()
+	if err := os.RemoveAll(runtimeDir); err != nil {
+		log.Printf("Failed to reset embedded WebApp runtime dir: %v", err)
+		return nil, "", 0
 	}
-
-	tmpDir, err := os.MkdirTemp("", "itemplus-webapp-*")
-	if err != nil {
-		log.Printf("Failed to create temp dir: %v", err)
+	if err := os.MkdirAll(runtimeDir, 0755); err != nil {
+		log.Printf("Failed to create embedded WebApp runtime dir: %v", err)
 		return nil, "", 0
 	}
 
-	log.Println("Extracting WebApp...")
-	if err := extractFS(webappFS, "build/webapp", tmpDir); err != nil {
+	log.Printf("Extracting WebApp to %s...", runtimeDir)
+	if err := extractFS(webappFS, "build/webapp", runtimeDir); err != nil {
 		log.Printf("Failed to extract WebApp: %v", err)
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(runtimeDir)
 		return nil, "", 0
 	}
 
-	serverJS := filepath.Join(tmpDir, "server.js")
+	serverJS := filepath.Join(runtimeDir, "server.js")
 	if _, err := os.Stat(serverJS); err != nil {
 		log.Println("WebApp server.js not found — disabled")
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(runtimeDir)
 		return nil, "", 0
 	}
 
@@ -521,13 +518,14 @@ func startEmbeddedWebApp(preferredPort int) (*exec.Cmd, string, int) {
 	if config.C.AppDomain != "" {
 		env = append(env, "NEXT_PUBLIC_APP_DOMAIN="+config.C.AppDomain)
 	}
+	cmd.Dir = runtimeDir
 	cmd.Env = env
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	cmd.Stdout = log.Writer()
+	cmd.Stderr = log.Writer()
 
 	if err := cmd.Start(); err != nil {
 		log.Printf("Failed to start WebApp: %v", err)
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(runtimeDir)
 		return nil, "", 0
 	}
 
@@ -544,13 +542,13 @@ func startEmbeddedWebApp(preferredPort int) (*exec.Cmd, string, int) {
 	}
 	if !ready {
 		log.Println("WebApp failed to start within 6 seconds")
-		cmd.Process.Kill()
-		os.RemoveAll(tmpDir)
+		_ = cmd.Process.Kill()
+		_ = os.RemoveAll(runtimeDir)
 		return nil, "", 0
 	}
 
 	log.Printf("WebApp ready (port %d)", port)
-	return cmd, tmpDir, port
+	return cmd, runtimeDir, port
 }
 
 func chooseWebAppPort(preferredPort int) (int, error) {

@@ -67,12 +67,15 @@ func loadItemInventoryMovements(realm, itemID string, limit int) []map[string]in
 		limit = 10
 	}
 	rows, err := database.DB.Queryx(
-		fmt.Sprintf(`SELECT m.*, COALESCE(u.display_name, u.email) AS created_by_name
+		fmt.Sprintf(`SELECT m.*, COALESCE(u.display_name, u.email) AS created_by_name,
+				COALESCE(cu.display_name, cu.email) AS checkout_user_name
 			FROM %s m
 			LEFT JOIN users u ON m.created_by = u.id
+			LEFT JOIN %s co ON m.checkout_id = co.id
+			LEFT JOIN users cu ON co.user_id = cu.id
 			WHERE m.item_id = ?
 			ORDER BY m.created_at DESC, m.id DESC
-			LIMIT ?`, inventoryMovementTable(realm)),
+			LIMIT ?`, inventoryMovementTable(realm), realm+"_checkouts"),
 		itemID, limit,
 	)
 	if err != nil {
@@ -132,15 +135,18 @@ func listInventoryMovements(c *gin.Context) {
 		query := fmt.Sprintf(`SELECT m.*, i.name AS item_name,
 				c.name AS category_name, c.color AS category_color,
 				l.name AS location_name, l.color AS location_color,
-				COALESCE(u.display_name, u.email) AS created_by_name
+				COALESCE(u.display_name, u.email) AS created_by_name,
+				COALESCE(cu.display_name, cu.email) AS checkout_user_name
 			FROM %s m
 			JOIN %s_items i ON m.item_id = i.id
 			LEFT JOIN %s_categories c ON i.category_id = c.id
 			LEFT JOIN %s_locations l ON i.location_id = l.id
 			LEFT JOIN users u ON m.created_by = u.id
+			LEFT JOIN %s_checkouts co ON m.checkout_id = co.id
+			LEFT JOIN users cu ON co.user_id = cu.id
 			WHERE %s
 			ORDER BY m.created_at DESC, m.id DESC
-			LIMIT ?`, inventoryMovementTable(realm), realm, realm, realm, strings.Join(conditions, " AND "))
+			LIMIT ?`, inventoryMovementTable(realm), realm, realm, realm, realm, strings.Join(conditions, " AND "))
 		rows, err := database.DB.Queryx(query, args...)
 		if err != nil {
 			log.Printf("DB inventory movements query error %s: %v", realm, err)

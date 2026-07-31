@@ -93,6 +93,7 @@ const sidebarFavoriteIcons: Record<string, React.ComponentType<{ className?: str
 const defaultSidebarFavorites: SidebarFavorite[] = [
   { id: "items", label: "Items", icon: "items", href: "/items" },
 ];
+const preferredSidebarSectionStorageKey = "itemplus.sidebar.preferred-section";
 
 function canAccessFavoriteHref(href: string, isAdmin: boolean, can: (perm: string) => boolean) {
   if (href === "/dashboard" || href === "/settings") return true;
@@ -222,11 +223,22 @@ export function AppSidebar({
     return true;
   }).sort((a, b) => t(a.labelKey).localeCompare(t(b.labelKey), undefined, { sensitivity: "base" }));
   const currentPathWithQuery = queryString ? `${pathname}?${queryString}` : pathname;
+  const isItemMaintenancePath = /^\/items\/\d+\/maintenance$/.test(pathname) || /^\/maintenance\/item\/\d+$/.test(pathname);
   const isActivePath = (href: string) => {
+    if (href === "/maintenance") return pathname === "/maintenance" || isItemMaintenancePath;
+    if (href === "/items" && isItemMaintenancePath) return false;
     const hrefPath = href.split("?")[0];
     if (href.includes("?")) return currentPathWithQuery === href;
     return pathname === hrefPath || pathname.startsWith(`${hrefPath}/`);
   };
+  const [preferredSectionId, setPreferredSectionId] = useState<NavSectionID | null>(() => {
+    if (typeof window === "undefined") return null;
+    const stored = window.sessionStorage.getItem(preferredSidebarSectionStorageKey);
+    if (stored === "overview" || stored === "inventory" || stored === "operations" || stored === "system" || stored === "settings") {
+      return stored;
+    }
+    return null;
+  });
   const visibleSections = navSections
     .map((section) => ({
       ...section,
@@ -240,9 +252,13 @@ export function AppSidebar({
   const sectionForPath = visibleSections.find((section) => section.items.some((item) => isActivePath(item.href)))?.id || "overview";
   const [sidebarFavorites, setSidebarFavorites] = useState<SidebarFavorite[]>(defaultSidebarFavorites);
   const visibleSidebarFavorites = sidebarFavorites.filter((favorite) => canAccessFavoriteHref(favorite.href, isAdmin, can));
-  const tabSectionId = visibleSidebarFavorites.some((favorite) => isActivePath(favorite.href))
-    ? "overview"
-    : sectionForPath;
+  const favoritePathActive = visibleSidebarFavorites.some((favorite) => isActivePath(favorite.href));
+  const tabSectionId =
+    preferredSectionId === "overview" && favoritePathActive
+      ? "overview"
+      : preferredSectionId && preferredSectionId !== "overview" && sectionForPath === preferredSectionId
+        ? preferredSectionId
+        : sectionForPath;
   const sectionBadgeCount = (sectionId: NavSectionID) => {
     const section = visibleSections.find((entry) => entry.id === sectionId);
     if (!section) return 0;
@@ -256,6 +272,11 @@ export function AppSidebar({
   const ThemeIcon = themeIcon;
   const themeTitle = theme === "light" ? t("theme.light") : theme === "dark" ? t("theme.dark") : t("theme.system");
   const nextThemeTitle = nextTheme === "light" ? t("theme.light") : nextTheme === "dark" ? t("theme.dark") : t("theme.system");
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !preferredSectionId) return;
+    window.sessionStorage.setItem(preferredSidebarSectionStorageKey, preferredSectionId);
+  }, [preferredSectionId]);
 
   useEffect(() => {
     let active = true;
@@ -278,8 +299,16 @@ export function AppSidebar({
 
   const sidebarContent = (
     <>
-      <div className="relative flex min-h-16 w-full flex-none items-start justify-between px-6 py-4 lg:items-center lg:justify-start">
-        <Link prefetch={enableNavPrefetch} href="/dashboard" onClick={() => setSidebarOpen(false)} className="group inline-flex min-w-0 max-w-full items-start gap-3 text-lg font-semibold text-gray-900 dark:text-white lg:items-center">
+        <div className="relative flex min-h-16 w-full flex-none items-start justify-between px-6 py-4 lg:items-center lg:justify-start">
+        <Link
+          prefetch={enableNavPrefetch}
+          href="/dashboard"
+          onClick={() => {
+            setPreferredSectionId("overview");
+            setSidebarOpen(false);
+          }}
+          className="group inline-flex min-w-0 max-w-full items-start gap-3 text-lg font-semibold text-gray-900 dark:text-white lg:items-center"
+        >
           <LogoFull size={34} className="max-w-full" />
         </Link>
         <div className="pt-1 lg:hidden">
@@ -330,6 +359,7 @@ export function AppSidebar({
           onChange={(index) => {
             const nextSection = visibleSections[index];
             if (!nextSection || nextSection.items.length === 0) return;
+            setPreferredSectionId(nextSection.id);
             if (nextSection.id === "overview") {
               routerPush("/dashboard");
               setSidebarOpen(false);
@@ -348,6 +378,7 @@ export function AppSidebar({
                       disabled={section.items.length === 0}
                       badge={sectionBadgeCount(section.id)}
                       onClick={() => {
+                        setPreferredSectionId(section.id);
                         if (section.id === "overview" && pathname !== "/dashboard") {
                           routerPush("/dashboard");
                           setSidebarOpen(false);
@@ -382,6 +413,7 @@ export function AppSidebar({
                               active={isActivePath(favorite.href)}
                               badge={badges[favorite.href]}
                               onClick={() => {
+                                setPreferredSectionId("overview");
                                 setSidebarOpen(false);
                               }}
                             />
@@ -403,6 +435,7 @@ export function AppSidebar({
                             active={isActivePath(href)}
                             badge={badges[href]}
                             onClick={() => {
+                              setPreferredSectionId(section.id);
                               setSidebarOpen(false);
                               if (badges[href]) void loadBadges();
                             }}

@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { CircleCheck, Pencil, Printer, Trash2, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, CircleCheck, ClipboardList, Printer, Trash2, Wrench, X } from "lucide-react";
 import type { CheckoutRequest, Item, Property } from "@/lib/api";
 import {
   formatCurrency,
@@ -125,12 +125,14 @@ export function ItemsGrid({
   catColor,
   locName,
   locColor,
-  canWrite,
+  canReadInventory,
+  canManageCheckouts,
   canDelete,
   canPrint,
   pendingDelete,
   onOpenItem,
-  onOpenEdit,
+  onOpenInventory,
+  onOpenCheckouts,
   onFilter,
   onPrint,
   onRemove,
@@ -161,12 +163,14 @@ export function ItemsGrid({
   catColor: (id?: number) => string | undefined;
   locName: (id?: number) => string;
   locColor: (id?: number) => string | undefined;
-  canWrite: boolean;
+  canReadInventory: boolean;
+  canManageCheckouts: boolean;
   canDelete: boolean;
   canPrint: boolean;
   pendingDelete: number | null;
   onOpenItem: (itemId: number) => void;
-  onOpenEdit: (item: Item) => void;
+  onOpenInventory: (item: Item) => void;
+  onOpenCheckouts: (item: Item) => void;
   onFilter: (category?: number, location?: number) => void;
   onPrint: (item: Item) => void;
   onRemove: (itemId: number) => void;
@@ -306,16 +310,31 @@ export function ItemsGrid({
                 )
               ) : null}
             </div>
-            {(canWrite || canDelete || canPrint) && (
+            {(canReadInventory || canManageCheckouts || canDelete || canPrint) && (
               <div className="flex items-center justify-end gap-1">
                 {canPrint && (
                   <button onClick={() => onPrint(item)} className="rounded-md p-1.5 hover:bg-gray-100 dark:hover:bg-white/10" title={t("common.print")}>
                     <Printer className="h-4 w-4 text-gray-400" />
                   </button>
                 )}
-                {canWrite && (
-                  <button onClick={() => onOpenEdit(item)} className="rounded-md p-1.5 hover:bg-gray-100 dark:hover:bg-white/10" title={t("common.edit")}>
-                    <Pencil className="h-4 w-4 text-gray-400" />
+                {canReadInventory && (
+                  <button
+                    onClick={() => onOpenInventory(item)}
+                    className="rounded-md p-1.5 hover:bg-gray-100 dark:hover:bg-white/10"
+                    title={t("nav.inventoryMovements")}
+                    aria-label={t("nav.inventoryMovements")}
+                  >
+                    <ClipboardList className="h-4 w-4 text-gray-400" />
+                  </button>
+                )}
+                {canManageCheckouts && (
+                  <button
+                    onClick={() => onOpenCheckouts(item)}
+                    className="rounded-md p-1.5 hover:bg-gray-100 dark:hover:bg-white/10"
+                    title={t("nav.checkouts")}
+                    aria-label={t("nav.checkouts")}
+                  >
+                    <ArrowLeftRight className="h-4 w-4 text-gray-400" />
                   </button>
                 )}
                 {canDelete && (

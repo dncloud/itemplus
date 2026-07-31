@@ -51,6 +51,10 @@ export function SettingsPageSections({
   setItemStockWarningPercent,
   itemStockCriticalPercent,
   setItemStockCriticalPercent,
+  inventoryCheckoutAffectsMovementQuantity,
+  setInventoryCheckoutAffectsMovementQuantity,
+  inventorySettingsSaving,
+  saveInventorySettings,
   maintenanceLeadDays,
   setMaintenanceLeadDays,
   maintenanceSettingsSaving,
@@ -224,6 +228,10 @@ export function SettingsPageSections({
             setItemStockWarningPercent={setItemStockWarningPercent}
             itemStockCriticalPercent={itemStockCriticalPercent}
             setItemStockCriticalPercent={setItemStockCriticalPercent}
+            inventoryCheckoutAffectsMovementQuantity={inventoryCheckoutAffectsMovementQuantity}
+            setInventoryCheckoutAffectsMovementQuantity={setInventoryCheckoutAffectsMovementQuantity}
+            inventorySettingsSaving={inventorySettingsSaving}
+            onSaveInventorySettings={isAdmin ? () => { void saveInventorySettings(); } : undefined}
             maintenanceLeadDays={isAdmin ? maintenanceLeadDays : undefined}
             setMaintenanceLeadDays={isAdmin ? setMaintenanceLeadDays : undefined}
             maintenanceSettingsSaving={maintenanceSettingsSaving}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import type { CheckoutListEntry } from "@/app/(app)/checkouts/checkouts-page-utils";
 import { formatCheckoutRelativeState } from "@/lib/checkout-relative-time";
-import { CircleCheck, CircleX } from "lucide-react";
+import { Bell, CircleCheck, CircleX } from "lucide-react";
 
 export const STATUS_STYLES: Record<string, { bg: string; text: string; labelKey: string }> = {
   active: { bg: "bg-sky-50 dark:bg-sky-900/30", text: "text-sky-800 dark:text-sky-300", labelKey: "checkouts.active" },
@@ -23,6 +23,8 @@ export function CheckoutRequestsList({
   onOpenItem,
   onApprove,
   onReject,
+  onRemind,
+  remindingCheckoutIds,
   t,
 }: {
   requests: CheckoutListEntry[];
@@ -32,6 +34,8 @@ export function CheckoutRequestsList({
   onOpenItem: (request: CheckoutListEntry) => void;
   onApprove: (id: number) => void;
   onReject: (id: number) => void;
+  onRemind: (request: CheckoutListEntry) => void;
+  remindingCheckoutIds: Set<number>;
   t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   const renderRequestSubline = (req: CheckoutListEntry) => {
@@ -137,7 +141,7 @@ export function CheckoutRequestsList({
               <th className="w-[16%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 {t("checkouts.statusColumn")}
               </th>
-              <th className="w-[10%] px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <th className="w-[16%] px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 {t("checkouts.actionsColumn")}
               </th>
             </tr>
@@ -152,7 +156,7 @@ export function CheckoutRequestsList({
               const requestSubline = renderRequestSubline(req);
 
               return (
-                <tr key={req.id} className="align-top hover:bg-gray-50/80 dark:hover:bg-white/5">
+                <tr key={`${req.entryType}-${req.realm}-${req.id}`} className="align-top hover:bg-gray-50/80 dark:hover:bg-white/5">
                   <td className="px-4 py-4">
                     <div className="space-y-2">
                       <Link
@@ -213,6 +217,9 @@ export function CheckoutRequestsList({
                           />
                         </div>
                       ) : null}
+                      {req.last_reminder_sent_at ? (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{t("checkouts.reminded")}</div>
+                      ) : null}
                       {req.bundle_component_names && req.bundle_component_names.length > 0 ? (
                         <div className="text-xs text-gray-500 dark:text-gray-400">
                           {req.bundle_component_names.slice(0, 2).map((name, index) => {
@@ -251,6 +258,40 @@ export function CheckoutRequestsList({
                             <CircleX className="h-4 w-4" />
                           </button>
                         </>
+                      ) : req.entryType === "checkout" && req.status === "active" && req.is_overdue ? (
+                        <button
+                          type="button"
+                          onClick={() => onRemind(req)}
+                          disabled={remindingCheckoutIds.has(req.id) || req.reminder_cooldown_active || req.user_has_email === false}
+                          aria-label={
+                            req.user_has_email === false
+                              ? t("checkouts.reminderMissingEmail")
+                              : req.reminder_cooldown_active
+                                ? t("checkouts.reminderCooldown")
+                                : t("checkouts.remind")
+                          }
+                          title={
+                            req.user_has_email === false
+                              ? t("checkouts.reminderMissingEmail")
+                              : req.reminder_cooldown_active
+                                ? t("checkouts.reminderCooldown")
+                                : t("checkouts.remind")
+                          }
+                          className={clsx(
+                            "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition dark:border-gray-700 dark:text-gray-300",
+                            remindingCheckoutIds.has(req.id)
+                              ? "cursor-wait text-gray-700 dark:text-gray-300"
+                              : req.user_has_email === false || req.reminder_cooldown_active
+                                ? "cursor-not-allowed text-gray-400 opacity-60 dark:text-gray-500"
+                                : "text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800",
+                          )}
+                        >
+                          {remindingCheckoutIds.has(req.id) ? (
+                            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                          ) : (
+                            <Bell className="h-3.5 w-3.5" />
+                          )}
+                        </button>
                       ) : (
                         <span className="text-xs text-gray-400 dark:text-gray-500">-</span>
                       )}

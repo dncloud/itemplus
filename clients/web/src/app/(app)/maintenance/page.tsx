@@ -146,7 +146,7 @@ export default function MaintenancePage() {
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
                         {canReadItems ? (
-                          <Link href={`/items/${reminder.item_id}`} className="font-medium hover:text-blue-600 dark:hover:text-blue-300">
+                          <Link href={`/maintenance/item/${reminder.item_id}`} className="font-medium hover:text-blue-600 dark:hover:text-blue-300">
                             {reminder.item_name || `#${reminder.item_id}`}
                           </Link>
                         ) : (

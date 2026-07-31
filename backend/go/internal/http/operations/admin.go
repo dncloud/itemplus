@@ -15,6 +15,8 @@ func RegisterAdminRoutes(g *gin.RouterGroup) {
 	g.POST("/health/locations/fix", adminFixLocations)
 	g.PUT("/branding", settingshandlers.AdminUpdateBranding)
 	g.DELETE("/branding", settingshandlers.AdminResetBranding)
+	g.GET("/inventory-settings", adminGetInventorySettings)
+	g.PUT("/inventory-settings", adminUpdateInventorySettings)
 	g.GET("/maintenance-settings", adminGetMaintenanceSettings)
 	g.PUT("/maintenance-settings", adminUpdateMaintenanceSettings)
 	settingshandlers.RegisterExternalSourceRoutes(g)

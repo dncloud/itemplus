@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,10 @@ import (
 	"github.com/itemplus/backend/internal/database"
 	"github.com/itemplus/backend/internal/http/middleware"
 )
+
+type maintenanceResolutionPayload struct {
+	Note string `json:"note"`
+}
 
 func ListMaintenanceReminders(realm string) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -144,6 +149,14 @@ func DeleteMaintenanceReminder(realm string) gin.HandlerFunc {
 func resolveMaintenanceReminder(c *gin.Context, realm string, action string) {
 	itemID := c.Param("id")
 	reminderID := c.Param("reminderId")
+	var payload maintenanceResolutionPayload
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
+			return
+		}
+	}
+	payload.Note = strings.TrimSpace(payload.Note)
 	row, err := loadMaintenanceReminder(realm, itemID, reminderID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"detail": "Reminder not found"})
@@ -165,7 +178,7 @@ func resolveMaintenanceReminder(c *gin.Context, realm string, action string) {
 	if user != nil {
 		performedBy = user.ID
 	}
-	if err := insertMaintenanceHistory(realm, itemID, reminderID, action, row, performedBy, now); err != nil {
+	if err := insertMaintenanceHistory(realm, itemID, reminderID, action, row, performedBy, now, payload.Note); err != nil {
 		log.Printf("DB maintenance history insert error %s: %v", realm, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Could not write reminder history"})
 		return
@@ -212,7 +225,8 @@ func resolveMaintenanceReminder(c *gin.Context, realm string, action string) {
 	c.JSON(http.StatusOK, updated)
 }
 
-func insertMaintenanceHistory(realm, itemID, reminderID, action string, reminder map[string]interface{}, performedBy interface{}, performedAt string) error {
+func insertMaintenanceHistory(realm, itemID, reminderID, action string, reminder map[string]interface{}, performedBy interface{}, performedAt string, historyNote string) error {
+	historyNote = mergeMaintenanceHistoryNotes(valueString(reminder["notes"]), historyNote)
 	_, err := database.DB.Exec(
 		fmt.Sprintf(`INSERT INTO %s
 			(reminder_id, item_id, action, title, reminder_type, custom_type_label, due_date, notes, performed_by, performed_at, created_at)
@@ -224,10 +238,28 @@ func insertMaintenanceHistory(realm, itemID, reminderID, action string, reminder
 		valueString(reminder["reminder_type"]),
 		nullableString(valueString(reminder["custom_type_label"])),
 		valueString(reminder["due_date"]),
-		nullableString(valueString(reminder["notes"])),
+		nullableString(historyNote),
 		performedBy,
 		performedAt,
 		performedAt,
 	)
 	return err
+}
+
+func mergeMaintenanceHistoryNotes(reminderNotes, resolutionNote string) string {
+	reminderNotes = strings.TrimSpace(reminderNotes)
+	resolutionNote = strings.TrimSpace(resolutionNote)
+
+	switch {
+	case reminderNotes == "" && resolutionNote == "":
+		return ""
+	case reminderNotes == "":
+		return resolutionNote
+	case resolutionNote == "":
+		return reminderNotes
+	case strings.EqualFold(reminderNotes, resolutionNote):
+		return resolutionNote
+	default:
+		return reminderNotes + "\n\n---\n" + resolutionNote
+	}
 }

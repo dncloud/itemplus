@@ -4,7 +4,7 @@ import Link from "next/link";
 import { MarkdownView } from "@/components/ui/markdown";
 import type { Item, Property } from "@/lib/api";
 import { buildPropertyRows, PropDisplay } from "./item-detail-property-display";
-import { DetailSection, ItemInventoryMovementsPreview } from "./item-detail-section-ui";
+import { DetailSection } from "./item-detail-section-ui";
 
 export { ItemMaintenancePanel } from "./item-detail-maintenance-panel";
 
@@ -13,13 +13,11 @@ export function ItemDetailSections({
   properties,
   fmtDate,
   t,
-  canViewInventory,
 }: {
   item: Item;
   properties: Property[];
   fmtDate: (s: string | null | undefined) => string;
   t: (k: string, vars?: Record<string, string | number>) => string;
-  canViewInventory: boolean;
 }) {
   const formatCurrency = (value: number, currency?: string) =>
     value.toLocaleString("de-DE", { style: "currency", currency: currency || "EUR" });
@@ -79,10 +77,6 @@ export function ItemDetailSections({
           </div>
         ))}
       </DetailSection>
-
-      {canViewInventory ? (
-        <ItemInventoryMovementsPreview itemID={item.id} movements={item.inventory_movements || []} fmtDate={fmtDate} t={t} />
-      ) : null}
 
       {saleEntries.length > 0 ? (
         <DetailSection title={t("items.sale")}>

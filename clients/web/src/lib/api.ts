@@ -494,6 +494,8 @@ class Api {
   getBranding = () => this.get<BrandingSettings>("/branding");
   updateBranding = (data: BrandingSettings) => this.put<BrandingSettings>("/admin/branding", data);
   resetBranding = () => this.del<BrandingSettings>("/admin/branding");
+  getInventorySettings = () => this.get<InventorySettings>("/admin/inventory-settings");
+  updateInventorySettings = (data: InventorySettings) => this.put<InventorySettings>("/admin/inventory-settings", data);
   getMaintenanceSettings = () => this.get<MaintenanceSettings>("/admin/maintenance-settings");
   updateMaintenanceSettings = (data: MaintenanceSettings) => this.put<MaintenanceSettings>("/admin/maintenance-settings", data);
   getAISettings = () => this.get<AISettings>("/admin/ai-settings");
@@ -520,7 +522,7 @@ class Api {
 
   // -- User --
   getMe = () => this.get<User>("/user");
-  updateMe = (data: { display_name?: string; email?: string }) => this.put<User>("/user", data);
+  updateMe = (data: { display_name?: string; email?: string; locale?: string }) => this.put<User>("/user", data);
   deleteMe = () => this.del<void>("/user");
   uploadMyAvatar = (file: File) => this.postForm<User>("/user/avatar", buildSingleFileForm(file));
   deleteMyAvatar = () => this.del<User>("/user/avatar");
@@ -605,7 +607,10 @@ class Api {
   getMaintenanceReminders = (itemId: number) => this.get<MaintenanceReminder[]>(`/${this.realm}/items/${itemId}/reminders`);
   createMaintenanceReminder = (itemId: number, data: MaintenanceReminderPayload) => this.post<MaintenanceReminder>(`/${this.realm}/items/${itemId}/reminders`, data);
   updateMaintenanceReminder = (itemId: number, reminderId: number, data: MaintenanceReminderPayload) => this.put<MaintenanceReminder>(`/${this.realm}/items/${itemId}/reminders/${reminderId}`, data);
-  completeMaintenanceReminder = (itemId: number, reminderId: number) => this.post<MaintenanceReminder>(`/${this.realm}/items/${itemId}/reminders/${reminderId}/complete`, {});
+  completeMaintenanceReminder = (itemId: number, reminderId: number, note?: string) =>
+    this.post<MaintenanceReminder>(`/${this.realm}/items/${itemId}/reminders/${reminderId}/complete`, {
+      note: note?.trim() || undefined,
+    });
   skipMaintenanceReminder = (itemId: number, reminderId: number) => this.post<MaintenanceReminder>(`/${this.realm}/items/${itemId}/reminders/${reminderId}/skip`, {});
   deleteMaintenanceReminder = (itemId: number, reminderId: number) => this.del<void>(`/${this.realm}/items/${itemId}/reminders/${reminderId}`);
 
@@ -671,6 +676,7 @@ class Api {
     this.post<CheckoutRequest>("/checkout/request", data);
   approveRequest = (id: number) => this.put<CheckoutRequest>(`/checkout/requests/${id}/approve`);
   rejectRequest = (id: number) => this.put<CheckoutRequest>(`/checkout/requests/${id}/reject`);
+  sendCheckoutReminder = (realm: string, id: number) => this.post<ActiveCheckout>(`/checkouts/${realm}/${id}/remind`);
   getActiveCheckouts = () => this.get<ActiveCheckout[]>(`/checkouts/${this.realm}/active`);
   getCheckoutHistory = () => this.get<ActiveCheckout[]>(`/checkouts/${this.realm}/history`);
   getMyOverdueCheckouts = () => this.get<ActiveCheckout[]>("/checkouts/my/overdue");
@@ -718,6 +724,7 @@ export interface User {
   sub?: string;
   email?: string;
   name?: string;
+  locale?: string | null;
   avatar_path?: string | null;
   avatar_url?: string | null;
   is_admin: boolean;
@@ -949,6 +956,10 @@ export interface MaintenanceSettings {
   reminder_lead_days: number;
 }
 
+export interface InventorySettings {
+  checkout_affects_movement_quantity: boolean;
+}
+
 export type InventoryMovementType = "created" | "bought" | "consumed" | "adjusted" | "checked_out" | "returned" | "imported";
 
 export interface InventoryMovement {
@@ -965,6 +976,7 @@ export interface InventoryMovement {
   quantity_before: number;
   quantity_after: number;
   checkout_id?: number | null;
+  checkout_user_name?: string | null;
   source?: string | null;
   notes?: string | null;
   created_by?: number | null;
@@ -1182,6 +1194,10 @@ export interface CheckoutRequest {
   is_overdue?: boolean;
   was_overdue?: boolean;
   overdue_days?: number;
+  user_has_email?: boolean;
+  last_reminder_sent_at?: string;
+  reminder_cooldown_active?: boolean;
+  next_reminder_at?: string;
 }
 
 export interface ActiveCheckout {
@@ -1205,6 +1221,10 @@ export interface ActiveCheckout {
   is_overdue?: boolean;
   was_overdue?: boolean;
   overdue_days?: number;
+  user_has_email?: boolean;
+  last_reminder_sent_at?: string;
+  reminder_cooldown_active?: boolean;
+  next_reminder_at?: string;
 }
 
 export const api = new Api();

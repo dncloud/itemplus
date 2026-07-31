@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import { FloatingNotification, type FloatingNotificationState } from "@/components/ui/floating-notification";
 import { ChevronRight, RefreshCw } from "lucide-react";
 import { CheckoutRequestsList, CheckoutsPagination } from "./checkouts-sections";
 import {
@@ -21,6 +22,9 @@ export default function CheckoutsPage() {
   const { realm, setRealm, can, fmtDate, fmtDateTime, t } = useApp();
   const [requests, setRequests] = useState<CheckoutListEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notification, setNotification] = useState<FloatingNotificationState>(null);
+  const [remindingCheckoutIds, setRemindingCheckoutIds] = useState<Set<number>>(new Set());
+  const itemID = Number(searchParams.get("item_id") || "") || undefined;
   const filter = searchParams.get("filter") || "all";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const itemsPerPage = 10;
@@ -55,6 +59,19 @@ export default function CheckoutsPage() {
     return () => { cancelled = true; };
   }, [realm]);
 
+  useEffect(() => {
+    const urlRealm = searchParams.get("realm");
+    if (urlRealm === "archive" || urlRealm === "collection") {
+      setRealm(urlRealm);
+    }
+  }, [searchParams, setRealm]);
+
+  useEffect(() => {
+    if (!notification) return;
+    const timer = window.setTimeout(() => setNotification(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notification]);
+
   const approve = async (id: number) => {
     try {
       await api.approveRequest(id);
@@ -73,15 +90,51 @@ export default function CheckoutsPage() {
     } catch {}
   };
 
+  const remind = async (request: CheckoutListEntry) => {
+    if (request.entryType !== "checkout") return;
+    setRemindingCheckoutIds((current) => new Set(current).add(request.id));
+    try {
+      const updated = await api.sendCheckoutReminder(request.realm, request.id);
+      setRequests((current) => current.map((entry) => (
+        entry.entryType === "checkout" && entry.realm === request.realm && entry.id === request.id
+          ? {
+              ...entry,
+              last_reminder_sent_at: updated.last_reminder_sent_at,
+              reminder_cooldown_active: updated.reminder_cooldown_active,
+              next_reminder_at: updated.next_reminder_at,
+            }
+          : entry
+      )));
+      setNotification({
+        title: t("checkouts.reminderSent"),
+        message: t("checkouts.reminderSentMessage"),
+        tone: "success",
+      });
+    } catch (error) {
+      const err = error as Error & { code?: string };
+      setNotification({
+        title: err.code === "checkout_reminder_missing_email" ? t("checkouts.reminderMissingEmail") : t("common.error"),
+        message: err.message || t("checkouts.reminderMissingEmailMessage"),
+        tone: "error",
+      });
+    } finally {
+      setRemindingCheckoutIds((current) => {
+        const next = new Set(current);
+        next.delete(request.id);
+        return next;
+      });
+    }
+  };
+
   const openItem = (request: CheckoutListEntry) => {
     if (request.realm === "archive" || request.realm === "collection") {
       setRealm(request.realm);
     }
   };
 
-  const realmFiltered = filterCheckoutRequests(requests, filter, realm);
-  const paginated = paginateCheckoutRequests(realmFiltered, page, itemsPerPage);
-  const realmRequests = requests.filter((request) => request.realm === realm);
+  const scopedRequests = filterCheckoutRequests(requests, filter, realm, itemID);
+  const paginated = paginateCheckoutRequests(scopedRequests, page, itemsPerPage);
+  const realmRequests = requests.filter((request) => request.realm === realm && (!itemID || request.item_id === itemID));
   const filterCards = [
     { value: "all", label: t("checkouts.all"), count: realmRequests.filter((entry) => entry.status === "active" || entry.status === "pending").length },
     { value: "active", label: t("checkouts.active"), count: realmRequests.filter((entry) => entry.status === "active").length },
@@ -135,7 +188,7 @@ export default function CheckoutsPage() {
             label={entry.label}
             value={entry.count}
             active={filter === entry.value}
-            onClick={() => router.push(buildCheckoutsPageUrl({ filter: entry.value, page: 1 }))}
+            onClick={() => router.push(buildCheckoutsPageUrl({ filter: entry.value, page: 1, realm, itemID }))}
           />
         ))}
       </div>
@@ -159,6 +212,8 @@ export default function CheckoutsPage() {
               onOpenItem={openItem}
               onApprove={approve}
               onReject={reject}
+              onRemind={remind}
+              remindingCheckoutIds={remindingCheckoutIds}
               t={t}
             />
           </div>
@@ -172,9 +227,11 @@ export default function CheckoutsPage() {
           itemsPerPage={itemsPerPage}
           pages={paginated.pages}
           t={t}
-          onPage={(nextPage) => router.push(buildCheckoutsPageUrl({ filter, page: nextPage }))}
+          onPage={(nextPage) => router.push(buildCheckoutsPageUrl({ filter, page: nextPage, realm, itemID }))}
         />
       ) : null}
+
+      <FloatingNotification notification={notification} onClose={() => setNotification(null)} t={t} />
     </div>
   );
 }

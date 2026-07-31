@@ -49,6 +49,10 @@ export type SettingsPageSectionsProps = {
   setItemStockWarningPercent: (value: number) => void;
   itemStockCriticalPercent: number;
   setItemStockCriticalPercent: (value: number) => void;
+  inventoryCheckoutAffectsMovementQuantity: boolean;
+  setInventoryCheckoutAffectsMovementQuantity: (value: boolean) => void;
+  inventorySettingsSaving: boolean;
+  saveInventorySettings: () => Promise<void>;
   maintenanceLeadDays: number;
   setMaintenanceLeadDays: (value: number) => void;
   maintenanceSettingsSaving: boolean;

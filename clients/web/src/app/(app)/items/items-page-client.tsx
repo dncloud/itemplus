@@ -314,12 +314,14 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
             catColor={catColor}
             locName={locName}
             locColor={locColor}
-            canWrite={can("items.write")}
+            canReadInventory={can("inventory.read")}
+            canManageCheckouts={can("checkout.manage")}
             canDelete={can("items.delete")}
             canPrint={can("print") && showPrintFeatures && printerBridgeStatus === "connected"}
             pendingDelete={pendingDelete}
             onOpenItem={(itemId) => router.push(`/items/${itemId}`)}
-            onOpenEdit={(item) => router.push(`/items/${item.id}/edit`)}
+            onOpenInventory={(item) => router.push(`/inventory-movements?realm=${realm}&item_id=${item.id}`)}
+            onOpenCheckouts={(item) => router.push(`/checkouts?realm=${realm}&item_id=${item.id}`)}
             onFilter={setFilter}
             onPrint={async (item) => { try { await printItemQR(item.id); } catch {} }}
             onRemove={(itemId) => {

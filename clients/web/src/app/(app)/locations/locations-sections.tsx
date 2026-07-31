@@ -5,6 +5,7 @@ import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, Box, GripVertical, Pencil, Printer, Trash2 } from "lucide-react";
+import ColorPreviewBadge from "@/components/ui/color-preview-badge";
 import SelectPicker from "@/components/ui/select-picker";
 import type { Location } from "@/lib/api";
 
@@ -331,6 +332,7 @@ export function LocationInlineForm({
         <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("common.color")}</label>
         <div className="flex items-center gap-2">
           <input type="color" value={location.color || "#6b7280"} onChange={(e) => onChange({ ...location, color: e.target.value })} className="h-8 w-10 rounded border border-gray-300 dark:border-gray-700 cursor-pointer" />
+          <ColorPreviewBadge color={location.color} label={t("common.preview")} />
           {location.color ? <button type="button" onClick={() => onChange({ ...location, color: undefined })} className="text-xs text-gray-400 hover:text-red-500">{t("common.remove")}</button> : null}
         </div>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { api, type LabelTemplate, type ExternalSource, type LabelTemplateMeta, type MaintenanceSettings, type PrinterStatus, type SidebarFavorite, type User } from "@/lib/api";
+import { api, type InventorySettings, type LabelTemplate, type ExternalSource, type LabelTemplateMeta, type MaintenanceSettings, type PrinterStatus, type SidebarFavorite, type User } from "@/lib/api";
 import { fetchWithSession } from "@/lib/api-helpers";
 import { draftFromAISettings } from "@/components/settings/drafts";
 import type { AISettingsDraft } from "@/components/settings/drafts";
@@ -30,6 +30,7 @@ export async function fetchInitialSettingsData() {
     templateMeta: LabelTemplateMeta | null;
     templates: LabelTemplate[];
     externalSources: ExternalSource[];
+    inventorySettings: InventorySettings | null;
     maintenanceSettings: MaintenanceSettings | null;
     sidebarFavorites: SidebarFavorite[];
     aiDraft: AISettingsDraft | null;
@@ -40,6 +41,7 @@ export async function fetchInitialSettingsData() {
     templateMeta: null,
     templates: [],
     externalSources: [],
+    inventorySettings: null,
     maintenanceSettings: null,
     sidebarFavorites: [],
     aiDraft: null,
@@ -77,6 +79,10 @@ export async function fetchInitialSettingsData() {
 
       tasks.push(api.getAISettings().then((settings) => {
         result.aiDraft = draftFromAISettings(settings);
+      }).catch(() => {}));
+
+      tasks.push(api.getInventorySettings().then((settings) => {
+        result.inventorySettings = settings;
       }).catch(() => {}));
 
       tasks.push(api.getMaintenanceSettings().then((settings) => {

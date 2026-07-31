@@ -36,6 +36,10 @@ export async function fetchCheckoutsPageData() {
     duration_days: checkout.duration_days,
     is_overdue: checkout.is_overdue,
     overdue_days: checkout.overdue_days,
+    user_has_email: checkout.user_has_email,
+    last_reminder_sent_at: checkout.last_reminder_sent_at,
+    reminder_cooldown_active: checkout.reminder_cooldown_active,
+    next_reminder_at: checkout.next_reminder_at,
     entryType: "checkout",
   }));
 
@@ -50,15 +54,18 @@ export function filterCheckoutRequests(
   requests: CheckoutListEntry[],
   filter: string,
   realm: string,
+  itemID?: number,
 ) {
   const filtered = filter === "all"
     ? requests.filter((request) => request.status === "active" || request.status === "pending")
     : requests.filter((request) => request.status === filter);
-  return filtered.filter((request) => request.realm === realm);
+  return filtered.filter((request) => request.realm === realm && (!itemID || request.item_id === itemID));
 }
 
-export function buildCheckoutsPageUrl(opts: { page?: number; filter?: string }) {
+export function buildCheckoutsPageUrl(opts: { page?: number; filter?: string; realm?: "archive" | "collection"; itemID?: number }) {
   const params = new URLSearchParams();
+  if (opts.realm) params.set("realm", opts.realm);
+  if (opts.itemID) params.set("item_id", String(opts.itemID));
   if (opts.filter && opts.filter !== "all") params.set("filter", opts.filter);
   if (opts.page && opts.page > 1) params.set("page", String(opts.page));
   const query = params.toString();

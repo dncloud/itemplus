@@ -21,7 +21,8 @@ func listActiveCheckouts(c *gin.Context) {
 	}
 
 	query := fmt.Sprintf(
-		`SELECT co.*, i.name AS item_name, COALESCE(u.display_name, u.email) AS user_name
+		`SELECT co.*, i.name AS item_name, COALESCE(u.display_name, u.email) AS user_name,
+		        CASE WHEN COALESCE(u.email, '') <> '' THEN 1 ELSE 0 END AS user_has_email
 		FROM %s co
 		LEFT JOIN %s i ON co.item_id = i.id
 		LEFT JOIN users u ON co.user_id = u.id
@@ -92,7 +93,8 @@ func collectOverdueCheckouts(userID *int) []map[string]interface{} {
 		}
 
 		query := fmt.Sprintf(
-			`SELECT co.*, i.name AS item_name, COALESCE(u.display_name, u.email) AS user_name, '%s' AS realm
+			`SELECT co.*, i.name AS item_name, COALESCE(u.display_name, u.email) AS user_name,
+			        CASE WHEN COALESCE(u.email, '') <> '' THEN 1 ELSE 0 END AS user_has_email, '%s' AS realm
 			FROM %s co
 			LEFT JOIN %s i ON co.item_id = i.id
 			LEFT JOIN users u ON co.user_id = u.id

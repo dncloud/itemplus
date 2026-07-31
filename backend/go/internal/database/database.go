@@ -256,6 +256,7 @@ func schemaStatementsBase() []string {
 			apple_sub TEXT UNIQUE NOT NULL,
 			email TEXT,
 			display_name TEXT,
+			locale TEXT,
 			avatar_path TEXT,
 			is_admin BOOLEAN DEFAULT 0,
 			is_active BOOLEAN DEFAULT 0,
@@ -348,6 +349,7 @@ func schemaStatementsBase() []string {
 		`CREATE TABLE IF NOT EXISTS magic_link_tokens (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			email TEXT NOT NULL,
+			locale TEXT,
 			token TEXT UNIQUE NOT NULL,
 			expires_at DATETIME NOT NULL,
 			used BOOLEAN DEFAULT 0
@@ -645,6 +647,7 @@ func realmTables(p string) []string {
 			status TEXT DEFAULT 'active',
 			due_date TEXT,
 			returned_at TEXT,
+			last_reminder_sent_at TEXT,
 			notes TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
