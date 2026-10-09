@@ -237,7 +237,8 @@ func statsMaintenance(c *gin.Context) {
 	}
 	now := time.Now()
 	today := middleware.StartOfLocalDay(now).Format("2006-01-02")
-	alertDate := middleware.MaintenanceAlertDate(now).Format("2006-01-02")
+	alertBoundary := middleware.MaintenanceAlertDate(now)
+	alertDate := alertBoundary.Format("2006-01-02")
 	items := make([]map[string]interface{}, 0)
 	history := make([]map[string]interface{}, 0)
 	var dueCount, overdueCount int
@@ -262,7 +263,7 @@ func statsMaintenance(c *gin.Context) {
 				if rows.MapScan(row) == nil {
 					middleware.CleanRow(row)
 					row["realm"] = realm
-					annotateMaintenanceReminder(row, now)
+					annotateMaintenanceReminderAt(row, now, alertBoundary)
 					items = append(items, row)
 				}
 			}

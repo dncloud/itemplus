@@ -1,6 +1,7 @@
 "use client";
 
-import type { Item, Vendor } from "@/lib/api";
+import type { Category, Item, Vendor } from "@/lib/api";
+import { isMasterDataRoleVisible } from "@/lib/category-master-data";
 import { ModalSection, TWPSelect } from "@/components/item-create/ui";
 
 export function VendorsSection({
@@ -9,7 +10,10 @@ export function VendorsSection({
   manufacturers,
   suppliers,
   vendors,
+  developers,
+  publishers,
   salesPlatforms,
+  category,
   setEditItem,
 }: {
   t: (key: string) => string;
@@ -17,15 +21,23 @@ export function VendorsSection({
   manufacturers: Vendor[];
   suppliers: Vendor[];
   vendors: Vendor[];
+  developers: Vendor[];
+  publishers: Vendor[];
   salesPlatforms: Vendor[];
+  category?: Category;
   setEditItem: (value: Partial<Item>) => void;
 }) {
   const itemStatus = editItem.item_status || "active";
+  const showManufacturer = isMasterDataRoleVisible(category, "manufacturer");
+  const showSupplier = isMasterDataRoleVisible(category, "supplier");
+  const showVendor = isMasterDataRoleVisible(category, "vendor");
+  const showDeveloper = isMasterDataRoleVisible(category, "developer");
+  const showPublisher = isMasterDataRoleVisible(category, "publisher");
 
   return (
     <ModalSection title={t("items.modalVendorsTitle")} description={t("items.modalVendorsDescription")}>
       <div className="grid w-full grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <TWPSelect
+        {showManufacturer ? <TWPSelect
           label={t("items.manufacturer")}
           value={editItem.manufacturer_id}
           onChange={(v) => setEditItem({ ...editItem, manufacturer_id: v })}
@@ -35,8 +47,8 @@ export function VendorsSection({
             logo: m.logo,
             logoBackground: m.logo_background,
           }))}
-        />
-        <TWPSelect
+        /> : null}
+        {showSupplier ? <TWPSelect
           label={t("items.supplier")}
           value={editItem.supplier_id}
           onChange={(v) => setEditItem({ ...editItem, supplier_id: v })}
@@ -46,8 +58,8 @@ export function VendorsSection({
             logo: s.logo,
             logoBackground: s.logo_background,
           }))}
-        />
-        <TWPSelect
+        /> : null}
+        {showVendor ? <TWPSelect
           label={t("items.vendor")}
           value={editItem.vendor_id}
           onChange={(v) => setEditItem({ ...editItem, vendor_id: v })}
@@ -57,7 +69,19 @@ export function VendorsSection({
             logo: vendor.logo,
             logoBackground: vendor.logo_background,
           }))}
-        />
+        /> : null}
+        {showDeveloper ? <TWPSelect
+          label={t("items.developer")}
+          value={editItem.developer_id}
+          onChange={(v) => setEditItem({ ...editItem, developer_id: v })}
+          options={developers.map((developer) => ({ id: developer.id, name: developer.name, logo: developer.logo, logoBackground: developer.logo_background }))}
+        /> : null}
+        {showPublisher ? <TWPSelect
+          label={t("items.publisher")}
+          value={editItem.publisher_id}
+          onChange={(v) => setEditItem({ ...editItem, publisher_id: v })}
+          options={publishers.map((publisher) => ({ id: publisher.id, name: publisher.name, logo: publisher.logo, logoBackground: publisher.logo_background }))}
+        /> : null}
         <TWPSelect
           label={t("items.salesPlatform")}
           value={editItem.salesPlatformId}

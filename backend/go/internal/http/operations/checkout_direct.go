@@ -62,6 +62,8 @@ func checkoutItem(c *gin.Context) {
 	}
 
 	now := database.TimestampNow()
+	// Read before the transaction starts; see checkoutMovementQuantities.
+	checkoutAffectsQuantity := inventoryCheckoutAffectsMovementQuantity()
 	tx, err := database.DB.Beginx()
 	if err != nil {
 		log.Printf("DB begin error in checkoutItem: %v", err)
@@ -87,7 +89,7 @@ func checkoutItem(c *gin.Context) {
 	}
 
 	newID, _ := result.LastInsertId()
-	rootBeforeQty, rootAfterQty := checkoutMovementQuantities(rootQuantity, "checked_out")
+	rootBeforeQty, rootAfterQty := movementQuantities(checkoutAffectsQuantity, rootQuantity, "checked_out")
 	if err := itemscore.RecordInventoryMovementTx(tx, realm, itemIDInt, "checked_out", rootBeforeQty, rootAfterQty, newID, "checkout", body.Notes, user.ID, now); err != nil {
 		log.Printf("DB inventory movement insert error in checkoutItem: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
@@ -110,7 +112,7 @@ func checkoutItem(c *gin.Context) {
 			return
 		}
 		componentCheckoutID, _ := componentResult.LastInsertId()
-		componentBeforeQty, componentAfterQty := checkoutMovementQuantities(componentQuantity, "checked_out")
+		componentBeforeQty, componentAfterQty := movementQuantities(checkoutAffectsQuantity, componentQuantity, "checked_out")
 		if err := itemscore.RecordInventoryMovementTx(tx, realm, componentID, "checked_out", componentBeforeQty, componentAfterQty, componentCheckoutID, "checkout", body.Notes, user.ID, now); err != nil {
 			log.Printf("DB inventory child movement insert error in checkoutItem: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})

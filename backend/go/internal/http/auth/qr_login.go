@@ -72,10 +72,20 @@ func confirmQRToken(c *gin.Context) {
 		return
 	}
 
-	database.DB.Exec(
-		"UPDATE qr_login_tokens SET used = 1, confirmed_by_user_id = ? WHERE id = ?",
+	// Conditional update: of two simultaneous confirmations only one wins.
+	result, err := database.DB.Exec(
+		"UPDATE qr_login_tokens SET used = 1, confirmed_by_user_id = ? WHERE id = ? AND used = 0",
 		user.ID, qr.ID,
 	)
+	if err != nil {
+		log.Printf("DB update error in confirmQRToken: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+		return
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Token not found or already used"})
+		return
+	}
 
 	displayName := ""
 	if user.DisplayName != nil {
@@ -114,16 +124,33 @@ func pollQRToken(c *gin.Context) {
 		return
 	}
 
-	// Confirmed — issue JWT and set cookie
-	var user middleware.User
-	err = database.DB.Get(&user, "SELECT * FROM users WHERE id = ?", *qr.ConfirmedByUser)
+	// Confirmed. The session is handed out exactly once: the token is removed
+	// first, so anyone else who saw or photographed the QR code and polls with
+	// it afterwards gets nothing.
+	result, err := database.DB.Exec("DELETE FROM qr_login_tokens WHERE id = ?", qr.ID)
 	if err != nil {
-		log.Printf("DB query error in pollQRToken: %v", err)
+		log.Printf("DB delete error in pollQRToken: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Token not found"})
+		return
+	}
 
-	jwtToken, _ := authcore.CreateToken(user.ID, user.AppleSub, user.IsAdmin)
+	found, err := loadVisibleUserByID(*qr.ConfirmedByUser)
+	if err != nil || !found.IsActive {
+		c.JSON(http.StatusForbidden, gin.H{"detail": "Account not available"})
+		return
+	}
+	user := *found
+
+	jwtToken, err := authcore.CreateToken(user.ID, user.AppleSub, user.IsAdmin)
+	if err != nil {
+		log.Printf("Token creation failed in pollQRToken: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+		return
+	}
 	setAuthCookie(c, jwtToken, cookieMaxAge())
 	c.JSON(http.StatusOK, gin.H{
 		"status":       "confirmed",

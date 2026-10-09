@@ -55,6 +55,7 @@ type Config struct {
 	EmailLocale            string
 	MagicLinkExpiryMinutes int
 	MagicLinkBaseURL       string
+	GameCatalogURL         string
 
 	Host string
 	Port int
@@ -63,7 +64,7 @@ type Config struct {
 const DefaultPort = 17117
 
 var C Config
-var defaultAppVersion = "1.3.3"
+var defaultAppVersion = "1.3.4"
 var defaultAppBuild = "dev"
 var cliConfigPath string
 
@@ -108,6 +109,7 @@ var managedConfigEnvKeys = []string{
 	"EMAIL_LOCALE",
 	"MAGIC_LINK_EXPIRY_MINUTES",
 	"MAGIC_LINK_BASE_URL",
+	"GAME_CATALOG_URL",
 	"HOST",
 	"PORT",
 	"ITEMPLUS_SETUP_REQUIRED",
@@ -303,6 +305,7 @@ func Load() {
 		EmailLocale:            normalizeEmailLocale(envStr("EMAIL_LOCALE", "en")),
 		MagicLinkExpiryMinutes: envInt("MAGIC_LINK_EXPIRY_MINUTES", 15),
 		MagicLinkBaseURL:       envStr("MAGIC_LINK_BASE_URL", ""),
+		GameCatalogURL:         strings.TrimRight(envStr("GAME_CATALOG_URL", ""), "/"),
 
 		Host: envStr("HOST", "0.0.0.0"),
 		Port: envInt("PORT", DefaultPort),

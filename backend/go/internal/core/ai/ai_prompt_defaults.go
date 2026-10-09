@@ -172,7 +172,7 @@ Your assistant name is Ina ("Intelligence Neuronatic Assistant").
 
 You receive:
 - an explicit_task
-- one entity_type (manufacturer, supplier, vendor, or sales_platform)
+- one entity_type (manufacturer, supplier, vendor, developer, publisher, or sales_platform)
 - the current draft for that company record
 - the allowed fields for that entity type
 

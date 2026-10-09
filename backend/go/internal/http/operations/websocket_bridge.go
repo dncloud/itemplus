@@ -86,7 +86,7 @@ func handlePresenceUpdate(data map[string]interface{}, userID, sessionID int, de
 
 	now := database.TimestampNow()
 	if _, err := database.DB.Exec(
-		"UPDATE device_sessions SET current_path = ?, current_label = ?, current_realm = ?, last_seen = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+		"UPDATE device_sessions SET `current_path` = ?, current_label = ?, current_realm = ?, last_seen = ?, updated_at = ? WHERE id = ? AND user_id = ?",
 		path, label, realm, now, now, sessionID, userID,
 	); err != nil {
 		log.Printf("DB presence update error: %v", err)
@@ -203,11 +203,13 @@ func handleWSMessage(data map[string]interface{}, userID, sessionID int, deviceT
 	case "delete.request":
 		handleDeleteRequest(data, userID, sessionID)
 	case "delete.confirm":
-		handleDeleteConfirm(data, userID)
+		handleDeleteConfirm(data, userID, deviceType)
 	case "delete.reject":
 		entityID := jsonIntAlt(data, "entity_id", "item_id")
 		entityType := jsonString(data, "entity_type", "item")
 		targetSession := jsonInt(data, "target_session")
+		// A rejected request is closed; a later confirmation must not revive it.
+		takePendingDelete(pendingDeleteKey{userID, entityType, entityID})
 		sendDeleteRejected(userID, targetSession, entityID, entityType)
 	case "photo.request":
 		ws.M.SendToUserIOS(userID, "photo.request", map[string]interface{}{

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useDeleteFlow, ConfirmDelete } from "@/components/ui/confirm-delete";
+import { FloatingNotification, type FloatingNotificationState } from "@/components/ui/floating-notification";
 import { api, type User } from "@/lib/api";
 import { fetchWithSession } from "@/lib/api-helpers";
 import { useApp } from "@/lib/app-context";
@@ -21,6 +22,13 @@ export default function UsersPage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedUser, setExpandedUser] = useState<number | null>(null);
+  const [notification, setNotification] = useState<FloatingNotificationState>(null);
+
+  useEffect(() => {
+    if (!notification) return;
+    const timeout = window.setTimeout(() => setNotification(null), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [notification]);
 
   const loadingRef = useRef(false);
   const load = useCallback(async () => {
@@ -68,6 +76,18 @@ export default function UsersPage() {
     setCurrentUser((prev) => applyUpdatedCurrentUser(prev, updatedUser));
   }, []);
 
+  // Shows why a change was refused instead of silently dropping it.
+  const reportFailure = useCallback(async (response?: Response) => {
+    const body = response ? await response.json().catch(() => ({})) : {};
+    const reasons: Record<string, string> = {
+      last_admin: t("users.lastAdmin"),
+      email_in_use: t("users.emailInUse"),
+    };
+    const message = reasons[body.code] || (body.detail === "Invalid email" ? t("users.invalidEmail") : body.detail);
+    setNotification({ title: t("users.updateFailed"), message, tone: "error" });
+  }, [t]);
+
+  /** Resolves to false when the server refused the change. */
   const updateUser = async (userId: number, data: Record<string, unknown>) => {
     try {
       const response = await fetchWithSession(`${api.baseURL}/api/users/${userId}`, {
@@ -76,10 +96,17 @@ export default function UsersPage() {
         credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!response.ok) return;
+      if (!response.ok) {
+        await reportFailure(response);
+        return false;
+      }
       const updatedUser = (await response.json()) as User;
       applyUpdatedUser(updatedUser);
-    } catch {}
+      return true;
+    } catch {
+      await reportFailure();
+      return false;
+    }
   };
 
   const activateUser = async (userId: number) => {
@@ -89,10 +116,15 @@ export default function UsersPage() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
       });
-      if (!response.ok) return;
+      if (!response.ok) {
+        await reportFailure(response);
+        return;
+      }
       const updatedUser = (await response.json()) as User;
       applyUpdatedUser(updatedUser);
-    } catch {}
+    } catch {
+      await reportFailure();
+    }
   };
 
   const deleteUser = (userId: number) => {
@@ -191,6 +223,7 @@ export default function UsersPage() {
           onCancel={() => deleteFlow.cancelConfirm()}
         />
       )}
+      <FloatingNotification notification={notification} onClose={() => setNotification(null)} t={t} />
     </div>
   );
 }

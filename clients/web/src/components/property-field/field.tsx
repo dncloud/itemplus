@@ -7,6 +7,7 @@ import { MarkdownEditor } from "@/components/ui/markdown";
 import { Check, X } from "lucide-react";
 import { CalendarDays, Clock } from "lucide-react";
 import { AgeRatingField, ALL_AGE_RATINGS } from "@/components/property-field/age-rating";
+import { getMobyScoreRange, isMobyScoreProperty, MobyScoreStars } from "@/components/property-field/moby-score";
 import { MultiSelectDropdown, SelectDropdown } from "@/components/property-field/selects";
 import { buildSelectCountValue, getPropertyOptionConfig, normalizeSelectCountValue } from "@/lib/property-options";
 import {
@@ -96,8 +97,26 @@ export default function PropertyField({ property: prop, value, onChange }: {
       );
     }
 
-    case "number":
-      return <div>{label}<input type="number" value={strVal} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)} className={inputCls} /></div>;
+    case "number": {
+      const mobyScore = isMobyScoreProperty(prop);
+      const range = getMobyScoreRange(prop);
+      const numericValue = typeof value === "number" ? value : Number(value) || 0;
+      return (
+        <div>
+          {label}
+          {mobyScore ? <div className="mb-2"><MobyScoreStars value={numericValue} max={range.max} /></div> : null}
+          <input
+            type="number"
+            min={Number.isFinite(Number(prop.options?.min)) ? Number(prop.options?.min) : undefined}
+            max={Number.isFinite(Number(prop.options?.max)) ? Number(prop.options?.max) : undefined}
+            step={Number.isFinite(Number(prop.options?.step)) ? Number(prop.options?.step) : undefined}
+            value={strVal}
+            onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+            className={inputCls}
+          />
+        </div>
+      );
+    }
 
     case "date":
       return (
@@ -156,6 +175,7 @@ export default function PropertyField({ property: prop, value, onChange }: {
               label={prop.name}
               value={selectValue.selected}
               options={optionConfig.choices}
+              optionLabels={optionConfig.labels}
               allowCustom={optionConfig.allowCustom}
               customLabel={optionConfig.customLabel}
               customPlaceholder={t("categories.customValuePlaceholder")}
@@ -191,6 +211,7 @@ export default function PropertyField({ property: prop, value, onChange }: {
             label={prop.name}
             values={selected}
             options={optionConfig.choices}
+            optionLabels={optionConfig.labels}
             allowCustom={optionConfig.allowCustom}
             customLabel={optionConfig.customLabel}
             customPlaceholder={t("categories.customValuePlaceholder")}
@@ -256,11 +277,16 @@ export default function PropertyField({ property: prop, value, onChange }: {
     // ── Age Rating — compact dropdown per system ──
     case "age_rating": {
       const selected: string[] = Array.isArray(value) ? value : (strVal ? [strVal] : []);
+      const configuredSystems = Array.isArray(prop.options?.systems)
+        ? prop.options.systems.filter((system): system is string => typeof system === "string")
+        : undefined;
+      const legacySystem = ["USK", "PEGI", "ESRB"].find((system) => prop.name.trim().toUpperCase() === system);
+      const systems = configuredSystems?.length ? configuredSystems : legacySystem ? [legacySystem] : undefined;
       const toggle = (v: string) => {
         const next = selected.includes(v) ? selected.filter((s) => s !== v) : [...selected, v];
         onChange(next.length > 0 ? next : null);
       };
-      return <AgeRatingField label={label} selected={selected} onToggle={toggle} />;
+      return <AgeRatingField label={label} selected={selected} onToggle={toggle} systems={systems} />;
     }
 
     // ── Condition — same pill style as priority ──

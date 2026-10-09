@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,6 +37,47 @@ const (
 	wsPongWait   = 75 * time.Second
 	wsPingPeriod = 30 * time.Second
 )
+
+var deviceSessionMu sync.Mutex
+
+// claimDeviceSession returns the device session a new connection will use.
+//
+// Sessions are remembered per user, device type and IP address so a device
+// keeps its entry across reconnects. Several connections can match that at
+// once, though: two tabs, two browsers on one computer, two computers behind
+// one router. Each connection needs a session of its own, because events are
+// addressed to sessions and every tab reports its own current page. So a
+// remembered session is only reused while nothing is connected on it; inUse
+// tells which ones are taken. Among the free ones, one last used by the same
+// kind of browser or device is preferred.
+func claimDeviceSession(userID int, deviceType, deviceName, clientIP, userAgent string, inUse func(sessionID int) bool) (int64, error) {
+	var candidates []int64
+	if err := database.DB.Select(&candidates,
+		`SELECT id FROM device_sessions WHERE user_id = ? AND device_type = ? AND ip_address = ?
+		 ORDER BY CASE WHEN device_name = ? THEN 0 ELSE 1 END, last_seen DESC`,
+		userID, deviceType, clientIP, deviceName,
+	); err != nil {
+		return 0, err
+	}
+
+	now := database.TimestampNow()
+	for _, id := range candidates {
+		if inUse(int(id)) {
+			continue
+		}
+		_, err := database.DB.Exec("UPDATE device_sessions SET is_online = 1, last_seen = ?, device_name = ?, user_agent = ? WHERE id = ?", now, deviceName, userAgent, id)
+		return id, err
+	}
+
+	result, err := database.DB.Exec(
+		"INSERT INTO device_sessions (user_id, device_type, device_name, ip_address, is_online, last_seen, user_agent, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)",
+		userID, deviceType, deviceName, clientIP, now, userAgent, now, now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
 
 func RegisterWebSocketRoute(r *gin.Engine) {
 	r.GET("/ws", handleWebSocket)
@@ -100,33 +142,16 @@ func handleWebSocket(c *gin.Context) {
 
 	clientIP := config.ResolveClientIP(c.Request.RemoteAddr, c.Request.Header)
 
-	// Create or reuse device session
-	var sessionID int64
-	err = database.DB.QueryRow(
-		"SELECT id FROM device_sessions WHERE user_id = ? AND device_type = ? AND ip_address = ? ORDER BY last_seen DESC LIMIT 1",
-		userID, deviceType, clientIP,
-	).Scan(&sessionID)
-
-	now := database.TimestampNow()
+	// Claiming the session and registering the connection happen under one
+	// lock, so two tabs connecting at the same moment cannot pick the same one.
+	deviceSessionMu.Lock()
+	sessionID, err := claimDeviceSession(userID, deviceType, deviceName, clientIP, c.GetHeader("User-Agent"), ws.M.HasSession)
 	if err != nil {
-		// New session
-		result, execErr := database.DB.Exec(
-			"INSERT INTO device_sessions (user_id, device_type, device_name, ip_address, is_online, last_seen, user_agent, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)",
-			userID, deviceType, deviceName, clientIP, now, c.GetHeader("User-Agent"), now, now,
-		)
-		if execErr != nil {
-			log.Printf("WS session insert error: %v", execErr)
-			conn.Close()
-			return
-		}
-		sessionID, _ = result.LastInsertId()
-	} else {
-		database.DB.Exec("UPDATE device_sessions SET is_online = 1, last_seen = ?, device_name = ? WHERE id = ?", now, deviceName, sessionID)
+		deviceSessionMu.Unlock()
+		log.Printf("WS session error: %v", err)
+		conn.Close()
+		return
 	}
-
-	// Clean up old offline sessions for this user (keep max 10)
-	cleanupOldSessions(userID)
-
 	wsConn := &ws.Connection{
 		Conn:       conn,
 		UserID:     userID,
@@ -136,6 +161,11 @@ func handleWebSocket(c *gin.Context) {
 		IsAdmin:    isAdmin,
 	}
 	ws.M.Add(wsConn)
+	deviceSessionMu.Unlock()
+
+	// Clean up old offline sessions for this user (keep max 10)
+	cleanupOldSessions(userID)
+
 	ws.M.SendToSession(int(sessionID), "session.ready", map[string]interface{}{
 		"session_id": sessionID,
 	})
@@ -151,7 +181,10 @@ func handleWebSocket(c *gin.Context) {
 
 	defer func() {
 		close(done)
-		ws.M.Remove(int(sessionID))
+		if !ws.M.Remove(wsConn) {
+			// A newer connection took over this session; it is still online.
+			return
+		}
 		database.DB.Exec("UPDATE device_sessions SET is_online = 0, last_seen = ? WHERE id = ?", database.TimestampNow(), sessionID)
 		ws.M.SendToUser(userID, "device.disconnected", map[string]interface{}{
 			"session_id":  sessionID,

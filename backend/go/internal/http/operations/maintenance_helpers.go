@@ -22,8 +22,10 @@ func loadItemMaintenanceHistory(realm, itemID string, limit int) []map[string]in
 	return maintenancecore.LoadItemHistory(realm, itemID, limit)
 }
 
-func annotateMaintenanceReminder(row map[string]interface{}, now time.Time) {
-	maintenancecore.AnnotateReminder(row, now)
+// annotateMaintenanceReminderAt takes the alert date from the caller; see
+// maintenancecore.AnnotateReminderAt for why loops must not look it up per row.
+func annotateMaintenanceReminderAt(row map[string]interface{}, now, alertDate time.Time) {
+	maintenancecore.AnnotateReminderAt(row, now, alertDate)
 }
 
 func parseMaintenanceDate(value string) (time.Time, error) {

@@ -2,6 +2,7 @@ package settings
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/netip"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/itemplus/backend/internal/config"
+	"github.com/itemplus/backend/internal/database"
 	"github.com/itemplus/backend/internal/http/middleware"
 	"github.com/itemplus/backend/internal/printing"
 	qrcode "github.com/skip2/go-qrcode"
@@ -210,8 +212,47 @@ func updatePrinterConfig(c *gin.Context) {
 		config.C.PrinterPort = *body.Port
 	}
 
+	if err := storePrinterConfig(); err != nil {
+		log.Printf("Printer configuration could not be stored: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Printer configuration could not be saved"})
+		return
+	}
+
 	user := middleware.GetUser(c)
 	middleware.Audit(user.ID, "config.printer", "")
 
 	c.JSON(http.StatusOK, gin.H{"status": "updated"})
+}
+
+const (
+	printerHostSettingKey = "printer.host"
+	printerPortSettingKey = "printer.port"
+)
+
+// storePrinterConfig keeps the printer address set in the web app. It used
+// to live only in memory and was lost with every restart.
+func storePrinterConfig() error {
+	now := database.TimestampNow()
+	if err := database.UpsertAppSetting(printerHostSettingKey, config.C.PrinterHost, now); err != nil {
+		return err
+	}
+	return database.UpsertAppSetting(printerPortSettingKey, strconv.Itoa(config.C.PrinterPort), now)
+}
+
+// ApplyStoredPrinterConfig runs at startup. A printer address saved in the
+// web app takes precedence over PRINTER_HOST and PRINTER_PORT from the
+// configuration file, which remain the defaults until something is saved.
+func ApplyStoredPrinterConfig() {
+	var host string
+	if err := database.DB.Get(&host, "SELECT COALESCE(value, '') FROM app_settings WHERE `key` = ?", printerHostSettingKey); err != nil {
+		return // nothing saved yet
+	}
+	config.C.PrinterHost = strings.TrimSpace(host)
+
+	var port string
+	if err := database.DB.Get(&port, "SELECT COALESCE(value, '') FROM app_settings WHERE `key` = ?", printerPortSettingKey); err == nil {
+		if number, convErr := strconv.Atoi(strings.TrimSpace(port)); convErr == nil && number >= 1 && number <= 65535 {
+			config.C.PrinterPort = number
+		}
+	}
 }

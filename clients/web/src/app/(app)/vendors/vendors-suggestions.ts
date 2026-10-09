@@ -31,7 +31,7 @@ export function buildVendorSuggestionEntries(
   if (tab === "vendors" || tab === "sales-platforms") {
     pushEntry("customer_number", t ? t("vendors.customerNumber") : "Kundennummer", proposal.customer_number);
   }
-  if (tab === "manufacturers") {
+  if (["manufacturers", "developers", "publishers"].includes(tab)) {
     pushEntry("support_email", t ? t("vendors.supportEmail") : "Support E-Mail", proposal.support_email);
     pushEntry("support_phone", t ? t("vendors.supportPhone") : "Support Telefon", proposal.support_phone);
     pushEntry("support_url", t ? t("vendors.supportUrl") : "Support URL", proposal.support_url);

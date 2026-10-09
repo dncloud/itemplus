@@ -305,6 +305,12 @@ export default function SettingsPageContent() {
     }
   };
 
+  const refreshAccount = async () => {
+    try {
+      setMe(await api.getMe());
+    } catch {}
+  };
+
   const saveAccount = async () => {
     try {
       const updated = await api.updateMe({
@@ -613,8 +619,13 @@ export default function SettingsPageContent() {
       setRecoverFile(null);
       if (recoverInputRef.current) recoverInputRef.current.value = "";
     } catch (err) {
-      const message = messageFromError(err, t("settings.recoverFailed"));
-      showNotification(message, undefined, "error");
+      const message = messageFromErrorCode(err, t("settings.recoverFailed"), {
+        backup_driver_mismatch: t("settings.recoverEngineMismatch"),
+        backup_without_manifest: t("settings.recoverNoManifest"),
+        backup_without_database: t("settings.recoverNoDatabase"),
+        backup_invalid: t("settings.recoverInvalid"),
+      });
+      showNotification(t("settings.recoverFailed"), message === t("settings.recoverFailed") ? undefined : message, "error");
     } finally {
       setBackupBusy(null);
     }
@@ -868,6 +879,7 @@ export default function SettingsPageContent() {
     setDisplayNameDraft,
     avatarInputRef,
     saveAccount,
+    refreshAccount,
     uploadAccountAvatar,
     removeAccountAvatar,
     deleteAccount,

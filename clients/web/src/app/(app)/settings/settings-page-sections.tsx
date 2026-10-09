@@ -6,6 +6,7 @@ import { SettingsBrandingSection } from "@/components/settings/branding-section"
 import { SettingsPrinterSection } from "@/components/settings/printer-section";
 import { SettingsStorageSection } from "@/components/settings/storage-section";
 import { SettingsSystemSection } from "@/components/settings/system-section";
+import { SettingsUnconnectedFilesSection } from "@/components/settings/unconnected-files-section";
 import { SettingsAccountSection } from "./settings-account-section";
 import type { SettingsPageSectionsProps } from "./settings-page-types";
 
@@ -152,6 +153,7 @@ export function SettingsPageSections({
   setDisplayNameDraft,
   avatarInputRef,
   saveAccount,
+  refreshAccount,
   uploadAccountAvatar,
   removeAccountAvatar,
   deleteAccount,
@@ -171,6 +173,7 @@ export function SettingsPageSections({
           displayNameDraft={displayNameDraft}
           setDisplayNameDraft={setDisplayNameDraft}
           saveAccount={() => { void saveAccount(); }}
+          refreshAccount={refreshAccount}
           uploadAccountAvatar={uploadAccountAvatar}
           removeAccountAvatar={removeAccountAvatar}
           accountInfoRows={accountInfoRows}
@@ -327,6 +330,13 @@ export function SettingsPageSections({
           deleteExternalSource={deleteExternalSource}
           inputClass={settingsInputClass}
           monoTextareaClass={settingsMonoTextareaClass}
+          secondaryButtonClass={settingsSecondaryButtonClass}
+          dangerButtonClass={settingsDangerButtonClass}
+        />
+      )}
+      {isAdmin && activeSection === "storage" && (
+        <SettingsUnconnectedFilesSection
+          t={t}
           secondaryButtonClass={settingsSecondaryButtonClass}
           dangerButtonClass={settingsDangerButtonClass}
         />

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	itemscore "github.com/itemplus/backend/internal/core/items"
 	"github.com/itemplus/backend/internal/database"
 	"github.com/itemplus/backend/internal/http/middleware"
 	ws "github.com/itemplus/backend/internal/websocket"
@@ -122,17 +123,23 @@ func listCheckoutRequests(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
-	defer rows.Close()
 
+	// Read everything first: the enrichment below runs further queries, and
+	// SQLite's single connection is busy until this result set is closed.
 	var result []map[string]interface{}
 	for rows.Next() {
 		row := map[string]interface{}{}
 		if rows.MapScan(row) == nil {
 			middleware.CleanRow(row)
-			enrichCheckoutRequestComponents(row)
-			enrichCheckoutRequest(row)
 			result = append(result, row)
 		}
+	}
+	if err := rows.Close(); err != nil {
+		log.Printf("DB rows close error in listCheckoutRequests: %v", err)
+	}
+	for _, row := range result {
+		enrichCheckoutRequestComponents(row)
+		enrichCheckoutRequest(row)
 	}
 	if result == nil {
 		result = []map[string]interface{}{}
@@ -165,37 +172,18 @@ func approveCheckoutRequest(c *gin.Context) {
 		return
 	}
 
-	result, err := database.DB.Exec(
-		"UPDATE checkout_requests SET status = 'approved', approved_by = ?, updated_at = ? WHERE id = ?",
-		user.ID, now, id,
-	)
-	if err != nil {
-		log.Printf("DB update error in approveCheckoutRequest: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
-		return
-	}
-	affected, _ := result.RowsAffected()
-	if affected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "Request not found or already processed"})
-		return
-	}
-
 	var dueDate *string
 	if days, ok := row["requested_duration_days"]; ok && days != nil {
-		switch d := days.(type) {
-		case float64:
-			if d > 0 {
-				due := database.TimestampAt(time.Now().UTC().AddDate(0, 0, int(d)))
-				dueDate = &due
-			}
-		case int64:
-			if d > 0 {
-				due := database.TimestampAt(time.Now().UTC().AddDate(0, 0, int(d)))
-				dueDate = &due
-			}
+		if d := middleware.AsInt(days); d > 0 {
+			due := database.TimestampAt(time.Now().UTC().AddDate(0, 0, d))
+			dueDate = &due
 		}
 	}
 
+	// Read before the transaction starts; see checkoutMovementQuantities.
+	checkoutAffectsQuantity := inventoryCheckoutAffectsMovementQuantity()
+
+	// Approval, checkouts and stock movements succeed or fail together.
 	tx, err := database.DB.Beginx()
 	if err != nil {
 		log.Printf("DB begin error in approveCheckoutRequest: %v", err)
@@ -204,20 +192,49 @@ func approveCheckoutRequest(c *gin.Context) {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(
-		fmt.Sprintf("INSERT INTO %s (item_id, bundle_parent_item_id, user_id, status, due_date, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)", table),
-		itemID, nil, requestUserID, "active", dueDate, row["notes"], now, now,
-	); err != nil {
-		log.Printf("DB insert error in approveCheckoutRequest: %v", err)
+	// The status condition lets only one of two simultaneous approvals through.
+	result, err := tx.Exec(
+		"UPDATE checkout_requests SET status = 'approved', approved_by = ?, updated_at = ? WHERE id = ? AND status = 'pending'",
+		user.ID, now, id,
+	)
+	if err != nil {
+		log.Printf("DB update error in approveCheckoutRequest: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
-	for _, componentID := range selectedComponentIDs {
-		if _, err := tx.Exec(
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Request not found or already processed"})
+		return
+	}
+
+	// Like a direct checkout: one checkout row and one "checked_out" stock
+	// movement for the item itself and for every bundle component.
+	rootItemID := middleware.AsInt(itemID)
+	targets := append([]int{rootItemID}, selectedComponentIDs...)
+	for index, targetID := range targets {
+		var bundleParent interface{}
+		if index > 0 {
+			bundleParent = rootItemID
+		}
+		quantity, err := itemscore.LoadItemQuantityTx(tx, realm, targetID)
+		if err != nil {
+			log.Printf("DB load quantity error in approveCheckoutRequest: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+		inserted, err := tx.Exec(
 			fmt.Sprintf("INSERT INTO %s (item_id, bundle_parent_item_id, user_id, status, due_date, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)", table),
-			componentID, middleware.AsInt(itemID), requestUserID, "active", dueDate, row["notes"], now, now,
-		); err != nil {
-			log.Printf("DB insert child checkout error in approveCheckoutRequest: %v", err)
+			targetID, bundleParent, requestUserID, "active", dueDate, row["notes"], now, now,
+		)
+		if err != nil {
+			log.Printf("DB insert error in approveCheckoutRequest: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+		checkoutID, _ := inserted.LastInsertId()
+		beforeQty, afterQty := movementQuantities(checkoutAffectsQuantity, quantity, "checked_out")
+		if err := itemscore.RecordInventoryMovementTx(tx, realm, targetID, "checked_out", beforeQty, afterQty, checkoutID, "checkout", row["notes"], user.ID, now); err != nil {
+			log.Printf("DB inventory movement insert error in approveCheckoutRequest: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 			return
 		}

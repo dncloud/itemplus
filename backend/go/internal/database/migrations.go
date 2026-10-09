@@ -56,10 +56,17 @@ func runMigrations(db *sqlx.DB, driver string) error {
 	if err := addColumnIfMissing(db, "ALTER TABLE magic_link_tokens ADD COLUMN locale TEXT"); err != nil {
 		return err
 	}
+	shareNameColumn := "TEXT NOT NULL DEFAULT ''"
+	if driver == "mysql" {
+		shareNameColumn = "VARCHAR(191) NOT NULL DEFAULT ''"
+	}
+	if err := addColumnIfMissing(db, "ALTER TABLE external_sources ADD COLUMN share_name "+shareNameColumn); err != nil {
+		return err
+	}
 	if err := addColumnIfMissing(db, "ALTER TABLE checkout_requests ADD COLUMN component_item_ids TEXT"); err != nil {
 		return err
 	}
-	if err := addColumnIfMissing(db, "ALTER TABLE device_sessions ADD COLUMN current_path TEXT"); err != nil {
+	if err := addColumnIfMissing(db, "ALTER TABLE device_sessions ADD COLUMN `current_path` TEXT"); err != nil {
 		return err
 	}
 	if err := addColumnIfMissing(db, "ALTER TABLE device_sessions ADD COLUMN current_label TEXT"); err != nil {
@@ -108,6 +115,27 @@ func runMigrations(db *sqlx.DB, driver string) error {
 			return err
 		}
 		if err := addColumnIfMissing(db, "ALTER TABLE "+itemsTable+" ADD COLUMN sold_at TEXT"); err != nil {
+			return err
+		}
+		if err := addColumnIfMissing(db, "ALTER TABLE "+itemsTable+" ADD COLUMN developer_id INTEGER"); err != nil {
+			return err
+		}
+		if err := addColumnIfMissing(db, "ALTER TABLE "+itemsTable+" ADD COLUMN publisher_id INTEGER"); err != nil {
+			return err
+		}
+		if err := addColumnIfMissing(db, "ALTER TABLE "+realm+"_categories ADD COLUMN show_manufacturer BOOLEAN NOT NULL DEFAULT 1"); err != nil {
+			return err
+		}
+		if err := addColumnIfMissing(db, "ALTER TABLE "+realm+"_categories ADD COLUMN show_supplier BOOLEAN NOT NULL DEFAULT 1"); err != nil {
+			return err
+		}
+		if err := addColumnIfMissing(db, "ALTER TABLE "+realm+"_categories ADD COLUMN show_vendor BOOLEAN NOT NULL DEFAULT 1"); err != nil {
+			return err
+		}
+		if err := addColumnIfMissing(db, "ALTER TABLE "+realm+"_categories ADD COLUMN show_developer BOOLEAN NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+		if err := addColumnIfMissing(db, "ALTER TABLE "+realm+"_categories ADD COLUMN show_publisher BOOLEAN NOT NULL DEFAULT 0"); err != nil {
 			return err
 		}
 		if err := addColumnIfMissing(db, "ALTER TABLE "+attachmentsTable+" ADD COLUMN storage_backend TEXT NOT NULL DEFAULT 'local'"); err != nil {
@@ -168,6 +196,9 @@ func runMigrations(db *sqlx.DB, driver string) error {
 			return err
 		}
 		if _, err := db.Exec(inventoryMovementsTypeIndexSQL(realm, driver)); err != nil && !isDuplicateIndexError(err) {
+			return err
+		}
+		if err := backfillCheckoutMovements(db, realm); err != nil {
 			return err
 		}
 		if _, err := db.Exec(maintenanceReminderTableMigrationSQL(realm, driver)); err != nil {
@@ -530,6 +561,31 @@ func componentTableMigrationSQL(realm, driver string) string {
 	return stmt
 }
 
+// backfillCheckoutMovements adds the missing "checked_out" stock movement for
+// checkouts that were created by approving a request. Up to 1.3.3 an approval
+// wrote the checkout but no movement, so such items never showed up as lent
+// in the stock history although their return did.
+//
+// Only checkouts that are still active, or whose return is already recorded,
+// are completed; nothing is invented for loans from before the stock history
+// existed. The quantity is taken as unchanged because the historical stock is
+// unknown. Running it again adds nothing.
+func backfillCheckoutMovements(db *sqlx.DB, realm string) error {
+	movements := realm + "_inventory_movements"
+	_, err := db.Exec(`INSERT INTO ` + movements + `
+			(item_id, movement_type, quantity_delta, quantity_before, quantity_after, checkout_id, source, notes, created_by, created_at)
+		SELECT co.item_id, 'checked_out', 0, COALESCE(i.quantity, 0), COALESCE(i.quantity, 0), co.id, 'checkout', co.notes, NULL, co.created_at
+		FROM ` + realm + `_checkouts co
+		JOIN ` + realm + `_items i ON i.id = co.item_id
+		WHERE NOT EXISTS (
+				SELECT 1 FROM ` + movements + ` m
+				WHERE m.checkout_id = co.id AND m.movement_type = 'checked_out')
+		  AND (co.status = 'active' OR EXISTS (
+				SELECT 1 FROM ` + movements + ` r
+				WHERE r.checkout_id = co.id AND r.movement_type = 'returned'))`)
+	return err
+}
+
 func backfillSalesPlatformIDs(db *sqlx.DB, itemsTable string) error {
 	rows, err := db.Queryx("SELECT DISTINCT sales_platform FROM " + itemsTable + " WHERE COALESCE(sales_platform, '') <> ''")
 	if err != nil {
@@ -538,17 +594,29 @@ func backfillSalesPlatformIDs(db *sqlx.DB, itemsTable string) error {
 		}
 		return err
 	}
-	defer rows.Close()
 
+	// Collect the names before writing: the updates below need the connection
+	// that this result set occupies on SQLite.
+	var names []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
+			rows.Close()
 			return err
 		}
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
+		if name = strings.TrimSpace(name); name != "" {
+			names = append(names, name)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	for _, name := range names {
 		platformID, err := ensureGenericSalesPlatform(db, name)
 		if err != nil {
 			return err
@@ -561,7 +629,7 @@ func backfillSalesPlatformIDs(db *sqlx.DB, itemsTable string) error {
 		}
 	}
 
-	return rows.Err()
+	return nil
 }
 
 func ensureGenericSalesPlatform(db *sqlx.DB, name string) (int64, error) {

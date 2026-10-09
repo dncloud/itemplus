@@ -2,6 +2,7 @@ package items
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,18 +12,26 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	itemscore "github.com/itemplus/backend/internal/core/items"
 	"github.com/itemplus/backend/internal/database"
 	"github.com/itemplus/backend/internal/http/middleware"
 )
 
 // RegisterCRUD creates standard List/Get/Create/Update/Delete routes for a realm table.
 func RegisterCRUD(group *gin.RouterGroup, table string, readPerm, writePerm, deletePerm string) {
+	group.Use(middleware.NumericParams("id"))
+
 	// LIST
 	group.GET("", middleware.Auth(), middleware.RequirePermission(readPerm, "items.read"), func(c *gin.Context) {
 		search := c.Query("search")
 		rows := []map[string]interface{}{}
 
 		query := fmt.Sprintf("SELECT * FROM %s", table)
+		// Categories and locations report how many items use them, so clients
+		// can show up front that one in use cannot be deleted.
+		if realm, kind, ok := protectedMasterData(table); ok {
+			query = fmt.Sprintf("SELECT t.*, (SELECT COUNT(*) FROM %s_items i WHERE i.%s_id = t.id) AS item_count FROM %s t", realm, kind, table)
+		}
 		var args []interface{}
 		if search != "" {
 			query += " WHERE name LIKE ?"
@@ -169,6 +178,34 @@ func RegisterCRUD(group *gin.RouterGroup, table string, readPerm, writePerm, del
 	// DELETE
 	group.DELETE("/:id", middleware.Auth(), middleware.RequirePermission(deletePerm), func(c *gin.Context) {
 		id := c.Param("id")
+		// Categories and locations that are still in use are not deleted.
+		if realm, kind, ok := protectedMasterData(table); ok {
+			var found bool
+			var err error
+			if kind == "category" {
+				found, err = itemscore.DeleteCategory(realm, id)
+			} else {
+				found, err = itemscore.DeleteLocation(realm, id)
+			}
+			var inUse *itemscore.InUseError
+			switch {
+			case errors.As(err, &inUse):
+				c.JSON(http.StatusConflict, gin.H{
+					"detail":          "Still in use and cannot be deleted",
+					"code":            kind + "_in_use",
+					"in_use_items":    inUse.Items,
+					"in_use_children": inUse.Children,
+				})
+			case err != nil:
+				log.Printf("DB delete error in DELETE %s: %v", table, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			case !found:
+				c.JSON(http.StatusNotFound, gin.H{"detail": "Not found"})
+			default:
+				c.Status(http.StatusNoContent)
+			}
+			return
+		}
 		result, err := database.DB.Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", table), id)
 		if err != nil {
 			log.Printf("DB delete error in DELETE %s: %v", table, err)
@@ -182,6 +219,17 @@ func RegisterCRUD(group *gin.RouterGroup, table string, readPerm, writePerm, del
 		}
 		c.Status(http.StatusNoContent)
 	})
+}
+
+// protectedMasterData recognizes the category and location tables, whose rows
+// may only be deleted while nothing refers to them.
+func protectedMasterData(table string) (realm, kind string, ok bool) {
+	for suffix, kind := range map[string]string{"_categories": "category", "_locations": "location"} {
+		if strings.HasSuffix(table, suffix) {
+			return strings.TrimSuffix(table, suffix), kind, true
+		}
+	}
+	return "", "", false
 }
 
 func sanitizeCRUDPayload(table string, body map[string]interface{}) (map[string]interface{}, error) {
@@ -206,7 +254,7 @@ func sanitizeCRUDPayload(table string, body map[string]interface{}) (map[string]
 func writableCRUDFields(table string) map[string]bool {
 	switch {
 	case endsWithAny(table, "_categories"):
-		return fieldSet("name", "description", "color", "position")
+		return fieldSet("name", "description", "color", "show_manufacturer", "show_supplier", "show_vendor", "show_developer", "show_publisher", "position")
 	case endsWithAny(table, "_locations"):
 		return fieldSet("name", "description", "color", "parent_id", "manager_id", "image", "capacity", "position")
 	case endsWithAny(table, "_manufacturers"):
@@ -215,6 +263,8 @@ func writableCRUDFields(table string) map[string]bool {
 		return fieldSet("name", "logo", "logo_background", "website", "email", "phone", "address", "contact_person", "account_manager")
 	case endsWithAny(table, "_vendors"):
 		return fieldSet("name", "logo", "logo_background", "website", "email", "phone", "address", "contact_person", "customer_number")
+	case endsWithAny(table, "_developers", "_publishers"):
+		return fieldSet("name", "logo", "logo_background", "website", "email", "phone", "address", "support_email", "support_phone", "support_url")
 	case table == "generic_sales_platforms":
 		return fieldSet("name", "logo", "logo_background", "website", "email", "phone", "address", "contact_person", "customer_number")
 	default:
@@ -253,7 +303,7 @@ func defaultListOrder(table string) string {
 	switch {
 	case endsWithAny(table, "_categories", "_locations"):
 		return "position, id"
-	case endsWithAny(table, "_manufacturers", "_suppliers", "_vendors"):
+	case endsWithAny(table, "_manufacturers", "_suppliers", "_vendors", "_developers", "_publishers"):
 		return "name, id"
 	case table == "generic_sales_platforms":
 		return "name, id"
@@ -450,7 +500,7 @@ func ParseJSONValue(v interface{}) interface{} {
 		}
 	}
 	// Try number
-	if n, err := strconv.ParseFloat(s, 64); err == nil {
+	if n, ok := middleware.ParseFiniteNumber(s); ok {
 		if n == float64(int64(n)) {
 			return int64(n)
 		}

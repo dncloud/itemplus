@@ -45,7 +45,11 @@ export function attachmentExternalURL(att: Attachment): string {
 }
 
 export function isGalleryImage(att: Attachment): boolean {
-  return !!att.gallery && IMAGE_EXTS.test(attachmentFilename(att));
+  return !!att.gallery && isImageAttachment(att);
+}
+
+export function isImageAttachment(att: Attachment): boolean {
+  return att.attachment_type === "image" || IMAGE_EXTS.test(attachmentFilename(att));
 }
 
 export function attType(att: Attachment): "image" | "archive" | "code" | "video" | "audio" | "link" | "document" {

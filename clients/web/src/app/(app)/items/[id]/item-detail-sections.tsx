@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { MarkdownView } from "@/components/ui/markdown";
-import type { Item, Property } from "@/lib/api";
+import type { Category, Item, Property } from "@/lib/api";
+import { isMasterDataRoleVisible } from "@/lib/category-master-data";
 import { buildPropertyRows, PropDisplay } from "./item-detail-property-display";
 import { DetailSection } from "./item-detail-section-ui";
 
@@ -11,11 +12,13 @@ export { ItemMaintenancePanel } from "./item-detail-maintenance-panel";
 export function ItemDetailSections({
   item,
   properties,
+  category,
   fmtDate,
   t,
 }: {
   item: Item;
   properties: Property[];
+  category?: Category;
   fmtDate: (s: string | null | undefined) => string;
   t: (k: string, vars?: Record<string, string | number>) => string;
 }) {
@@ -46,13 +49,20 @@ export function ItemDetailSections({
         ]
       : [];
   const vendorEntries = [
-    { label: t("items.manufacturer"), value: item.manufacturer_name || "—" },
-    { label: t("items.vendor"), value: item.vendor_name || "—" },
-    { label: t("items.supplier"), value: item.supplier_name || "—" },
-  ];
+    isMasterDataRoleVisible(category, "manufacturer") ? { label: t("items.manufacturer"), value: item.manufacturer_name || "—" } : null,
+    isMasterDataRoleVisible(category, "vendor") ? { label: t("items.vendor"), value: item.vendor_name || "—" } : null,
+    isMasterDataRoleVisible(category, "supplier") ? { label: t("items.supplier"), value: item.supplier_name || "—" } : null,
+    isMasterDataRoleVisible(category, "developer") ? { label: t("items.developer"), value: item.developer_name || "—" } : null,
+    isMasterDataRoleVisible(category, "publisher") ? { label: t("items.publisher"), value: item.publisher_name || "—" } : null,
+  ].filter((entry): entry is { label: string; value: string } => entry !== null);
   const inventoryRows = [inventoryEntries.slice(0, 3), inventoryEntries.slice(3, 6)];
   const saleRows = [saleEntries.slice(0, 2), saleEntries.slice(2, 4)].filter((row) => row.length > 0);
-  const propertyRows = item.properties ? buildPropertyRows(properties, item.properties) : [];
+  const visibleProperties = properties.filter((property) => {
+    const catalog = property.options?.game_catalog;
+    const key = catalog && typeof catalog === "object" && !Array.isArray(catalog) ? (catalog as Record<string, unknown>).property_key : undefined;
+    return key !== "developer" && key !== "publisher";
+  });
+  const propertyRows = item.properties ? buildPropertyRows(visibleProperties, item.properties) : [];
   const checkedOutComponentIDs = new Set(item.checked_out_to?.component_ids || []);
 
   return (
@@ -152,7 +162,7 @@ export function ItemDetailSections({
         </DetailSection>
       ) : null}
 
-      <DetailSection title={t("items.modalVendorsTitle")}>
+      {vendorEntries.length > 0 ? <DetailSection title={t("items.modalVendorsTitle")}>
         <div className="grid grid-cols-1 sm:grid-cols-6">
           {vendorEntries.map((entry, index) => (
             <div
@@ -166,7 +176,7 @@ export function ItemDetailSections({
             </div>
           ))}
         </div>
-      </DetailSection>
+      </DetailSection> : null}
 
       <DetailSection title={t("items.description")}>
         <div className="px-4 py-5 sm:px-6">

@@ -308,6 +308,7 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
             itemStockWarningPercent={itemStockWarningPercent}
             itemStockCriticalPercent={itemStockCriticalPercent}
             listProps={listProps}
+            categoryProperties={allProperties}
             filterCategory={filterCategory}
             filterLocation={filterLocation}
             catName={catName}

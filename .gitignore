@@ -27,6 +27,7 @@ backend/go/.gocache/
 .go-build-cache/
 uploads/
 logs/
+.tmp-gocache/
 
 .build/
 .swiftpm/

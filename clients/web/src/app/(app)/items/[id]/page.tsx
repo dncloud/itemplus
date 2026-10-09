@@ -235,6 +235,7 @@ export default function ItemDetailPage() {
   const canRequestPhoto = can("attachments.write") && iosBridgeStatus === "connected";
   const canReadInventory = can("inventory.read");
   const canReadMaintenance = can("maintenance.read");
+  const usesCollectionGallery = realm === "collection";
   const openMaintenance = canReadMaintenance
     ? item.maintenance_reminders?.filter((reminder) => reminder.status === "open") || []
     : [];
@@ -378,11 +379,13 @@ export default function ItemDetailPage() {
         readOnly
         showUploadActions={false}
         showFiles={false}
+        galleryPresentation={usesCollectionGallery ? "catalog-cover" : "standard"}
       />
 
       <ItemDetailSections
         item={item}
         properties={properties}
+        category={categories.find((category) => category.id === item.category_id)}
         fmtDate={fmtDate}
         t={t}
       />
@@ -395,6 +398,7 @@ export default function ItemDetailPage() {
         readOnly
         showUploadActions={canUploadAttachmentsOnDetail}
         showGallery={false}
+        galleryPresentation={usesCollectionGallery ? "catalog-cover" : "standard"}
       />
 
       {deleteFlow.confirm?.id === Number(id) && (

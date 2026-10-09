@@ -7,18 +7,22 @@ export type ItemCreateReferenceData = {
   manufacturers: Vendor[];
   suppliers: Vendor[];
   vendors: Vendor[];
+  developers: Vendor[];
+  publishers: Vendor[];
   salesPlatforms: Vendor[];
   itemComponents: ItemComponent[];
 };
 
 export async function fetchItemCreateReferenceData(itemId?: number): Promise<ItemCreateReferenceData> {
-  const [categories, locations, allProperties, manufacturers, suppliers, vendors, salesPlatforms, itemComponents] = await Promise.all([
+  const [categories, locations, allProperties, manufacturers, suppliers, vendors, developers, publishers, salesPlatforms, itemComponents] = await Promise.all([
     api.getCategories().catch(() => []),
     api.getLocations().catch(() => []),
     api.getProperties().catch(() => []),
     api.getManufacturers().catch(() => []),
     api.getSuppliers().catch(() => []),
     api.getVendors().catch(() => []),
+    api.getDevelopers().catch(() => []),
+    api.getPublishers().catch(() => []),
     api.getSalesPlatforms().catch(() => []),
     api.getItemsLookup(itemId).catch(() => []),
   ]);
@@ -30,6 +34,8 @@ export async function fetchItemCreateReferenceData(itemId?: number): Promise<Ite
     manufacturers,
     suppliers,
     vendors,
+    developers,
+    publishers,
     salesPlatforms,
     itemComponents,
   };

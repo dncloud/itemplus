@@ -55,7 +55,7 @@ export function SortableAttachment({
   const { icon: Icon, bg, color, label } = TYPE_STYLES[type];
   const filename = attachmentFilename(att);
   const externalURL = attachmentExternalURL(att);
-  const isExternal = !!externalURL || att.storage_backend === "external_sftp";
+  const isExternal = !!externalURL || att.storage_backend === "external_sftp" || att.storage_backend === "external_source";
   const isRemoteLink = att.storage_backend === "external_url" || !!externalURL;
   const displayName = att.description || filename || externalURL.split("/").pop()?.split("?")[0] || "Datei";
   const fileUrl = externalURL || url;

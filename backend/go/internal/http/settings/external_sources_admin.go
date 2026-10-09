@@ -64,10 +64,10 @@ func createExternalSource(c *gin.Context) {
 	now := database.TimestampNow()
 	result, err := database.DB.Exec(
 		`INSERT INTO external_sources (
-			name, description, source_type, host, port, username, auth_type, password, private_key,
+			name, description, source_type, host, port, username, share_name, auth_type, password, private_key,
 			known_host_key, base_path, is_active, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		values.Name, values.Description, values.SourceType, values.Host, values.Port, values.Username, values.AuthType,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		values.Name, values.Description, values.SourceType, values.Host, values.Port, values.Username, values.ShareName, values.AuthType,
 		values.Password, values.PrivateKey, values.KnownHostKey, values.BasePath, values.IsActive, now, now,
 	)
 	if err != nil {
@@ -114,10 +114,10 @@ func updateExternalSource(c *gin.Context) {
 	now := database.TimestampNow()
 	if _, err := database.DB.Exec(
 		`UPDATE external_sources
-		 SET name = ?, description = ?, source_type = ?, host = ?, port = ?, username = ?, auth_type = ?,
+		 SET name = ?, description = ?, source_type = ?, host = ?, port = ?, username = ?, share_name = ?, auth_type = ?,
 		     password = ?, private_key = ?, known_host_key = ?, base_path = ?, is_active = ?, updated_at = ?
 		 WHERE id = ?`,
-		values.Name, values.Description, values.SourceType, values.Host, values.Port, values.Username, values.AuthType,
+		values.Name, values.Description, values.SourceType, values.Host, values.Port, values.Username, values.ShareName, values.AuthType,
 		values.Password, values.PrivateKey, values.KnownHostKey, values.BasePath, values.IsActive, now, id,
 	); err != nil {
 		log.Printf("DB update error in updateExternalSource: %v", err)
@@ -211,16 +211,32 @@ func testExternalSourceConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
 		return
 	}
-	err = storage.TestSFTPConnection(context.Background(), storage.SFTPSourceConfig{
-		Host:         values.Host,
-		Port:         values.Port,
-		Username:     values.Username,
-		AuthType:     values.AuthType,
-		Password:     middleware.StringValue(values.Password),
-		PrivateKey:   middleware.StringValue(values.PrivateKey),
-		KnownHostKey: values.KnownHostKey,
-		BasePath:     values.BasePath,
-	})
+	switch values.SourceType {
+	case "filesystem":
+		err = storage.TestFilesystemSource(context.Background(), storage.FilesystemSourceConfig{
+			BasePath: values.BasePath,
+		})
+	case "smb":
+		err = storage.TestSMBConnection(context.Background(), storage.SMBSourceConfig{
+			Host:      values.Host,
+			Port:      values.Port,
+			Username:  values.Username,
+			Password:  middleware.StringValue(values.Password),
+			ShareName: values.ShareName,
+			BasePath:  values.BasePath,
+		})
+	default:
+		err = storage.TestSFTPConnection(context.Background(), storage.SFTPSourceConfig{
+			Host:         values.Host,
+			Port:         values.Port,
+			Username:     values.Username,
+			AuthType:     values.AuthType,
+			Password:     middleware.StringValue(values.Password),
+			PrivateKey:   middleware.StringValue(values.PrivateKey),
+			KnownHostKey: values.KnownHostKey,
+			BasePath:     values.BasePath,
+		})
+	}
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"detail": err.Error()})
 		return

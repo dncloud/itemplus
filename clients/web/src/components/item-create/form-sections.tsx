@@ -327,12 +327,17 @@ export function PropertiesSection({
   applySuggestedProperty: (propertyId: string) => void;
   setPropValues: (updater: (prev: Record<string, unknown>) => Record<string, unknown>) => void;
 }) {
-  if (catProperties.length === 0) return null;
+  const visibleProperties = catProperties.filter((property) => {
+    const catalog = property.options?.game_catalog;
+    const key = catalog && typeof catalog === "object" && !Array.isArray(catalog) ? (catalog as Record<string, unknown>).property_key : undefined;
+    return key !== "developer" && key !== "publisher";
+  });
+  if (visibleProperties.length === 0) return null;
 
   return (
     <ModalSection title={t("items.properties")} description={t("items.modalPropertiesDescription")}>
       <div className="w-full space-y-4">
-        {catProperties.map((prop) => {
+        {visibleProperties.map((prop) => {
           const suggestion = aiSuggestedPropValues[String(prop.id)];
           const showSuggestion = typeof suggestion !== "undefined" && !valuesEqual(propValues[String(prop.id)], suggestion);
           return (

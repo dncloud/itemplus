@@ -30,17 +30,18 @@ func getMe(c *gin.Context) {
 
 func userResponse(user *middleware.User) gin.H {
 	resp := gin.H{
-		"id":          user.ID,
-		"sub":         user.AppleSub,
-		"email":       user.Email,
-		"name":        user.DisplayName,
-		"locale":      user.Locale,
-		"avatar_path": user.AvatarPath,
-		"is_admin":    user.IsAdmin,
-		"is_active":   user.IsActive,
-		"permissions": user.PermissionList(),
-		"last_login":  user.LastLogin,
-		"created_at":  user.CreatedAt,
+		"id":           user.ID,
+		"sub":          user.AppleSub,
+		"apple_linked": !hasPlaceholderIdentity(user.AppleSub),
+		"email":        user.Email,
+		"name":         user.DisplayName,
+		"locale":       user.Locale,
+		"avatar_path":  user.AvatarPath,
+		"is_admin":     user.IsAdmin,
+		"is_active":    user.IsActive,
+		"permissions":  user.PermissionList(),
+		"last_login":   user.LastLogin,
+		"created_at":   user.CreatedAt,
 	}
 	if user.AvatarPath != nil && strings.TrimSpace(*user.AvatarPath) != "" {
 		resp["avatar_url"] = "/uploads/" + strings.TrimPrefix(*user.AvatarPath, "/")
@@ -121,6 +122,13 @@ func updateMe(c *gin.Context) {
 		return
 	}
 
+	// The e-mail address is the account's identity (magic link and Apple
+	// sign-in both resolve accounts by it), so users cannot change their own.
+	if body.Email != nil && normalizeEmail(*body.Email) != normalizeEmail(middleware.StringValue(user.Email)) {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "The e-mail address cannot be changed", "code": "email_immutable"})
+		return
+	}
+
 	now := database.TimestampNow()
 	name := body.DisplayName
 	if name == nil {
@@ -128,9 +136,6 @@ func updateMe(c *gin.Context) {
 	}
 	if name != nil {
 		database.DB.Exec("UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?", *name, now, user.ID)
-	}
-	if body.Email != nil {
-		database.DB.Exec("UPDATE users SET email = ?, updated_at = ? WHERE id = ?", *body.Email, now, user.ID)
 	}
 	if normalizedLocale := normalizedUserLocale(body.Locale); normalizedLocale != nil {
 		database.DB.Exec("UPDATE users SET locale = ?, updated_at = ? WHERE id = ?", *normalizedLocale, now, user.ID)

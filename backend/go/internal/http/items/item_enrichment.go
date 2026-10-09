@@ -331,6 +331,8 @@ func loadEnrichedItem(realm string, itemID string, includeMaintenance bool, incl
 		m.name AS manufacturer_name,
 		s.name AS supplier_name,
 		v.name AS vendor_name,
+		d.name AS developer_name,
+		p.name AS publisher_name,
 		sp.name AS sales_platform_name
 		FROM %s i
 		LEFT JOIN %s_categories c ON i.category_id = c.id
@@ -338,8 +340,10 @@ func loadEnrichedItem(realm string, itemID string, includeMaintenance bool, incl
 		LEFT JOIN %s_manufacturers m ON i.manufacturer_id = m.id
 		LEFT JOIN %s_suppliers s ON i.supplier_id = s.id
 		LEFT JOIN %s_vendors v ON i.vendor_id = v.id
+		LEFT JOIN %s_developers d ON i.developer_id = d.id
+		LEFT JOIN %s_publishers p ON i.publisher_id = p.id
 		LEFT JOIN generic_sales_platforms sp ON i.sales_platform_id = sp.id
-		WHERE i.id = ?`, itemsTable, realm, realm, realm, realm, realm)
+		WHERE i.id = ?`, itemsTable, realm, realm, realm, realm, realm, realm, realm)
 
 	row := map[string]interface{}{}
 	sqlRow := database.DB.QueryRowx(query, itemID)
@@ -468,6 +472,22 @@ func enrichVendorInfo(realm string, item map[string]interface{}) {
 				"phone":           ven["phone"],
 				"contact_person":  ven["contact_person"],
 				"customer_number": ven["customer_number"],
+			}
+		}
+	}
+	if developerID := item["developer_id"]; developerID != nil && developerID != int64(0) && developerID != float64(0) {
+		if developer := loadVendor(realm+"_developers", developerID); developer != nil {
+			item["developer_info"] = map[string]interface{}{
+				"website": developer["website"], "email": developer["email"], "phone": developer["phone"],
+				"support_email": developer["support_email"], "support_phone": developer["support_phone"], "support_url": developer["support_url"],
+			}
+		}
+	}
+	if publisherID := item["publisher_id"]; publisherID != nil && publisherID != int64(0) && publisherID != float64(0) {
+		if publisher := loadVendor(realm+"_publishers", publisherID); publisher != nil {
+			item["publisher_info"] = map[string]interface{}{
+				"website": publisher["website"], "email": publisher["email"], "phone": publisher["phone"],
+				"support_email": publisher["support_email"], "support_phone": publisher["support_phone"], "support_url": publisher["support_url"],
 			}
 		}
 	}

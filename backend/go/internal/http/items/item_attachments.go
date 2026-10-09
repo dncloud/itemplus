@@ -1,19 +1,21 @@
 package items
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"mime"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/itemplus/backend/internal/config"
+	itemscore "github.com/itemplus/backend/internal/core/items"
 	"github.com/itemplus/backend/internal/database"
 	"github.com/itemplus/backend/internal/http/middleware"
 	settingshandlers "github.com/itemplus/backend/internal/http/settings"
@@ -186,7 +188,7 @@ func addExternalSFTPAttachment(realm string) gin.HandlerFunc {
 			return
 		}
 
-		externalPath, err := storage.ResolveSFTPPath(src.BasePath, body.ExternalPath)
+		externalPath, err := resolveExternalSourceAttachmentPath(src, body.ExternalPath)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid external_path"})
 			return
@@ -203,12 +205,13 @@ func addExternalSFTPAttachment(realm string) gin.HandlerFunc {
 
 		attType := detectLinkType(filename, "")
 		now := database.TimestampNow()
+		storageBackend := "external_source"
 		result, err := database.DB.Exec(
 			fmt.Sprintf(`INSERT INTO %s (
 				item_id, filename, file_path, storage_backend, external_source_id, external_path, attachment_type,
 				url, description, gallery, size, `+"`order`"+`, created_at, updated_at
-			) VALUES (?, ?, '', 'external_sftp', ?, ?, ?, '', ?, ?, NULL, ?, ?, ?)`, table),
-			itemID, filename, body.ExternalSourceID, externalPath, attType, body.Description, body.Gallery, body.Order, now, now,
+			) VALUES (?, ?, '', ?, ?, ?, ?, '', ?, ?, NULL, ?, ?, ?)`, table),
+			itemID, filename, storageBackend, body.ExternalSourceID, externalPath, attType, body.Description, body.Gallery, body.Order, now, now,
 		)
 		if err != nil {
 			log.Printf("DB insert error in addExternalSFTPAttachment: %v", err)
@@ -318,31 +321,17 @@ func validateExternalAttachmentURL(raw string) error {
 }
 
 func deleteAttachment(realm string) gin.HandlerFunc {
-	table := realm + "_attachments"
 	return func(c *gin.Context) {
 		attID := c.Param("attId")
-
-		var filePath string
-		var storageBackend string
-		database.DB.Get(&filePath, fmt.Sprintf("SELECT COALESCE(file_path, '') FROM %s WHERE id = ?", table), attID)
-		database.DB.Get(&storageBackend, fmt.Sprintf("SELECT COALESCE(storage_backend, 'local') FROM %s WHERE id = ?", table), attID)
-
-		result, err := database.DB.Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", table), attID)
+		found, err := itemscore.DeleteAttachment(realm, attID)
 		if err != nil {
 			log.Printf("DB delete error in deleteAttachment: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 			return
 		}
-		affected, _ := result.RowsAffected()
-		if affected == 0 {
+		if !found {
 			c.JSON(http.StatusNotFound, gin.H{"detail": "Not found"})
 			return
-		}
-
-		if storageBackend == "local" && filePath != "" {
-			if _, fullPath, err := storage.ResolveUploadPath(config.C.UploadDir, filePath); err == nil {
-				_ = os.Remove(fullPath)
-			}
 		}
 
 		user := middleware.GetUser(c)
@@ -396,7 +385,7 @@ func getAttachmentContent(realm string) gin.HandlerFunc {
 			}
 			c.Redirect(http.StatusTemporaryRedirect, strings.TrimSpace(*att.URL))
 			return
-		case "external_sftp":
+		case "external_sftp", "external_source":
 			if att.ExternalSourceID == nil || att.ExternalPath == nil || strings.TrimSpace(*att.ExternalPath) == "" {
 				c.JSON(http.StatusNotFound, gin.H{"detail": "External attachment is incomplete"})
 				return
@@ -406,23 +395,14 @@ func getAttachmentContent(realm string) gin.HandlerFunc {
 				c.JSON(http.StatusBadGateway, gin.H{"detail": "External source is unavailable"})
 				return
 			}
-			stream, err := storage.OpenSFTPFileStream(c.Request.Context(), storage.SFTPSourceConfig{
-				Host:         src.Host,
-				Port:         src.Port,
-				Username:     src.Username,
-				AuthType:     src.AuthType,
-				Password:     middleware.StringValue(src.Password),
-				PrivateKey:   middleware.StringValue(src.PrivateKey),
-				KnownHostKey: src.KnownHostKey,
-				BasePath:     src.BasePath,
-			}, *att.ExternalPath)
+			stream, modTime, err := openExternalSourceAttachmentStream(c.Request.Context(), src, *att.ExternalPath)
 			if err != nil {
 				if isRequestCanceled(c, err) {
 					c.Abort()
 					return
 				}
-				log.Printf("SFTP stream error for attachment %s: %v", attID, err)
-				c.JSON(http.StatusBadGateway, gin.H{"detail": describeSFTPAttachmentError(err)})
+				log.Printf("External source stream error for attachment %s: %v", attID, err)
+				c.JSON(http.StatusBadGateway, gin.H{"detail": describeExternalAttachmentError(src.SourceType, err)})
 				return
 			}
 			defer stream.Close()
@@ -433,7 +413,7 @@ func getAttachmentContent(realm string) gin.HandlerFunc {
 				contentType = "application/octet-stream"
 			}
 			c.Header("Content-Type", contentType)
-			http.ServeContent(c.Writer, c.Request, att.Filename, stream.ModTime, stream)
+			http.ServeContent(c.Writer, c.Request, att.Filename, modTime, stream)
 			return
 		default:
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "Unsupported attachment backend"})
@@ -529,20 +509,7 @@ func serveAttachmentFile(c *gin.Context, filename, fullPath string) {
 }
 
 func setAttachmentHeaders(c *gin.Context, filename string) {
-	ext := strings.ToLower(filepath.Ext(filename))
-	inlineTypes := map[string]bool{
-		".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".svg": true, ".bmp": true, ".heic": true,
-		".mp4": true, ".mov": true, ".avi": true, ".mkv": true, ".webm": true,
-		".mp3": true, ".wav": true, ".flac": true, ".ogg": true, ".m4a": true, ".aac": true,
-		".pdf": true,
-	}
-
-	if inlineTypes[ext] {
-		c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", filename))
-	} else {
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
-	}
-	c.Header("X-Content-Type-Options", "nosniff")
+	storage.SetFileResponseHeaders(c, filename)
 }
 
 func stringValue(v *string) string {
@@ -560,21 +527,113 @@ func isRequestCanceled(c *gin.Context, err error) bool {
 	return strings.Contains(msg, "operation was canceled") || strings.Contains(msg, "context canceled") || strings.Contains(msg, "request canceled")
 }
 
-func describeSFTPAttachmentError(err error) string {
+func resolveExternalSourceAttachmentPath(src *settingshandlers.ExternalSource, attachmentPath string) (string, error) {
+	switch src.SourceType {
+	case "filesystem":
+		relative, _, err := storage.ResolveFilesystemPath(src.BasePath, attachmentPath)
+		return relative, err
+	case "smb":
+		return storage.ResolveSMBPath(src.BasePath, attachmentPath)
+	default:
+		return storage.ResolveSFTPPath(src.BasePath, attachmentPath)
+	}
+}
+
+type externalAttachmentStream interface {
+	Read([]byte) (int, error)
+	Seek(int64, int) (int64, error)
+	Close() error
+}
+
+func openExternalSourceAttachmentStream(ctx context.Context, src *settingshandlers.ExternalSource, attachmentPath string) (externalAttachmentStream, time.Time, error) {
+	switch src.SourceType {
+	case "filesystem":
+		stream, err := storage.OpenFilesystemFileStream(ctx, storage.FilesystemSourceConfig{
+			BasePath: src.BasePath,
+		}, attachmentPath)
+		if err != nil {
+			return nil, time.Time{}, err
+		}
+		return stream, stream.ModTime, nil
+	case "smb":
+		stream, err := storage.OpenSMBFileStream(ctx, storage.SMBSourceConfig{
+			Host:      src.Host,
+			Port:      src.Port,
+			Username:  src.Username,
+			Password:  middleware.StringValue(src.Password),
+			ShareName: src.ShareName,
+			BasePath:  src.BasePath,
+		}, attachmentPath)
+		if err != nil {
+			return nil, time.Time{}, err
+		}
+		return stream, stream.ModTime, nil
+	default:
+		stream, err := storage.OpenSFTPFileStream(ctx, storage.SFTPSourceConfig{
+			Host:         src.Host,
+			Port:         src.Port,
+			Username:     src.Username,
+			AuthType:     src.AuthType,
+			Password:     middleware.StringValue(src.Password),
+			PrivateKey:   middleware.StringValue(src.PrivateKey),
+			KnownHostKey: src.KnownHostKey,
+			BasePath:     src.BasePath,
+		}, attachmentPath)
+		if err != nil {
+			return nil, time.Time{}, err
+		}
+		return stream, stream.ModTime, nil
+	}
+}
+
+func describeExternalAttachmentError(sourceType string, err error) string {
 	msg := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(msg, "no such file"), strings.Contains(msg, "file does not exist"), strings.Contains(msg, "not exist"):
-		return "SFTP file not found"
-	case strings.Contains(msg, "unable to authenticate"), strings.Contains(msg, "permission denied"), strings.Contains(msg, "missing sftp password"), strings.Contains(msg, "missing sftp private key"):
+		switch sourceType {
+		case "filesystem":
+			return "File not found"
+		case "smb":
+			return "SMB file not found"
+		default:
+			return "SFTP file not found"
+		}
+	case strings.Contains(msg, "unable to authenticate"), strings.Contains(msg, "missing sftp password"), strings.Contains(msg, "missing sftp private key"):
+		if sourceType == "smb" {
+			return "SMB authentication failed"
+		}
 		return "SFTP authentication failed"
+	case strings.Contains(msg, "permission denied"):
+		switch sourceType {
+		case "filesystem":
+			return "Filesystem permission denied"
+		case "smb":
+			return "SMB permission denied"
+		default:
+			return "SFTP permission denied"
+		}
 	case strings.Contains(msg, "known_host_key"), strings.Contains(msg, "host key"), strings.Contains(msg, "mismatch"):
 		return "SFTP host key mismatch"
 	case strings.Contains(msg, "dial sftp source"):
 		return "SFTP server not reachable"
+	case strings.Contains(msg, "dial smb source"):
+		return "SMB server not reachable"
 	case strings.Contains(msg, "handshake sftp source"):
 		return "SFTP handshake failed"
-	case strings.Contains(msg, "invalid sftp attachment path"), strings.Contains(msg, "escapes base path"), strings.Contains(msg, "empty sftp attachment path"):
-		return "Invalid SFTP path"
+	case strings.Contains(msg, "handshake smb source"), strings.Contains(msg, "mount smb share"):
+		return "SMB connection failed"
+	case strings.Contains(msg, "invalid sftp attachment path"), strings.Contains(msg, "invalid smb attachment path"),
+		strings.Contains(msg, "invalid filesystem attachment path"), strings.Contains(msg, "escapes base path"),
+		strings.Contains(msg, "empty sftp attachment path"), strings.Contains(msg, "empty smb attachment path"),
+		strings.Contains(msg, "empty filesystem attachment path"):
+		switch sourceType {
+		case "filesystem":
+			return "Invalid filesystem path"
+		case "smb":
+			return "Invalid SMB path"
+		default:
+			return "Invalid SFTP path"
+		}
 	default:
 		return "Could not read external attachment"
 	}

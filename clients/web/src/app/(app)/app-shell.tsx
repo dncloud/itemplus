@@ -6,6 +6,7 @@ import { Command, Heart, Menu, Smartphone, Search, Printer, Sparkles, X } from "
 import { BrandTitle, LogoIcon } from "@/components/branding/logo";
 import type { UpdateStatus } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import { UnhandledErrorNotice } from "@/components/ui/unhandled-error-notice";
 
 const UPDATE_BANNER_DISMISSED_KEY = "itemplus.updateBanner.dismissed";
 const UPDATE_BANNER_IGNORED_KEY = "itemplus.updateBanner.ignored";
@@ -271,6 +272,7 @@ export function AppShellContainer({ children }: { children: React.ReactNode }) {
       )}
     >
       {children}
+      <UnhandledErrorNotice />
     </div>
   );
 }

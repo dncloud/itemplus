@@ -67,8 +67,9 @@ export function VendorInlineForm({
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  if (file.size > 500 * 1024) {
-                    alert("Logo zu groß (max 500 KB)");
+                  if (file.size > 10 * 1024 * 1024) {
+                    alert(t("vendors.logoTooLarge"));
+                    e.target.value = "";
                     return;
                   }
                   const dataUrl = await new Promise<string>((resolve) => {
@@ -148,7 +149,7 @@ export function VendorInlineForm({
         </div>
       </div>
 
-      {tab === "manufacturers" ? (
+      {["manufacturers", "developers", "publishers"].includes(tab) ? (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-4">
             <VendorField label={t("vendors.supportEmail")} value={editItem.support_email || ""} onChange={(v) => setEditItem({ ...editItem, support_email: v || undefined })} />

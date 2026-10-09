@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { Category, Item, Location } from "@/lib/api";
 import { MarkdownEditor } from "@/components/ui/markdown";
 import { Field, ModalSection, SuggestionRow, TWPSelect } from "@/components/item-create/ui";
@@ -15,6 +16,8 @@ export function ItemCreateBasicsSection({
   categories,
   locations,
   clearPropValues,
+  catalogPicker,
+  catalogPlatformPicker,
 }: {
   t: (key: string) => string;
   editItem: Partial<Item>;
@@ -26,6 +29,8 @@ export function ItemCreateBasicsSection({
   categories: Category[];
   locations: Location[];
   clearPropValues: () => void;
+  catalogPicker?: ReactNode;
+  catalogPlatformPicker?: ReactNode;
 }) {
   return (
     <ModalSection
@@ -34,7 +39,7 @@ export function ItemCreateBasicsSection({
       noTopBorder
     >
       <div className="w-full space-y-6">
-        <div>
+        <div id="item-catalog-name">
           <Field
             label={t("items.name")}
             value={editItem.name || ""}
@@ -49,6 +54,7 @@ export function ItemCreateBasicsSection({
               label={t("common.apply")}
             />
           ) : null}
+          {catalogPicker}
         </div>
 
         <div className="space-y-1">
@@ -69,7 +75,7 @@ export function ItemCreateBasicsSection({
           ) : null}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className={`grid grid-cols-1 gap-4 ${catalogPlatformPicker ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
           <div>
             <TWPSelect
               label={t("items.category")}
@@ -90,6 +96,7 @@ export function ItemCreateBasicsSection({
               />
             ) : null}
           </div>
+          {catalogPlatformPicker}
           <TWPSelect
             label={t("items.location")}
             value={editItem.location_id}

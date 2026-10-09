@@ -17,11 +17,13 @@ const MARKDOWN_VIEW_CLASS = `prose prose-sm dark:prose-invert max-w-none
 
 // ── Markdown Renderer ──
 
-export function MarkdownView({ content, className = "" }: { content: string; className?: string }) {
+export function MarkdownView({ content, className = "", openLinksInNewTab = false }: { content: string; className?: string; openLinksInNewTab?: boolean }) {
   if (!content) return null;
   return (
     <div className={`${MARKDOWN_VIEW_CLASS} ${className}`.trim()}>
-      <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{content}</ReactMarkdown>
+      <ReactMarkdown rehypePlugins={[rehypeSanitize]} components={openLinksInNewTab ? {
+        a: ({ node, ...props }) => { void node; return <a {...props} target="_blank" rel="noopener noreferrer" />; },
+      } : undefined}>{content}</ReactMarkdown>
     </div>
   );
 }

@@ -17,6 +17,7 @@ export function SelectDropdown({
   allowCustom = false,
   customLabel,
   customPlaceholder,
+  optionLabels = {},
   onChange,
 }: {
   label: string;
@@ -25,6 +26,7 @@ export function SelectDropdown({
   allowCustom?: boolean;
   customLabel: string;
   customPlaceholder: string;
+  optionLabels?: Record<string, string>;
   onChange: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -46,7 +48,7 @@ export function SelectDropdown({
       <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)} className={selectButtonCls}>
         <span className="col-start-1 row-start-1 flex min-w-0 items-center gap-2 pr-6">
           <span className={`size-2 rounded-full ${value ? "bg-indigo-500" : "bg-gray-300 dark:bg-gray-600"}`} />
-          <span className="truncate">{value || label}</span>
+          <span className="truncate">{value ? (optionLabels[value] || value) : label}</span>
         </span>
         <DropdownChevron />
       </button>
@@ -69,7 +71,7 @@ export function SelectDropdown({
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <span className={`size-2 rounded-full ${selected ? "bg-indigo-500" : "bg-gray-300 group-hover:bg-white/70 dark:bg-gray-600 dark:group-hover:bg-white/70"}`} />
-                  <span className={`block truncate ${selected ? "font-semibold" : "font-normal"}`}>{option}</span>
+                  <span className={`block truncate ${selected ? "font-semibold" : "font-normal"}`}>{optionLabels[option] || option}</span>
                 </span>
               </button>
             );
@@ -138,6 +140,7 @@ export function MultiSelectDropdown({
   allowCustom = false,
   customLabel,
   customPlaceholder,
+  optionLabels = {},
   onChange,
 }: {
   label: string;
@@ -146,6 +149,7 @@ export function MultiSelectDropdown({
   allowCustom?: boolean;
   customLabel: string;
   customPlaceholder: string;
+  optionLabels?: Record<string, string>;
   onChange: (value: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -183,7 +187,7 @@ export function MultiSelectDropdown({
               className={flatSelectedBadgeCls + " transition hover:opacity-80"}
             >
               <span aria-hidden="true" className="inline-flex w-1.5" />
-              {value}
+              {optionLabels[value] || value}
               <span aria-hidden="true" className="inline-flex w-1.5" />
             </button>
           ))}
@@ -209,7 +213,7 @@ export function MultiSelectDropdown({
                   <div className="min-w-0 flex-1 text-sm/6">
                     <span className="flex min-w-0 items-center gap-2">
                       <span className={`size-2 rounded-full ${checked ? "bg-indigo-500" : "bg-gray-300 dark:bg-gray-600"}`} />
-                      <span className="font-medium text-gray-900 dark:text-white">{option}</span>
+                      <span className="font-medium text-gray-900 dark:text-white">{optionLabels[option] || option}</span>
                     </span>
                   </div>
                   <input

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -38,6 +39,7 @@ func externalSourceResponse(src ExternalSource) gin.H {
 		"host":            src.Host,
 		"port":            src.Port,
 		"username":        src.Username,
+		"share_name":      src.ShareName,
 		"auth_type":       src.AuthType,
 		"known_host_key":  src.KnownHostKey,
 		"base_path":       src.BasePath,
@@ -56,6 +58,7 @@ type normalizedExternalSource struct {
 	Host         string
 	Port         int
 	Username     string
+	ShareName    string
 	AuthType     string
 	Password     *string
 	PrivateKey   *string
@@ -85,6 +88,7 @@ func normalizeExternalSourceInput(body externalSourcePayload, current *ExternalS
 		Host:         getString(body.Host, currentString(current, func(src *ExternalSource) string { return src.Host })),
 		Port:         currentInt(body.Port, current, func(src *ExternalSource) int { return src.Port }, 22),
 		Username:     getString(body.Username, currentString(current, func(src *ExternalSource) string { return src.Username })),
+		ShareName:    getString(body.ShareName, currentString(current, func(src *ExternalSource) string { return src.ShareName })),
 		AuthType:     getString(body.AuthType, currentString(current, func(src *ExternalSource) string { return src.AuthType })),
 		Password:     getStringPtr(body.Password, currentStringPtr(current, func(src *ExternalSource) *string { return src.Password })),
 		PrivateKey:   getStringPtr(body.PrivateKey, currentStringPtr(current, func(src *ExternalSource) *string { return src.PrivateKey })),
@@ -96,49 +100,93 @@ func normalizeExternalSourceInput(body externalSourcePayload, current *ExternalS
 	if values.Name == "" {
 		return nil, errors.New("Source name is required")
 	}
+	values.SourceType = strings.ToLower(strings.TrimSpace(values.SourceType))
 	if values.SourceType == "" {
 		values.SourceType = "sftp"
 	}
-	if values.SourceType != "sftp" {
-		return nil, errors.New("Only sftp external sources are supported")
-	}
-	if values.Host == "" {
-		return nil, errors.New("SFTP host is required")
-	}
-	if values.Port < 1 || values.Port > 65535 {
-		return nil, errors.New("SFTP port must be between 1 and 65535")
-	}
-	if values.Username == "" {
-		return nil, errors.New("SFTP username is required")
-	}
-	if values.AuthType != "password" && values.AuthType != "ssh_key" {
-		return nil, errors.New("SFTP auth_type must be password or ssh_key")
-	}
 
-	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(values.KnownHostKey))
-	if err != nil || hostKey == nil {
-		return nil, errors.New("known_host_key must be a valid SSH authorized key line")
-	}
+	switch values.SourceType {
+	case "sftp":
+		if values.Host == "" {
+			return nil, errors.New("SFTP host is required")
+		}
+		if values.Port < 1 || values.Port > 65535 {
+			return nil, errors.New("SFTP port must be between 1 and 65535")
+		}
+		if values.Username == "" {
+			return nil, errors.New("SFTP username is required")
+		}
+		if values.AuthType != "password" && values.AuthType != "ssh_key" {
+			return nil, errors.New("SFTP auth_type must be password or ssh_key")
+		}
 
-	values.BasePath = normalizeRemoteBasePath(values.BasePath)
-	if values.BasePath == "" {
-		return nil, errors.New("base_path is required")
-	}
+		hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(values.KnownHostKey))
+		if err != nil || hostKey == nil {
+			return nil, errors.New("known_host_key must be a valid SSH authorized key line")
+		}
 
-	switch values.AuthType {
-	case "password":
+		values.BasePath = normalizeRemoteBasePath(values.BasePath)
+		if values.BasePath == "" {
+			return nil, errors.New("base_path is required")
+		}
+
+		switch values.AuthType {
+		case "password":
+			if values.Password == nil || strings.TrimSpace(*values.Password) == "" {
+				return nil, errors.New("password is required for password auth")
+			}
+			values.PrivateKey = nil
+		case "ssh_key":
+			if values.PrivateKey == nil || strings.TrimSpace(*values.PrivateKey) == "" {
+				return nil, errors.New("private_key is required for ssh_key auth")
+			}
+			if _, err := ssh.ParsePrivateKey([]byte(*values.PrivateKey)); err != nil {
+				return nil, errors.New("private_key must be a valid unencrypted SSH private key")
+			}
+			values.Password = nil
+		}
+		values.ShareName = ""
+	case "filesystem":
+		values.BasePath = normalizeFilesystemBasePath(values.BasePath)
+		if values.BasePath == "" {
+			return nil, errors.New("Server path is required")
+		}
+		values.Host = ""
+		values.Port = 0
+		values.Username = ""
+		values.ShareName = ""
+		values.AuthType = "none"
+		values.Password = nil
+		values.PrivateKey = nil
+		values.KnownHostKey = ""
+	case "smb":
+		if values.Host == "" {
+			return nil, errors.New("SMB host is required")
+		}
+		if values.Port == 0 {
+			values.Port = 445
+		}
+		if values.Port < 1 || values.Port > 65535 {
+			return nil, errors.New("SMB port must be between 1 and 65535")
+		}
+		if values.Username == "" {
+			return nil, errors.New("SMB username is required")
+		}
+		if strings.TrimSpace(values.ShareName) == "" {
+			return nil, errors.New("SMB share name is required")
+		}
+		values.AuthType = "password"
 		if values.Password == nil || strings.TrimSpace(*values.Password) == "" {
-			return nil, errors.New("password is required for password auth")
+			return nil, errors.New("password is required for SMB")
 		}
 		values.PrivateKey = nil
-	case "ssh_key":
-		if values.PrivateKey == nil || strings.TrimSpace(*values.PrivateKey) == "" {
-			return nil, errors.New("private_key is required for ssh_key auth")
+		values.KnownHostKey = ""
+		values.BasePath = normalizeRemoteBasePath(values.BasePath)
+		if values.BasePath == "" {
+			values.BasePath = "/"
 		}
-		if _, err := ssh.ParsePrivateKey([]byte(*values.PrivateKey)); err != nil {
-			return nil, errors.New("private_key must be a valid unencrypted SSH private key")
-		}
-		values.Password = nil
+	default:
+		return nil, errors.New("Unsupported source type")
 	}
 
 	return values, nil
@@ -153,6 +201,18 @@ func normalizeRemoteBasePath(raw string) string {
 		raw = "/" + raw
 	}
 	return path.Clean(raw)
+}
+
+func normalizeFilesystemBasePath(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	cleaned := filepath.Clean(raw)
+	if !filepath.IsAbs(cleaned) {
+		return ""
+	}
+	return cleaned
 }
 
 func currentString(current *ExternalSource, getter func(*ExternalSource) string) string {

@@ -34,7 +34,7 @@ export function VendorAIProposalPanel({
         <>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm font-medium text-emerald-900 dark:text-emerald-200">
-              {tab === "manufacturers" ? t("vendors.manufacturers") : tab === "suppliers" ? t("vendors.suppliers") : tab === "vendors" ? t("vendors.vendors") : t("vendors.salesPlatforms")}
+              {tab === "manufacturers" ? t("vendors.manufacturers") : tab === "suppliers" ? t("vendors.suppliers") : tab === "vendors" ? t("vendors.vendors") : tab === "developers" ? t("vendors.developers") : tab === "publishers" ? t("vendors.publishers") : t("vendors.salesPlatforms")}
             </p>
             <button type="button" onClick={onApplyAll} className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 shadow-xs ring-1 ring-inset ring-emerald-200 hover:bg-emerald-100 dark:bg-white/10 dark:text-emerald-200 dark:ring-white/10 dark:hover:bg-white/20">
               {t("vendors.aiApplyAll")}

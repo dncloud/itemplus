@@ -5,6 +5,7 @@ import { useApp } from "@/lib/app-context";
 import { api, type Attachment, type ExternalSource } from "@/lib/api";
 import {
   attachmentUrl,
+  isImageAttachment,
   isGalleryImage,
 } from "@/components/attachments/attachment-manager-utils";
 import {
@@ -28,7 +29,7 @@ import {
 import { AttachmentUploadActions, AttachmentUploadProgress } from "@/components/attachments/attachment-manager-view";
 import {
   AddLinkModal,
-  AddSFTPAttachmentModal,
+  AddExternalSourceAttachmentModal,
   EditAttachmentModal,
   FileUploadModal,
 } from "@/components/attachments/attachment-manager-modals";
@@ -42,6 +43,8 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
+  ChevronLeft,
+  ChevronRight,
   Pencil,
   Star,
   X,
@@ -49,7 +52,7 @@ import {
 import { useDeleteFlow, ConfirmDelete } from "@/components/ui/confirm-delete";
 import { SortableAttachment } from "@/components/attachments/attachment-manager-item";
 
-export default function AttachmentManager({ itemId, attachments, onChange, readOnly = false, showUploadActions, showGallery = true, showFiles = true }: {
+export default function AttachmentManager({ itemId, attachments, onChange, readOnly = false, showUploadActions, showGallery = true, showFiles = true, galleryPresentation = "standard" }: {
   itemId: number;
   attachments: Attachment[];
   onChange: () => void;
@@ -57,6 +60,7 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
   showUploadActions?: boolean;
   showGallery?: boolean;
   showFiles?: boolean;
+  galleryPresentation?: "standard" | "catalog-cover";
 }) {
   const { realm, serverURL, t } = useApp();
   const allowUploadActions = showUploadActions ?? !readOnly;
@@ -64,9 +68,10 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
   const [uploading, setUploading] = useState(false);
   const [editAtt, setEditAtt] = useState<Attachment | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
-  const [showSFTPModal, setShowSFTPModal] = useState(false);
+  const [showExternalSourceModal, setShowExternalSourceModal] = useState(false);
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [externalSources, setExternalSources] = useState<ExternalSource[]>([]);
+  const [previewImage, setPreviewImage] = useState<Attachment | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const deleteFlow = useDeleteFlow({
@@ -77,14 +82,42 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
   });
 
   const sorted = [...attachments].sort((a, b) => a.order - b.order || a.id - b.id);
-  const images = sorted.filter(isGalleryImage);
-  const others = sorted.filter((a) => !isGalleryImage(a));
+  const images = sorted.filter(galleryPresentation === "catalog-cover" ? isImageAttachment : isGalleryImage);
+  if (galleryPresentation === "catalog-cover") {
+    const isScreenshot = (attachment: Attachment) => /screenshot|bildschirmfoto|bildschirmaufnahme|in[ -]?game|gameplay/i.test(`${attachment.description || ""} ${attachment.filename}`);
+    images.sort((left, right) => Number(isScreenshot(left)) - Number(isScreenshot(right)));
+  }
+  const others = sorted.filter((attachment) => !images.includes(attachment));
+  const listedAttachments = others;
   const hero = images[0];
+  const previewIndex = previewImage ? images.findIndex((attachment) => attachment.id === previewImage.id) : -1;
+  const showPreviousImage = () => {
+    if (previewIndex < 0) return;
+    setPreviewImage(images[(previewIndex - 1 + images.length) % images.length]);
+  };
+  const showNextImage = () => {
+    if (previewIndex < 0) return;
+    setPreviewImage(images[(previewIndex + 1) % images.length]);
+  };
   const pendingDeleteAttachmentId = deleteFlow.pending?.type === "attachment" ? deleteFlow.pending.id : null;
 
   useEffect(() => {
     loadAttachmentExternalSources().then(setExternalSources);
   }, []);
+
+  useEffect(() => {
+    if (!previewImage) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPreviewImage(null);
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      if (previewIndex < 0) return;
+      const step = event.key === "ArrowLeft" ? -1 : 1;
+      setPreviewImage(images[(previewIndex + step + images.length) % images.length]);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [previewImage, previewIndex, images]);
 
   const [uploadProgress, setUploadProgress] = useState<number | null>(null); // 0-100
   const [uploadInfo, setUploadInfo] = useState<string | null>(null);
@@ -151,10 +184,44 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
     <>
       {/* Hero + Gallery */}
       {showGallery && images.length > 0 && (
+        galleryPresentation === "catalog-cover" ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="group relative aspect-[3/4] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
+              <button type="button" onClick={() => setPreviewImage(hero)} className="block h-full w-full" aria-label={hero.description || hero.filename}>
+                <img src={attachmentUrl(hero, serverURL)} alt={hero.description || hero.filename} className="h-full w-full object-contain" />
+              </button>
+              {hero.description ? <div className="pointer-events-none absolute left-3 top-3 max-w-[calc(100%-1.5rem)] rounded-md bg-black/45 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">{hero.description}</div> : null}
+            </div>
+            {images.length > 1 ? (
+              <div className="grid grid-cols-2 grid-rows-2 gap-3">
+                {images.slice(1, 5).map((att) => (
+                  <div key={att.id} className="group relative aspect-[3/4] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
+                    <button type="button" onClick={() => setPreviewImage(att)} className="block h-full w-full" aria-label={att.description || att.filename}>
+                      <img src={attachmentUrl(att, serverURL)} alt={att.description || att.filename} className="h-full w-full object-contain" />
+                    </button>
+                    {att.description ? <div className="pointer-events-none absolute left-2 top-2 max-w-[calc(100%-1rem)] truncate rounded-md bg-black/45 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">{att.description}</div> : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {images.length > 5 ? (
+              <div className="col-span-full grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                {images.slice(5).map((att) => (
+                  <div key={att.id} className="group relative aspect-[4/3] overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
+                    <button type="button" onClick={() => setPreviewImage(att)} className="block h-full w-full" aria-label={att.description || att.filename}>
+                      <img src={attachmentUrl(att, serverURL)} alt={att.description || att.filename} loading="lazy" className="h-full w-full object-contain" />
+                    </button>
+                    {att.description ? <div className="pointer-events-none absolute left-2 top-2 max-w-[calc(100%-1rem)] truncate rounded-md bg-black/45 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">{att.description}</div> : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : (
         <div className="space-y-3">
-          <div className="group relative w-full aspect-[16/9] rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">
+          <div className="group relative w-full aspect-[16/9] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
             <a href={attachmentUrl(hero, serverURL)} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
-              <img src={attachmentUrl(hero, serverURL)} alt={hero.description || hero.filename} className="w-full h-full object-cover" />
+              <img src={attachmentUrl(hero, serverURL)} alt={hero.description || hero.filename} className="h-full w-full object-cover" />
             </a>
             {hero.description && (
               <div className="pointer-events-none absolute left-3 top-3 max-w-[calc(100%-5rem)] rounded-md bg-black/45 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">
@@ -219,6 +286,7 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
             </div>
           )}
         </div>
+        )
       )}
 
       {/* Upload area */}
@@ -254,7 +322,7 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
                 onOpenFileUpload={() => setShowFileUpload(true)}
                 onOpenGalleryUpload={() => galleryInput.current?.click()}
                 onOpenLinkModal={() => setShowLinkModal(true)}
-                onOpenSftpModal={() => setShowSFTPModal(true)}
+                onOpenSftpModal={() => setShowExternalSourceModal(true)}
               />
             </>
           )}
@@ -265,13 +333,13 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
       )}
 
       {/* File / link list with DnD */}
-      {showFiles && others.length > 0 && (
+      {showFiles && listedAttachments.length > 0 && (
         <div className="space-y-2">
           <h3 className="font-semibold text-white">{t("attachments.title")}</h3>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-            <SortableContext items={others.map((a) => a.id)} strategy={verticalListSortingStrategy}>
+            <SortableContext items={listedAttachments.map((a) => a.id)} strategy={verticalListSortingStrategy}>
               <div className="space-y-1.5">
-                {others.map((att) => (
+                {listedAttachments.map((att) => (
                   <SortableAttachment
                     key={att.id}
                     attachment={att}
@@ -286,6 +354,33 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
               </div>
             </SortableContext>
           </DndContext>
+        </div>
+      )}
+
+      {previewImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" onClick={() => setPreviewImage(null)}>
+          <div className="flex h-[min(85vh,900px)] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#182131]" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between gap-4 border-b border-gray-200 px-4 py-3 dark:border-white/10">
+              <p className="min-w-0 truncate text-sm font-medium text-gray-900 dark:text-white">{previewImage.description || previewImage.filename}</p>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="text-xs text-gray-500 dark:text-gray-400">{previewIndex + 1} / {images.length}</span>
+                <button type="button" onClick={() => setPreviewImage(null)} className="inline-flex size-9 items-center justify-center rounded-md border border-gray-300 text-gray-600 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5" aria-label="Schließen">
+                  <X className="size-4" />
+                </button>
+              </div>
+            </div>
+            <div className="relative flex min-h-0 flex-1 items-center justify-center bg-gray-50 p-5 dark:bg-[#101827]">
+              <img src={attachmentUrl(previewImage, serverURL)} alt={previewImage.description || previewImage.filename} className="max-h-full max-w-full object-contain" />
+              {images.length > 1 ? <>
+                <button type="button" onClick={showPreviousImage} className="absolute left-4 inline-flex size-10 items-center justify-center rounded-md border border-gray-300 bg-white/90 text-gray-700 shadow-sm transition hover:bg-white dark:border-white/10 dark:bg-[#242d3c]/90 dark:text-gray-200 dark:hover:bg-[#2b3546]" aria-label="Vorheriges Bild">
+                  <ChevronLeft className="size-5" />
+                </button>
+                <button type="button" onClick={showNextImage} className="absolute right-4 inline-flex size-10 items-center justify-center rounded-md border border-gray-300 bg-white/90 text-gray-700 shadow-sm transition hover:bg-white dark:border-white/10 dark:bg-[#242d3c]/90 dark:text-gray-200 dark:hover:bg-[#2b3546]" aria-label="Nächstes Bild">
+                  <ChevronRight className="size-5" />
+                </button>
+              </> : null}
+            </div>
+          </div>
         </div>
       )}
 
@@ -322,14 +417,14 @@ export default function AttachmentManager({ itemId, attachments, onChange, readO
         />
       )}
 
-      {showSFTPModal && (
-        <AddSFTPAttachmentModal
+      {showExternalSourceModal && (
+        <AddExternalSourceAttachmentModal
           t={t}
           sources={activeAttachmentExternalSources(externalSources)}
-          onClose={() => setShowSFTPModal(false)}
+          onClose={() => setShowExternalSourceModal(false)}
           onAdd={async (data) => {
             await addExternalAttachmentAndRefresh(itemId, attachments.length, data, () => {
-              setShowSFTPModal(false);
+              setShowExternalSourceModal(false);
               onChange();
             });
           }}

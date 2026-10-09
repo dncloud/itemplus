@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	itemscore "github.com/itemplus/backend/internal/core/items"
 	"github.com/itemplus/backend/internal/database"
 	"github.com/itemplus/backend/internal/http/middleware"
 )
@@ -14,6 +16,7 @@ import (
 func RegisterPropertyRoutes(g *gin.RouterGroup, realm string) {
 	table := realm + "_properties"
 
+	g.Use(middleware.NumericParams("id"))
 	g.GET("", middleware.Auth(), middleware.RequirePermission("items.read"), listProperties(table))
 	g.POST("", middleware.Auth(), middleware.RequirePermission("categories.write"), createProperty(table))
 	g.PUT("/:id", middleware.Auth(), middleware.RequirePermission("categories.write"), updateProperty(table))
@@ -214,16 +217,16 @@ func normalizePropertyOptions(value interface{}) interface{} {
 }
 
 func deleteProperty(table string) gin.HandlerFunc {
+	realm := strings.TrimSuffix(table, "_properties")
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		result, err := database.DB.Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", table), id)
+		found, err := itemscore.DeleteProperty(realm, id)
 		if err != nil {
 			log.Printf("DB delete error in deleteProperty: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 			return
 		}
-		affected, _ := result.RowsAffected()
-		if affected == 0 {
+		if !found {
 			c.JSON(http.StatusNotFound, gin.H{"detail": "Not found"})
 			return
 		}

@@ -48,6 +48,8 @@ export async function parseApiError(res: Response) {
   const error = new Error(err.detail || `HTTP ${res.status}`) as Error & {
     code?: string;
     active_checkouts?: number;
+    in_use_items?: number;
+    in_use_children?: number;
     raw_debug?: string;
     usage?: {
       input_tokens?: number;
@@ -59,6 +61,8 @@ export async function parseApiError(res: Response) {
   };
   if (typeof err.code === "string") error.code = err.code;
   if (typeof err.active_checkouts === "number") error.active_checkouts = err.active_checkouts;
+  if (typeof err.in_use_items === "number") error.in_use_items = err.in_use_items;
+  if (typeof err.in_use_children === "number") error.in_use_children = err.in_use_children;
   if (typeof err.raw_debug === "string") error.raw_debug = err.raw_debug;
   if (err.usage && typeof err.usage === "object") error.usage = err.usage;
   error.status = res.status;

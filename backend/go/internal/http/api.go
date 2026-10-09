@@ -9,6 +9,11 @@ import (
 	settingshandlers "github.com/itemplus/backend/internal/http/settings"
 )
 
+// ApplyStoredPrinterConfig loads the printer address saved in the web app.
+func ApplyStoredPrinterConfig() {
+	settingshandlers.ApplyStoredPrinterConfig()
+}
+
 var (
 	Root        = operationshandlers.Root
 	Health      = operationshandlers.Health

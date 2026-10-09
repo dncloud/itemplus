@@ -14,6 +14,7 @@ type ExternalSource struct {
 	Host         string  `db:"host"`
 	Port         int     `db:"port"`
 	Username     string  `db:"username"`
+	ShareName    string  `db:"share_name"`
 	AuthType     string  `db:"auth_type"`
 	Password     *string `db:"password"`
 	PrivateKey   *string `db:"private_key"`
@@ -31,6 +32,7 @@ type externalSourcePayload struct {
 	Host         *string `json:"host"`
 	Port         *int    `json:"port"`
 	Username     *string `json:"username"`
+	ShareName    *string `json:"share_name"`
 	AuthType     *string `json:"auth_type"`
 	Password     *string `json:"password"`
 	PrivateKey   *string `json:"private_key"`
@@ -66,10 +68,6 @@ func respondExternalSources(c *gin.Context, sources []ExternalSource) {
 
 func requireExternalSourceFields(c *gin.Context, body externalSourcePayload, requireName bool) bool {
 	if requireName && body.Name == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "Missing required fields"})
-		return false
-	}
-	if body.Host == nil || body.Username == nil || body.AuthType == nil || body.KnownHostKey == nil || body.BasePath == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "Missing required fields"})
 		return false
 	}

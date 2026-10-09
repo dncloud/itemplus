@@ -71,6 +71,8 @@ func listItems(realm string) gin.HandlerFunc {
 			m.name AS manufacturer_name,
 			s.name AS supplier_name,
 			v.name AS vendor_name,
+			d.name AS developer_name,
+			p.name AS publisher_name,
 			sp.name AS sales_platform_name
 			FROM %s i
 			LEFT JOIN %s_categories c ON i.category_id = c.id
@@ -78,8 +80,10 @@ func listItems(realm string) gin.HandlerFunc {
 			LEFT JOIN %s_manufacturers m ON i.manufacturer_id = m.id
 			LEFT JOIN %s_suppliers s ON i.supplier_id = s.id
 			LEFT JOIN %s_vendors v ON i.vendor_id = v.id
+			LEFT JOIN %s_developers d ON i.developer_id = d.id
+			LEFT JOIN %s_publishers p ON i.publisher_id = p.id
 			LEFT JOIN generic_sales_platforms sp ON i.sales_platform_id = sp.id`,
-			itemsTable, realm, realm, realm, realm, realm)
+			itemsTable, realm, realm, realm, realm, realm, realm, realm)
 
 		var conditions []string
 		var args []interface{}

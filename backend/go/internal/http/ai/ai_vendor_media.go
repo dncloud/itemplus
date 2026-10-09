@@ -32,7 +32,7 @@ func suggestVendor(c *gin.Context) {
 
 	entityType := strings.ToLower(strings.TrimSpace(body.EntityType))
 	switch entityType {
-	case "manufacturer", "supplier", "vendor", "sales_platform":
+	case "manufacturer", "supplier", "vendor", "developer", "publisher", "sales_platform":
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid entity type"})
 		return
@@ -93,6 +93,10 @@ func uploadAITempImage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "No file uploaded"})
 		return
 	}
+	if file.Size > aicore.MaxAITempImageBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"detail": "Image is too large"})
+		return
+	}
 	src, err := file.Open()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "Could not open file"})
@@ -100,18 +104,20 @@ func uploadAITempImage(c *gin.Context) {
 	}
 	defer src.Close()
 
-	data, err := io.ReadAll(src)
+	// The declared size is not trusted either: read one byte past the limit.
+	data, err := io.ReadAll(io.LimitReader(src, aicore.MaxAITempImageBytes+1))
 	if err != nil || len(data) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "Could not read file"})
 		return
 	}
-
-	mimeType := strings.TrimSpace(file.Header.Get("Content-Type"))
-	if mimeType == "" {
-		mimeType = http.DetectContentType(data)
+	if len(data) > aicore.MaxAITempImageBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"detail": "Image is too large"})
+		return
 	}
-	if !strings.HasPrefix(mimeType, "image/") {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "Only images are allowed"})
+
+	mimeType, ok := aicore.AITempImageType(data)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Only JPEG, PNG, GIF and WebP images are allowed"})
 		return
 	}
 
@@ -132,11 +138,15 @@ func getAITempImage(c *gin.Context) {
 		return
 	}
 
-	mimeType := strings.TrimSpace(image.MimeType)
-	if mimeType == "" {
-		mimeType = http.DetectContentType(image.Data)
+	// Served with the type found in the content, never one a client chose.
+	mimeType, ok := aicore.AITempImageType(image.Data)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Temp image not found"})
+		return
 	}
 
 	c.Header("Cache-Control", "no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Security-Policy", "default-src 'none'; sandbox")
 	c.Data(http.StatusOK, mimeType, image.Data)
 }

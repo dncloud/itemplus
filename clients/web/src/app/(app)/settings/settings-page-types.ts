@@ -150,6 +150,7 @@ export type SettingsPageSectionsProps = {
   setDisplayNameDraft: Dispatch<SetStateAction<string>>;
   avatarInputRef: RefObject<HTMLInputElement | null>;
   saveAccount: () => Promise<void>;
+  refreshAccount: () => Promise<void>;
   uploadAccountAvatar: (file?: File | null) => Promise<void>;
   removeAccountAvatar: () => Promise<void>;
   deleteAccount: () => Promise<void>;

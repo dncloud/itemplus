@@ -2,12 +2,17 @@ package operations
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
+	"sync"
+	"time"
 
+	itemscore "github.com/itemplus/backend/internal/core/items"
 	"github.com/itemplus/backend/internal/database"
 	authhandlers "github.com/itemplus/backend/internal/http/auth"
+	"github.com/itemplus/backend/internal/http/middleware"
 	ws "github.com/itemplus/backend/internal/websocket"
 )
 
@@ -25,6 +30,53 @@ func buildDeletePayload(entityType, entityName, realm string, entityID int) map[
 	}
 }
 
+// pendingDeletes remembers which deletions a browser has asked the user's
+// iPhone to confirm. A confirmation is only honoured when it answers one of
+// these requests, so no client can delete by sending "delete.confirm" on its
+// own.
+type pendingDeleteKey struct {
+	userID     int
+	entityType string
+	entityID   int
+}
+
+type pendingDelete struct {
+	realm       string
+	fromSession int
+	expires     time.Time
+}
+
+const pendingDeleteLifetime = 2 * time.Minute
+
+var (
+	pendingDeletesMu sync.Mutex
+	pendingDeletes   = map[pendingDeleteKey]pendingDelete{}
+)
+
+func rememberPendingDelete(key pendingDeleteKey, realm string, fromSession int) {
+	pendingDeletesMu.Lock()
+	defer pendingDeletesMu.Unlock()
+	now := time.Now()
+	for existing, request := range pendingDeletes {
+		if now.After(request.expires) {
+			delete(pendingDeletes, existing)
+		}
+	}
+	pendingDeletes[key] = pendingDelete{realm: realm, fromSession: fromSession, expires: now.Add(pendingDeleteLifetime)}
+}
+
+// takePendingDelete returns the open request for the key and removes it.
+func takePendingDelete(key pendingDeleteKey) (pendingDelete, bool) {
+	pendingDeletesMu.Lock()
+	defer pendingDeletesMu.Unlock()
+	request, ok := pendingDeletes[key]
+	delete(pendingDeletes, key)
+	if !ok || time.Now().After(request.expires) {
+		return pendingDelete{}, false
+	}
+	return request, true
+}
+
 func handleDeleteRequest(data map[string]interface{}, userID, sessionID int) {
 	entityType := jsonString(data, "entity_type", "item")
 	entityID := jsonIntAlt(data, "entity_id", "item_id")
@@ -36,36 +88,50 @@ func handleDeleteRequest(data map[string]interface{}, userID, sessionID int) {
 		return
 	}
 
+	// No point in asking the iPhone to confirm what will be refused anyway.
+	if usage := masterDataUsage(realm, entityType, entityID); usage != nil {
+		sendDeleteInUse(userID, sessionID, entityID, entityType, usage)
+		return
+	}
+
 	payload := buildDeletePayload(entityType, entityName, realm, entityID)
 	if !ws.M.HasIOSDevices(userID) {
 		ws.M.SendToSession(sessionID, "delete.no_device", payload)
 		return
 	}
 
+	rememberPendingDelete(pendingDeleteKey{userID, entityType, entityID}, realm, sessionID)
 	ws.M.SendToUserIOS(userID, "delete.confirm_request", mergeMaps(payload, map[string]interface{}{
 		"from_session": sessionID,
 	}))
 	ws.M.SendToSession(sessionID, "delete.pending", payload)
 }
 
-func handleDeleteConfirm(data map[string]interface{}, userID int) {
+// handleDeleteConfirm carries out a deletion the user approved on the iPhone.
+// It only acts for an iPhone connection and for a request that is still
+// open; realm and requesting session come from that request, not from the
+// confirmation message.
+func handleDeleteConfirm(data map[string]interface{}, userID int, deviceType string) {
 	entityType := jsonString(data, "entity_type", "item")
 	entityID := jsonIntAlt(data, "entity_id", "item_id")
-	realm := jsonString(data, "realm", "archive")
-	targetSession := jsonInt(data, "target_session")
 
-	if !hasEntityDeletePermission(userID, entityType) {
+	if deviceType != "ios" {
 		return
 	}
-	if targetSession > 0 && !ws.M.SessionBelongsToUser(targetSession, userID) {
+	request, ok := takePendingDelete(pendingDeleteKey{userID, entityType, entityID})
+	if !ok {
+		return
+	}
+	if !hasEntityDeletePermission(userID, entityType) {
+		sendDeleteRejected(userID, request.fromSession, entityID, entityType)
 		return
 	}
 
 	if entityType == "item" {
-		doDeleteItem(userID, targetSession, realm, entityID)
+		doDeleteItem(userID, request.fromSession, request.realm, entityID)
 		return
 	}
-	doDeleteEntity(userID, targetSession, realm, entityType, entityID)
+	doDeleteEntity(userID, request.fromSession, request.realm, entityType, entityID)
 }
 
 var entityTableMap = map[string]string{
@@ -74,6 +140,8 @@ var entityTableMap = map[string]string{
 	"manufacturer":   "_manufacturers",
 	"supplier":       "_suppliers",
 	"vendor":         "_vendors",
+	"developer":      "_developers",
+	"publisher":      "_publishers",
 	"sales_platform": "generic_sales_platforms",
 	"attachment":     "_attachments",
 	"property":       "_properties",
@@ -87,7 +155,7 @@ func permissionsForEntityType(entityType, action string) []string {
 		return []string{"categories." + action}
 	case "location":
 		return []string{"locations." + action}
-	case "manufacturer", "supplier", "vendor", "sales_platform":
+	case "manufacturer", "supplier", "vendor", "developer", "publisher", "sales_platform":
 		return []string{"vendors." + action}
 	case "attachment":
 		return []string{"attachments.write", "items.read"}
@@ -101,10 +169,16 @@ func permissionsForEntityType(entityType, action string) []string {
 }
 
 func doDeleteItem(userID, targetSession int, realm string, itemID int) {
-	if realm != "archive" && realm != "collection" {
+	found, err := itemscore.DeleteItem(realm, itemID)
+	if err != nil || !found {
+		if err != nil {
+			log.Printf("WS item delete error: %v", err)
+		}
+		sendDeleteRejected(userID, targetSession, itemID, "item")
 		return
 	}
-	database.DB.Exec(fmt.Sprintf("DELETE FROM %s_items WHERE id = ?", realm), itemID)
+	middleware.Audit(userID, "item.delete", fmt.Sprintf("realm=%s item=%d confirmed=ios", realm, itemID))
+
 	payload := map[string]interface{}{"item_id": itemID, "entity_id": itemID, "entity_type": "item"}
 	if targetSession > 0 {
 		ws.M.SendToSession(targetSession, "delete.done", payload)
@@ -114,36 +188,86 @@ func doDeleteItem(userID, targetSession int, realm string, itemID int) {
 }
 
 func doDeleteEntity(userID, targetSession int, realm, entityType string, entityID int) {
-	if entityType == "user" {
+	var err error
+	found := true
+	switch entityType {
+	case "user":
 		if !checkUserPermission(userID, "__admin_only__") {
 			return
 		}
-		if err := authhandlers.DeleteUserAccount(entityID, userID, false); err != nil {
-			log.Printf("WS user delete error: %v", err)
-			sendDeleteRejected(userID, targetSession, entityID, entityType)
-			return
-		}
-	} else {
+		err = authhandlers.DeleteUserAccount(entityID, userID, false)
+	case "attachment":
+		// Removes the uploaded file as well, like the HTTP route does.
+		found, err = itemscore.DeleteAttachment(realm, entityID)
+	case "property":
+		found, err = itemscore.DeleteProperty(realm, entityID)
+	case "category":
+		found, err = itemscore.DeleteCategory(realm, entityID)
+	case "location":
+		found, err = itemscore.DeleteLocation(realm, entityID)
+	case "sales_platform":
+		_, err = database.DB.Exec("DELETE FROM generic_sales_platforms WHERE id = ?", entityID)
+	default:
 		suffix, ok := entityTableMap[entityType]
 		if !ok {
 			log.Printf("Unknown entity type for delete: %s", entityType)
 			return
 		}
-		if entityType == "sales_platform" {
-			database.DB.Exec("DELETE FROM generic_sales_platforms WHERE id = ?", entityID)
-		} else {
-			if realm != "archive" && realm != "collection" {
-				return
-			}
-			database.DB.Exec(fmt.Sprintf("DELETE FROM %s%s WHERE id = ?", realm, suffix), entityID)
+		if realm != "archive" && realm != "collection" {
+			return
 		}
+		_, err = database.DB.Exec(fmt.Sprintf("DELETE FROM %s%s WHERE id = ?", realm, suffix), entityID)
 	}
+	var inUse *itemscore.InUseError
+	if errors.As(err, &inUse) {
+		sendDeleteInUse(userID, targetSession, entityID, entityType, inUse)
+		return
+	}
+	if err != nil || !found {
+		if err != nil {
+			log.Printf("WS %s delete error: %v", entityType, err)
+		}
+		sendDeleteRejected(userID, targetSession, entityID, entityType)
+		return
+	}
+	middleware.Audit(userID, entityType+".delete", fmt.Sprintf("realm=%s id=%d confirmed=ios", realm, entityID))
 
 	payload := map[string]interface{}{"entity_id": entityID, "entity_type": entityType}
 	if targetSession > 0 {
 		ws.M.SendToSession(targetSession, "delete.done", payload)
 	}
 	ws.M.SendToUserBrowsers(userID, "delete.done", payload)
+}
+
+// masterDataUsage returns the usage of a category or location that is still
+// in use, and nil for everything that may be deleted.
+func masterDataUsage(realm, entityType string, entityID int) *itemscore.InUseError {
+	var usage *itemscore.InUseError
+	var err error
+	switch entityType {
+	case "category":
+		usage, err = itemscore.CategoryUsage(realm, entityID)
+	case "location":
+		usage, err = itemscore.LocationUsage(realm, entityID)
+	default:
+		return nil
+	}
+	if err != nil || (usage.Items == 0 && usage.Children == 0) {
+		return nil
+	}
+	return usage
+}
+
+// sendDeleteInUse tells the requesting browser that the deletion was refused
+// because the category or location is still in use.
+func sendDeleteInUse(userID, targetSession, entityID int, entityType string, usage *itemscore.InUseError) {
+	sendToTargetOrBrowsers(userID, targetSession, "delete.rejected", map[string]interface{}{
+		"entity_id":       entityID,
+		"entity_type":     entityType,
+		"reason":          entityType + "_in_use",
+		"in_use_items":    usage.Items,
+		"in_use_children": usage.Children,
+	})
 }
 
 func checkUserPermission(userID int, perm string) bool {

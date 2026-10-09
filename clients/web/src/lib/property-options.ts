@@ -9,6 +9,7 @@ const CUSTOM_OPTION_PATTERNS = [
 
 export type PropertyOptionConfig = {
   choices: string[];
+  labels: Record<string, string>;
   allowCustom: boolean;
   customLabel: string;
   withCount: boolean;
@@ -40,6 +41,7 @@ export function isCustomOptionChoice(value: string) {
 export function getPropertyOptionConfig(raw: unknown, locale?: Locale | string): PropertyOptionConfig {
   const config: PropertyOptionConfig = {
     choices: [],
+    labels: {},
     allowCustom: false,
     customLabel: defaultCustomLabel(locale),
     withCount: false,
@@ -69,6 +71,10 @@ export function getPropertyOptionConfig(raw: unknown, locale?: Locale | string):
     : [];
 
   const seen = new Set<string>();
+  const translations = source.choice_translations;
+  const localeTranslations = translations && typeof translations === "object" && !Array.isArray(translations)
+    ? (translations as Record<string, unknown>)[String(locale || "").toLowerCase()]
+    : undefined;
   for (const rawChoice of rawChoices) {
     const choice = rawChoice.trim();
     if (!choice) continue;
@@ -83,6 +89,10 @@ export function getPropertyOptionConfig(raw: unknown, locale?: Locale | string):
     if (seen.has(key)) continue;
     seen.add(key);
     config.choices.push(choice);
+    if (localeTranslations && typeof localeTranslations === "object" && !Array.isArray(localeTranslations)) {
+      const translated = (localeTranslations as Record<string, unknown>)[choice];
+      if (typeof translated === "string" && translated.trim()) config.labels[choice] = translated.trim();
+    }
   }
 
   return config;
@@ -107,11 +117,24 @@ export function buildSelectCountValue(selected: string, count: number | null) {
   };
 }
 
-export function formatSelectCountValue(value: unknown, locale?: Locale | string) {
+export function formatPropertyChoice(value: unknown, options?: Record<string, unknown>, locale?: Locale | string) {
+  const choice = String(value ?? "");
+  if (!choice) return "";
+  const label = getPropertyOptionConfig(options, locale).labels[choice];
+  return label || choice;
+}
+
+export function formatPropertyChoices(value: unknown, options?: Record<string, unknown>, locale?: Locale | string) {
+  const values = Array.isArray(value) ? value : [value];
+  return values.map((entry) => formatPropertyChoice(entry, options, locale)).filter(Boolean).join(", ");
+}
+
+export function formatSelectCountValue(value: unknown, locale?: Locale | string, options?: Record<string, unknown>) {
   const normalized = normalizeSelectCountValue(value);
   if (!normalized.selected) return "";
-  if (normalized.count == null) return normalized.selected;
-  return `${normalized.selected} (${defaultCountLabel(locale)}: ${normalized.count})`;
+  const selected = formatPropertyChoice(normalized.selected, options, locale);
+  if (normalized.count == null) return selected;
+  return `${selected} (${defaultCountLabel(locale)}: ${normalized.count})`;
 }
 
 export function buildPropertyOptionsPayload(

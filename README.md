@@ -166,7 +166,7 @@ That is intentional. You stay in control of service restarts, backups, permissio
 
 ## Configuration
 
-The default config template lives in [config/itemplus.conf](config/itemplus.conf).
+The default config template lives in [backend/go/internal/config/templates/itemplus.conf](backend/go/internal/config/templates/itemplus.conf).
 
 Settings you will usually review:
 
@@ -220,6 +220,34 @@ browser <-> item+ <-> SFTP
 
 That keeps credentials and access control on the server side.
 
+### Optional game catalog integration
+
+item+ can optionally use a compatible, read-only game catalog for collection assistants. It is disabled by default:
+
+```conf
+GAME_CATALOG_URL=
+```
+
+Set the value only when the item+ server itself can reach a catalog you operate or are authorized to use. The browser never receives the configured catalog address; item+ requests it server-side. A private loopback or LAN address is appropriate when the catalog must not be publicly reachable:
+
+```conf
+GAME_CATALOG_URL=http://127.0.0.1:8765
+```
+
+The integration expects the item+ catalog contract (`schema_version` / `itemplus.contract_version` 2.0):
+
+```text
+GET /v1/schema
+GET /v1/itemplus/<profile-key>/games?q=<query>&limit=<number>&offset=<number>
+GET /v1/itemplus/<profile-key>/games/<id>
+GET /v1/itemplus/<profile-key>/games/<id>/assets?offset=<number>&limit=<number>
+GET /v1/itemplus/media/<media-id>/content
+```
+
+`/v1/schema` declares profiles, categories, properties, canonical choices, translations, and their setup defaults. item+ creates categories from those profiles in **Settings > Collection templates**. A selected game supplies only the declared `property_values`; optional images are downloaded server-side and become ordinary local item+ attachments. This keeps a private catalog private while preserving imported item data independently of it.
+
+You are responsible for the source, license, attribution, and access rules of any catalog you connect. Do not expose a catalog merely because item+ can consume it, and do not configure a source unless its terms allow your intended use. Keep source credentials on the server; never put them in the browser or client-side configuration.
+
 ## Development
 
 ### Backend
@@ -260,7 +288,6 @@ bash build.sh --all
 ```text
 backend/go     Go backend and release build scripts
 clients/web    Next.js web application
-config         Default configuration template
 docs           Public docs and screenshots
 ```
 

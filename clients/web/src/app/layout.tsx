@@ -5,6 +5,9 @@ import { AppProvider } from "@/lib/app-context";
 export const metadata: Metadata = {
   title: "item+",
   description: "Open-Source Inventory & Collection Management",
+  other: {
+    "apple-itunes-app": "app-id=6776853348",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

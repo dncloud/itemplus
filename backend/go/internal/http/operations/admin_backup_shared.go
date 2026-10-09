@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/itemplus/backend/internal/config"
 	"github.com/itemplus/backend/internal/database"
@@ -24,10 +23,41 @@ const (
 	backupManifestName                = "itemplus-backup.json"
 )
 
+// Bundle format 2 carries a complete dump of the database (see
+// database/dump.go). Format 1, written up to version 1.3.3, carried a JSON
+// export of a fixed list of tables in data.json and is still accepted for
+// restoring; it contains only what that list covered.
+const (
+	backupFormatVersion = 2
+	backupSQLiteName    = "database.sqlite"
+	backupMySQLName     = "database.json"
+	backupLegacyName    = "data.json"
+)
+
 type backupBundleManifest struct {
 	Version   int    `json:"version"`
 	Driver    string `json:"driver"`
 	CreatedAt string `json:"created_at"`
+	// Database names the entry that holds the database dump (format 2).
+	Database string `json:"database,omitempty"`
+}
+
+// backupWorkParent returns the folder in which backup and restore keep their
+// temporary files: next to the upload directory, and therefore on the same
+// filesystem. The system temp directory is avoided on purpose. It often is a
+// different filesystem, across which nothing can be moved into place
+// atomically, and frequently a RAM disk, which a multi-gigabyte bundle must
+// not fill.
+func backupWorkParent() string {
+	uploadDir, err := filepath.Abs(config.C.UploadDir)
+	if err != nil {
+		return os.TempDir()
+	}
+	parent := filepath.Dir(uploadDir)
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		return os.TempDir()
+	}
+	return parent
 }
 
 type backupBundleData struct {
@@ -35,13 +65,34 @@ type backupBundleData struct {
 }
 
 type extractedBackupBundle struct {
-	dataPath      string
+	dataPath      string // legacy data.json (format 1)
 	uploadsPath   string
 	configPath    string
-	hasData       bool
+	hasData       bool // legacy data.json is present
 	hasConfig     bool
+	hasManifest   bool
+	manifest      backupBundleManifest
 	sourceDriver  string
 	extractedSize uint64
+	root          string
+}
+
+// databasePath returns the extracted database dump of a format 2 bundle, or
+// "" when the bundle has none. Only the two known entry names are accepted,
+// whatever the manifest says.
+func (b *extractedBackupBundle) databasePath() string {
+	if b.manifest.Version < 2 {
+		return ""
+	}
+	name := b.manifest.Database
+	if name != backupSQLiteName && name != backupMySQLName {
+		return ""
+	}
+	path := filepath.Join(b.root, name)
+	if info, err := os.Stat(path); err != nil || info.IsDir() {
+		return ""
+	}
+	return path
 }
 
 func capitalizeDetail(detail string) string {
@@ -65,63 +116,6 @@ func quotedIdentifiers(columns []string) []string {
 		out = append(out, fmt.Sprintf("`%s`", strings.ReplaceAll(column, "`", "``")))
 	}
 	return out
-}
-
-func normalizeBackupValue(value interface{}) interface{} {
-	switch v := value.(type) {
-	case nil, bool, string, float32, float64, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return v
-	case []byte:
-		return string(v)
-	case time.Time:
-		return v.UTC().Format(time.RFC3339Nano)
-	case json.Number:
-		return v
-	case []interface{}:
-		out := make([]interface{}, len(v))
-		for i := range v {
-			out[i] = normalizeBackupValue(v[i])
-		}
-		return out
-	case map[string]interface{}:
-		out := make(map[string]interface{}, len(v))
-		for key, nested := range v {
-			out[key] = normalizeBackupValue(nested)
-		}
-		return out
-	default:
-		return fmt.Sprint(v)
-	}
-}
-
-func exportBackupData(db *sqlx.DB) (*backupBundleData, error) {
-	data := &backupBundleData{Tables: map[string][]map[string]interface{}{}}
-	for _, table := range database.BackupTableNames() {
-		rows, err := db.Queryx(fmt.Sprintf("SELECT * FROM `%s`", strings.ReplaceAll(table, "`", "``")))
-		if err != nil {
-			return nil, err
-		}
-		tableRows := make([]map[string]interface{}, 0)
-		for rows.Next() {
-			record := map[string]interface{}{}
-			if err := rows.MapScan(record); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			normalized := make(map[string]interface{}, len(record))
-			for key, value := range record {
-				normalized[key] = normalizeBackupValue(value)
-			}
-			tableRows = append(tableRows, normalized)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		rows.Close()
-		data.Tables[table] = tableRows
-	}
-	return data, nil
 }
 
 func normalizeImportedValue(value interface{}) interface{} {
@@ -177,22 +171,6 @@ func normalizeImportedValueForColumn(driver, column string, value interface{}) i
 		return value
 	}
 	return database.TimestampForURL("mysql://", parsed)
-}
-
-func resetKnownTables(db *sqlx.DB, driver string) error {
-	if driver == "mysql" {
-		if _, err := db.Exec("SET FOREIGN_KEY_CHECKS = 0"); err != nil {
-			return err
-		}
-		defer db.Exec("SET FOREIGN_KEY_CHECKS = 1")
-	}
-	tables := database.LogicalTableNames()
-	for i := len(tables) - 1; i >= 0; i-- {
-		if _, err := db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", strings.ReplaceAll(tables[i], "`", "``"))); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func importBackupData(db *sqlx.DB, data *backupBundleData, driver string) error {
@@ -281,7 +259,8 @@ func extractBackupBundle(zipPath, tmpDir string) (*extractedBackupBundle, error)
 	defer reader.Close()
 
 	bundle := &extractedBackupBundle{
-		dataPath:    filepath.Join(tmpDir, "data.json"),
+		root:        tmpDir,
+		dataPath:    filepath.Join(tmpDir, backupLegacyName),
 		uploadsPath: filepath.Join(tmpDir, "uploads"),
 		configPath:  filepath.Join(tmpDir, "itemplus.conf"),
 	}
@@ -320,6 +299,8 @@ func extractBackupBundle(zipPath, tmpDir string) (*extractedBackupBundle, error)
 			if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
 				return nil, fmt.Errorf("backup bundle metadata is invalid")
 			}
+			bundle.hasManifest = true
+			bundle.manifest = manifest
 			bundle.sourceDriver = strings.TrimSpace(manifest.Driver)
 		}
 
@@ -397,21 +378,4 @@ func restoreIfPresent(src, dst string) {
 	if err := moveIfExists(src, dst); err != nil {
 		_ = err
 	}
-}
-
-func rollbackUploadsAndConfig(restoreUploads bool, previousUploadsPath, uploadDir string, restoreConfig bool, previousConfigPath, envPath string) {
-	if restoreUploads {
-		_ = os.RemoveAll(uploadDir)
-		restoreIfPresent(previousUploadsPath, uploadDir)
-	}
-	if restoreConfig && strings.TrimSpace(envPath) != "" {
-		restoreIfPresent(previousConfigPath, envPath)
-	}
-}
-
-func rollbackRecoveredState(restoreDatabase bool, rollbackDatabase func(), restoreUploads bool, previousUploadsPath, uploadDir string, restoreConfig bool, previousConfigPath, envPath string) {
-	if restoreDatabase {
-		rollbackDatabase()
-	}
-	rollbackUploadsAndConfig(restoreUploads, previousUploadsPath, uploadDir, restoreConfig, previousConfigPath, envPath)
 }

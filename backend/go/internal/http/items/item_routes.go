@@ -13,9 +13,18 @@ import (
 func RegisterItemRoutes(g *gin.RouterGroup, realm string) {
 	uploadRL := middleware.RateLimit(20, time.Minute)
 	listRL := middleware.RateLimit(120, time.Minute)
+	g.Use(middleware.NumericParams("id", "reminderId", "propId"))
 
 	g.GET("", middleware.Auth(), middleware.RequirePermission("items.read"), listRL, listItems(realm))
 	g.GET("/lookup", middleware.Auth(), middleware.RequirePermission("items.read"), listItemLookup(realm))
+	if realm == "collection" {
+		g.GET("/game-catalog/profiles", middleware.Auth(), middleware.RequirePermission("items.write"), listGameCatalogProfiles)
+		g.GET("/game-catalog/search", middleware.Auth(), middleware.RequirePermission("items.write"), listGlobalGameCatalogMatches)
+		g.GET("/game-catalog/profiles/:profileKey/search", middleware.Auth(), middleware.RequirePermission("items.write"), listGameCatalogMatches)
+		g.GET("/game-catalog/profiles/:profileKey/games/:gameID", middleware.Auth(), middleware.RequirePermission("items.write"), getGameCatalogGame)
+		g.GET("/game-catalog/profiles/:profileKey/games/:gameID/assets", middleware.Auth(), middleware.RequirePermission("items.write"), listGameCatalogAssets)
+		g.GET("/game-catalog/media/:mediaID/content", middleware.Auth(), middleware.RequirePermission("items.write"), getGameCatalogMediaContent)
+	}
 	g.GET("/:id", middleware.Auth(), middleware.RequirePermission("items.read"), getItem(realm))
 	g.POST("", middleware.Auth(), middleware.RequirePermission("items.write"), createItem(realm))
 	g.PUT("/:id", middleware.Auth(), middleware.RequirePermission("items.write"), updateItem(realm))
@@ -30,10 +39,14 @@ func RegisterItemRoutes(g *gin.RouterGroup, realm string) {
 	g.POST("/:id/attachments", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), uploadRL, uploadAttachment(realm))
 	g.POST("/:id/attachments/link", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), addLinkAttachment(realm))
 	g.POST("/:id/attachments/external-sftp", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), addExternalSFTPAttachment(realm))
+	if realm == "collection" {
+		g.POST("/:id/game-catalog/assets", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.write"), importGameCatalogAssets(realm))
+	}
 	g.POST("/:id/properties/:propId/upload", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), uploadRL, uploadPropertyFile(realm))
 }
 
 func RegisterAttachmentRoutes(g *gin.RouterGroup, realm string) {
+	g.Use(middleware.NumericParams("id", "attId"))
 	g.GET("/external-sources", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), settingshandlers.ListAttachmentExternalSources)
 	g.GET("/external-sources/:id/browse", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), settingshandlers.BrowseAttachmentExternalSource)
 	g.GET("/:attId/content", middleware.Auth(), middleware.RequirePermission("items.read"), getAttachmentContent(realm))

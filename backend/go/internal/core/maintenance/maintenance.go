@@ -99,18 +99,19 @@ func LoadItemReminders(realm, itemID string, includeDone bool) []map[string]inte
 		LEFT JOIN users u ON r.created_by = u.id
 		%s
 		ORDER BY CASE WHEN r.status = 'open' THEN 0 ELSE 1 END, r.due_date ASC, r.id ASC`, ReminderTable(realm), where)
+	now := time.Now()
+	alertDate := MaintenanceAlertDate(now)
 	rows, err := database.DB.Queryx(query, itemID)
 	if err != nil {
 		return []map[string]interface{}{}
 	}
 	defer rows.Close()
 	result := make([]map[string]interface{}, 0)
-	now := time.Now()
 	for rows.Next() {
 		row := map[string]interface{}{}
 		if rows.MapScan(row) == nil {
 			cleanRow(row)
-			AnnotateReminder(row, now)
+			AnnotateReminderAt(row, now, alertDate)
 			result = append(result, row)
 		}
 	}
@@ -144,6 +145,14 @@ func LoadItemHistory(realm, itemID string, limit int) []map[string]interface{} {
 }
 
 func AnnotateReminder(row map[string]interface{}, now time.Time) {
+	AnnotateReminderAt(row, now, MaintenanceAlertDate(now))
+}
+
+// AnnotateReminderAt is AnnotateReminder with the alert date supplied by the
+// caller. MaintenanceAlertDate reads a setting from the database, so loops
+// over an open result set must compute it beforehand: SQLite runs on a single
+// connection, and a query issued while rows are still open never returns.
+func AnnotateReminderAt(row map[string]interface{}, now, alertDate time.Time) {
 	if ValueString(row["status"]) != "open" {
 		row["is_due"] = false
 		row["is_overdue"] = false
@@ -156,7 +165,7 @@ func AnnotateReminder(row map[string]interface{}, now time.Time) {
 		return
 	}
 	today := StartOfLocalDay(now)
-	row["is_due"] = !due.After(MaintenanceAlertDate(now))
+	row["is_due"] = !due.After(alertDate)
 	row["is_overdue"] = due.Before(today)
 }
 

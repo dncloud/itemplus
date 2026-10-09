@@ -9,6 +9,8 @@ import {
   type AIParseStreamEvent,
   type AIUsage,
   type Category,
+  type GameCatalogAsset,
+  type GameCatalogGame,
   type Item,
   type ItemComponent,
   type Location,
@@ -58,6 +60,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   const initialSymbology = searchParams.get("symbology") || "";
 
   const [editItem, setEditItem] = useState<Partial<Item>>({ name: "", quantity: 1, item_status: "active" });
+  const [gameCatalogAssets, setGameCatalogAssets] = useState<GameCatalogAsset[]>([]);
   const [sourceItem, setSourceItem] = useState<Item | null>(null);
   const [itemLoaded, setItemLoaded] = useState(!isEditMode);
   const [itemLoadFailed, setItemLoadFailed] = useState(false);
@@ -86,6 +89,8 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   const [manufacturers, setManufacturers] = useState<Vendor[]>([]);
   const [suppliers, setSuppliers] = useState<Vendor[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [developers, setDevelopers] = useState<Vendor[]>([]);
+  const [publishers, setPublishers] = useState<Vendor[]>([]);
   const [salesPlatforms, setSalesPlatforms] = useState<Vendor[]>([]);
   const [itemComponents, setItemComponents] = useState<ItemComponent[]>([]);
   const [allProperties, setAllProperties] = useState<Property[]>([]);
@@ -127,6 +132,8 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
       setManufacturers(data.manufacturers);
       setSuppliers(data.suppliers);
       setVendors(data.vendors);
+      setDevelopers(data.developers);
+      setPublishers(data.publishers);
       setSalesPlatforms(data.salesPlatforms);
       setItemComponents(data.itemComponents);
     });
@@ -178,6 +185,22 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   }, [selectedCategoryId]);
 
   const valuesEqual = useCallback((left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right), []);
+
+  const onGameCatalogPropertiesCreated = useCallback((created: Property[]) => {
+    setAllProperties((current) => [...current.filter((property) => !created.some((next) => next.id === property.id)), ...created]);
+    setCatProperties((current) => [...current.filter((property) => !created.some((next) => next.id === property.id)), ...created]
+      .sort((left, right) => left.position - right.position));
+  }, []);
+
+  const applyGameCatalogGame = useCallback((game: GameCatalogGame, values: Record<string, unknown>, assets: GameCatalogAsset[], itemPatch: Partial<Item>) => {
+    setEditItem((current) => ({
+      ...current,
+      ...itemPatch,
+      name: game.itemplus.item.name,
+    }));
+    setPropValues((current) => ({ ...current, ...values }));
+    setGameCatalogAssets(assets);
+  }, []);
 
   const collectAISuggestions = useCallback(
     (result: AIParseItemIntentResult) => {
@@ -371,6 +394,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
         itemId,
         item: editItem,
         propValues,
+        catalogAssets: gameCatalogAssets,
       });
 
       if (isEditMode && itemId) {
@@ -591,6 +615,8 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
       manufacturers={manufacturers}
       suppliers={suppliers}
       vendors={vendors}
+      developers={developers}
+      publishers={publishers}
       salesPlatforms={salesPlatforms}
       itemComponents={itemComponents}
       catProperties={catProperties}
@@ -634,6 +660,8 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
       applySuggestedField={applySuggestedField}
       aiSuggestedPropValues={aiSuggestedPropValues}
       applySuggestedProperty={applySuggestedProperty}
+      onGameCatalogPropertiesCreated={onGameCatalogPropertiesCreated}
+      applyGameCatalogGame={applyGameCatalogGame}
       save={save}
     />
   );

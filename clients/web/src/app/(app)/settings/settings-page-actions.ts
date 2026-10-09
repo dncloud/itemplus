@@ -109,16 +109,20 @@ export async function makeTemplateDefault(selectedTemplate: LabelTemplate) {
 }
 
 export function buildExternalSourcePayload(externalSourceDraft: ExternalSourceDraft): ExternalSourcePayload {
+  const sourceType = externalSourceDraft.source_type;
   return {
     ...externalSourceDraft,
+    source_type: sourceType,
     name: externalSourceDraft.name.trim(),
     description: externalSourceDraft.description?.trim() || null,
-    host: externalSourceDraft.host.trim(),
-    username: externalSourceDraft.username.trim(),
-    known_host_key: externalSourceDraft.known_host_key.trim(),
+    host: sourceType === "filesystem" ? "" : externalSourceDraft.host.trim(),
+    username: sourceType === "filesystem" ? "" : externalSourceDraft.username.trim(),
+    share_name: sourceType === "smb" ? (externalSourceDraft.share_name?.trim() || null) : null,
+    known_host_key: sourceType === "sftp" ? externalSourceDraft.known_host_key.trim() : "",
     base_path: externalSourceDraft.base_path.trim(),
-    password: externalSourceDraft.auth_type === "password" ? (externalSourceDraft.password?.trim() || null) : null,
-    private_key: externalSourceDraft.auth_type === "ssh_key" ? (externalSourceDraft.private_key?.trim() || null) : null,
+    auth_type: sourceType === "filesystem" ? "none" : sourceType === "smb" ? "password" : externalSourceDraft.auth_type,
+    password: sourceType !== "filesystem" && externalSourceDraft.auth_type === "password" ? (externalSourceDraft.password?.trim() || null) : null,
+    private_key: sourceType === "sftp" && externalSourceDraft.auth_type === "ssh_key" ? (externalSourceDraft.private_key?.trim() || null) : null,
   };
 }
 

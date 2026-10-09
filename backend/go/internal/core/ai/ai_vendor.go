@@ -2,11 +2,12 @@ package ai
 
 import (
 	"errors"
-	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/itemplus/backend/internal/netguard"
 )
 
 func ResolveVendorLogoPreview(name string, website string, supportURL string, externalLogoURL string) (*VendorLogoPreviewResult, error) {
@@ -29,7 +30,9 @@ func ResolveVendorLogoPreview(name string, website string, supportURL string, ex
 		}
 	}
 
-	client := &http.Client{Timeout: 8 * time.Second}
+	// Website and logo addresses are typed in by users. The client refuses
+	// to connect to the server itself or to its internal network.
+	client := netguard.NewPublicHTTPClient(8 * time.Second)
 	candidateURLs := make([]string, 0, 8)
 	if externalLogoURL != "" {
 		if resolved := resolveVendorLogoURL(parsedBase, externalLogoURL); resolved != "" {
@@ -117,7 +120,7 @@ func buildAISingleVendorSummary(draft map[string]any) map[string]any {
 
 func buildAIVendorAllowedFields(entityType string) []string {
 	switch strings.TrimSpace(entityType) {
-	case "manufacturer":
+	case "manufacturer", "developer", "publisher":
 		return []string{"name", "website", "external_logo_url", "email", "phone", "address.street", "address.house_number", "address.zip", "address.city", "support_email", "support_phone", "support_url"}
 	case "supplier":
 		return []string{"name", "website", "external_logo_url", "email", "phone", "address.street", "address.house_number", "address.zip", "address.city", "contact_person", "account_manager"}
@@ -132,6 +135,10 @@ func buildAIVendorFieldGuidance(entityType string) string {
 	switch strings.TrimSpace(entityType) {
 	case "manufacturer":
 		return "Focus on official company basics and public support contact details. Do not return supplier-only or customer-only fields."
+	case "developer":
+		return "Focus on the studio or company that developed the work, with public company and support details."
+	case "publisher":
+		return "Focus on the company that published the work, with public company and support details."
 	case "supplier":
 		return "Focus on purchasing contacts and supplier-side coordination. Do not invent internal account managers."
 	case "vendor":

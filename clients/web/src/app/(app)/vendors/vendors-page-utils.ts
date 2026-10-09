@@ -103,6 +103,10 @@ export async function suggestVendorDraft({
         ? "supplier"
         : tab === "vendors"
           ? "vendor"
+          : tab === "developers"
+            ? "developer"
+            : tab === "publishers"
+              ? "publisher"
           : "sales_platform";
 
   return api.suggestVendor({

@@ -15,7 +15,8 @@ import {
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { Plus, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useDeleteFlow, ConfirmDelete } from "@/components/ui/confirm-delete";
+import { ConfirmDelete, inUseMessage, readInUseInfo, useDeleteFlow, type InUseInfo } from "@/components/ui/confirm-delete";
+import { FloatingNotification, type FloatingNotificationState } from "@/components/ui/floating-notification";
 import {
   LocationInlineForm,
   RecursiveNestedLocation,
@@ -72,8 +73,19 @@ export default function LocationsPage() {
     };
   }, [realm]);
 
+  const [notification, setNotification] = useState<FloatingNotificationState>(null);
+  useEffect(() => {
+    if (!notification) return;
+    const timeout = window.setTimeout(() => setNotification(null), 7000);
+    return () => window.clearTimeout(timeout);
+  }, [notification]);
+  const reportInUse = useCallback((info: InUseInfo) => {
+    setNotification({ title: t("locations.deleteRefused"), message: inUseMessage(t, info), tone: "error" });
+  }, [t]);
+
   const deleteFlow = useDeleteFlow({
     realm,
+    onInUse: reportInUse,
     onDeleted: useCallback(() => {
       load();
     }, [load]),
@@ -122,6 +134,13 @@ export default function LocationsPage() {
 
   const remove = (id: number) => {
     const loc = locations.find((l) => l.id === id);
+    // Known to be refused: say so right away instead of asking for confirmation first.
+    const items = loc?.item_count ?? 0;
+    const children = locations.filter((l) => l.parent_id === id).length;
+    if (items > 0 || children > 0) {
+      reportInUse({ type: "location", items, children });
+      return;
+    }
     deleteFlow.requestDelete(id, loc?.name || `#${id}`, "location");
   };
 
@@ -296,6 +315,7 @@ export default function LocationsPage() {
 
   return (
     <div className="space-y-6">
+      <FloatingNotification notification={notification} onClose={() => setNotification(null)} t={t} />
       <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:text-left lg:mb-8">
         <div className="space-y-1 py-3">
           <nav className="text-sm font-medium dark:text-gray-100">
@@ -353,22 +373,29 @@ export default function LocationsPage() {
         </div>
       ) : null}
 
-      <div className="divide-y divide-gray-100 bg-white shadow-xs outline outline-1 -outline-offset-1 outline-gray-900/5 sm:rounded-xl dark:divide-white/5 dark:bg-gray-800/50 dark:outline-white/10">
-        {roots.length > 0 ? (
+      {roots.length > 0 ? (
+        <div className="divide-y divide-gray-100 bg-white shadow-xs outline outline-1 -outline-offset-1 outline-gray-900/5 sm:rounded-xl dark:divide-white/5 dark:bg-gray-800/50 dark:outline-white/10">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
             {renderLevel(roots)}
           </DndContext>
-        ) : (
-          <p className="p-6 text-center text-gray-500">{t("locations.none")}</p>
-        )}
-      </div>
+        </div>
+      ) : (
+        <p className="py-10 text-center text-gray-500">{t("locations.none")}</p>
+      )}
 
       {deleteFlow.confirm ? (
         <ConfirmDelete
           name={deleteFlow.confirm.name}
           t={t}
           onConfirm={async () => {
-            await api.deleteLocation(deleteFlow.confirm!.id);
+            try {
+              await api.deleteLocation(deleteFlow.confirm!.id);
+            } catch (error) {
+              // A location that still holds items or sub-locations stays; say why.
+              const inUse = readInUseInfo(error);
+              if (!inUse) throw error;
+              reportInUse(inUse);
+            }
             deleteFlow.cancelConfirm();
             load();
           }}

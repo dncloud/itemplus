@@ -124,6 +124,42 @@ func updateUser(c *gin.Context) {
 	}
 	wasInactive := !current.IsActive
 
+	// An installation must keep at least one administrator who can sign in.
+	losesAdmin := (body.IsAdmin != nil && !*body.IsAdmin) || (body.IsActive != nil && !*body.IsActive)
+	if current.IsAdmin && current.IsActive && losesAdmin {
+		var otherAdmins int
+		if err := database.DB.Get(&otherAdmins, "SELECT COUNT(*) FROM users WHERE is_admin = 1 AND is_active = 1 AND id <> ? AND "+VisibleUsersWhereClause(""), current.ID); err != nil {
+			log.Printf("DB query error in updateUser: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+			return
+		}
+		if otherAdmins == 0 {
+			c.JSON(http.StatusConflict, gin.H{"detail": "The last active administrator cannot be demoted or deactivated", "code": "last_admin"})
+			return
+		}
+	}
+	for _, permission := range body.Permissions {
+		if !isKnownPermission(permission) {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Unknown permission: " + permission, "code": "unknown_permission"})
+			return
+		}
+	}
+
+	var newEmail *string
+	if body.Email != nil {
+		email := normalizeEmail(*body.Email)
+		if !emailRegex.MatchString(email) {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid email"})
+			return
+		}
+		var other middleware.User
+		if err := database.DB.Get(&other, userByEmailQuery, email); err == nil && other.ID != current.ID {
+			c.JSON(http.StatusConflict, gin.H{"detail": "Another account already uses this e-mail address", "code": "email_in_use"})
+			return
+		}
+		newEmail = &email
+	}
+
 	now := database.TimestampNow()
 	name := body.DisplayName
 	if name == nil {
@@ -132,8 +168,9 @@ func updateUser(c *gin.Context) {
 	if name != nil {
 		database.DB.Exec("UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?", *name, now, id)
 	}
-	if body.Email != nil {
-		database.DB.Exec("UPDATE users SET email = ?, updated_at = ? WHERE id = ?", *body.Email, now, id)
+	if newEmail != nil && *newEmail != normalizeEmail(middleware.StringValue(current.Email)) {
+		database.DB.Exec("UPDATE users SET email = ?, updated_at = ? WHERE id = ?", *newEmail, now, id)
+		middleware.Audit(middleware.GetUser(c).ID, "user.email_changed", fmt.Sprintf("target_user=%s", id))
 	}
 	if body.IsAdmin != nil {
 		database.DB.Exec("UPDATE users SET is_admin = ?, updated_at = ? WHERE id = ?", *body.IsAdmin, now, id)
@@ -225,4 +262,13 @@ func deleteUser(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func isKnownPermission(permission string) bool {
+	for _, known := range middleware.PERMISSIONS {
+		if known == permission {
+			return true
+		}
+	}
+	return false
 }

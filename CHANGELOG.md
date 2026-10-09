@@ -1,5 +1,62 @@
 # Changelog
 
+## 1.3.4 - 2026-10-09
+
+This release fixes several security problems and a group of failures that only showed on one of the two supported database engines. Updating is recommended for every installation. Please create a new backup after updating: backups made with 1.3.3 or earlier are incomplete (see below).
+
+### Security
+- Fixed an account takeover through Sign in with Apple: an Apple ID could be attached to an existing account by naming that account's e-mail address in the request. Accounts are now matched only by the address Apple has verified and signed, and an existing Apple link is never replaced.
+- The e-mail address of an account can no longer be changed by its owner, since it identifies the account for magic-link and Apple sign-in. Administrators can still correct it; the new address is validated and must not belong to another account.
+- QR login now hands out the session exactly once. Previously anyone who knew the code could collect a session of their own until the code expired.
+- Magic links and QR confirmations can no longer be redeemed twice by simultaneous requests.
+- Login tokens and WebSocket tickets are masked in the access log.
+- SVG uploads are served with a restrictive content security policy, so an SVG opened directly cannot run scripts in the app's origin.
+- The vendor logo search no longer fetches addresses on the server itself or in its internal network.
+- Temporary AI images are size-limited, accepted by their actual content (JPEG, PNG, GIF, WebP) instead of the type a client claims, and served with protective headers.
+- Confirming a deletion on the iPhone can no longer be skipped: a confirmation is only honoured when it comes from an iPhone connection and answers an open request.
+- The last active administrator can no longer be demoted or deactivated, and unknown permissions are rejected.
+- AI requests share a rate limit per client.
+
+### Database reliability: SQLite and MySQL/MariaDB behave the same
+- Fixed complete server freezes on SQLite. A direct checkout, the list of checkout requests, items with open maintenance reminders and saving properties by name could each leave the server waiting for its own database connection until it was restarted.
+- Fixed startup on current MariaDB versions, where `current_path` is a reserved word.
+- Text is no longer turned into numbers on the way to clients. An item called `1942` or `007`, a phone number or a scanned code stays exactly as entered, and names such as `NaN` or `Infinity` no longer break item lists.
+- Deleting an item now gives the same result on both engines. MySQL used to keep every dependent row, SQLite removed all of them.
+- A magic link requested without a language no longer fails as "invalid".
+- The test suite now runs against SQLite and MySQL/MariaDB.
+
+### Backup and restore
+- Backups are now complete dumps of the database. The previous format left out stock movements, maintenance reminders and history, bundle contents, sales platforms, inventory audits and user settings. **Backups created with 1.3.3 or earlier do not contain these; create a new backup after updating.**
+- A restore first prepares everything next to the running system and exchanges it at the end. If the backup turns out to be unusable, nothing is changed.
+- Restoring on MySQL/MariaDB no longer leaves rows from before the restore attached to restored items.
+- A backup can only be restored into the database engine it was created with. Restoring a SQLite backup into MySQL, or the other way round, is refused with a clear message.
+- Backup and restore no longer use the system temp directory, which failed on systems where it is a separate or in-memory filesystem and could leave the SQLite database closed.
+- Older backups can still be restored, with what they contain.
+
+### Checkouts, stock and deleting
+- Approving a checkout request now records the "lent" stock movement, like a direct checkout always did, and approval, checkout and movement succeed or fail together. Missing movements of existing checkouts are added once at startup.
+- Loans survive the deletion of their item. They stay listed as a loan of an unknown item and can still be returned.
+- Uploaded files are no longer removed when an item is deleted. Administrators find them under **Settings > Storage > Unconnected files**, together with leftovers of earlier deletions, and decide what to remove.
+- Categories and locations that are still in use cannot be deleted. The web app says how many items or sub-locations still refer to them.
+- Quantities must be whole numbers and not negative.
+- Updating an item that does not exist answers "not found" instead of a server error.
+
+### Accounts and devices
+- Added **Connect Apple ID** for accounts registered by e-mail whose Apple ID uses a different or hidden address: either with a code sent to the account's address, or by scanning a QR code shown under **Settings > Account**. Using it needs an iPhone app version that supports it.
+- Every browser tab and device now has its own live session. Previously several tabs, or several devices behind one router, shared a session and only the last one received live updates.
+- Fixed a magic link showing "invalid or expired" after a successful sign-in when the page was loaded twice.
+
+### Collections, master data and storage
+- Added an optional game catalog integration for the collection realm. With `GAME_CATALOG_URL` set, item+ can create matching categories under **Settings > App**, search the catalog while an item is created (including shortcuts such as `pc:`), take over the declared properties and import selected images as regular attachments. The catalog is only ever contacted by the server.
+- Added developers and publishers as master data roles next to manufacturers, suppliers and vendors. Each category decides which roles its items show.
+- Added a Moby score property with decimal values from 0 to 10.
+- External attachment sources can now be local folders on the server and SMB shares, in addition to SFTP.
+
+### Web app and operations
+- Requests that fail without the page handling it now show a message instead of doing nothing, and the user management reports why a change was refused.
+- The printer address set in the web app is kept across restarts.
+- Updated Next.js to 16.4 and dependencies with known vulnerabilities.
+
 ## 1.3.3 - 2026-07-31
 
 ### Checkouts and reminder workflow

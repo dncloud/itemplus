@@ -212,6 +212,34 @@ export function AddSFTPAttachmentModal({
   onClose: () => void;
   onAdd: (data: { external_source_id: number; external_path: string; filename?: string; description?: string; gallery?: boolean }) => Promise<void>;
 }) {
+  return <AddExternalSourceAttachmentModal t={t} sources={sources} onClose={onClose} onAdd={onAdd} />;
+}
+
+function summarizeExternalSource(source: ExternalSource) {
+  if (source.source_type === "filesystem") {
+    return source.base_path || "/";
+  }
+  if (source.source_type === "smb") {
+    const shareName = source.share_name?.trim() || "";
+    const sharePath = shareName ? `/${shareName}` : "";
+    const basePath = source.base_path?.trim() ? ` · ${source.base_path}` : "";
+    return `${source.username}@${source.host}:${source.port}${sharePath}${basePath}`;
+  }
+  const basePath = source.base_path?.trim() ? ` · ${source.base_path}` : "";
+  return `${source.username}@${source.host}:${source.port}${basePath}`;
+}
+
+export function AddExternalSourceAttachmentModal({
+  t,
+  sources,
+  onClose,
+  onAdd,
+}: {
+  t: (k: string) => string;
+  sources: ExternalSource[];
+  onClose: () => void;
+  onAdd: (data: { external_source_id: number; external_path: string; filename?: string; description?: string; gallery?: boolean }) => Promise<void>;
+}) {
   const [sourceId, setSourceId] = useState<number | null>(sources[0]?.id ?? null);
   const [externalPath, setExternalPath] = useState("");
   const [filename, setFilename] = useState("");
@@ -278,148 +306,159 @@ export function AddSFTPAttachmentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className={`${modalPanelClass} max-w-lg`} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
+      <div
+        className="flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white text-gray-900 shadow-2xl dark:border-[#374151] dark:bg-[#182131] dark:text-white"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-[#374151]">
           <h2 className="text-lg font-semibold">{t("attachments.addSftp")}</h2>
           <button onClick={onClose}><X className="h-5 w-5 text-gray-400" /></button>
         </div>
 
-        {sources.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500 dark:border-[#374151] dark:bg-[#242d3c] dark:text-gray-400">
-            {t("attachments.noSftpSources")}
-          </div>
-        ) : (
-          <>
-            <div>
-              <label className={`${labelClass} mb-2`}>{t("attachments.sftpSource")} *</label>
-              <div className="space-y-2">
-                {sources.map((source) => (
-                  <button
-                    key={source.id}
-                    onClick={() => {
-                      setSourceId(source.id);
-                      setExternalPath("");
-                      setFilename("");
-                    }}
-                    className={`w-full rounded-lg border px-3 py-3 text-left transition ${sourceId === source.id ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10" : "border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-white dark:border-[#374151] dark:bg-[#242d3c] dark:hover:border-blue-500/60 dark:hover:bg-[#2b3546]"}`}
-                  >
-                    <div className="text-sm font-medium">{source.name}</div>
-                    <div className="text-xs text-gray-500">{source.username}@{source.host}:{source.port} · {source.base_path}</div>
-                  </button>
-                ))}
-              </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          {sources.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500 dark:border-[#374151] dark:bg-[#242d3c] dark:text-gray-400">
+              {t("attachments.noSftpSources")}
             </div>
-
-            <div>
-              <label className={labelClass}>{t("attachments.sftpPath")} *</label>
-              <input
-                value={externalPath}
-                onChange={(e) => {
-                  setExternalPath(e.target.value);
-                  setError(null);
-                }}
-                placeholder="photos/box-12/front.jpg"
-                className={inputClass}
-                autoFocus
-              />
-            </div>
-
-            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-[#374151] dark:bg-[#242d3c]">
-              <div className="flex items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#374151] dark:bg-[#182131]">
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-gray-500">{t("attachments.sftpBrowser")}</p>
-                  <p className="truncate text-xs text-gray-400">{currentPath ? `/${currentPath}` : "/"}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => sourceId && loadBrowse(sourceId, parentPath)}
-                    disabled={!sourceId || (!currentPath && !parentPath) || browseLoading}
-                    className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium transition hover:bg-gray-50 disabled:opacity-50 dark:border-[#374151] dark:bg-[#242d3c] dark:hover:bg-[#2b3546]"
-                  >
-                    <ArrowLeft className="h-3.5 w-3.5" />
-                    {t("common.back")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => sourceId && loadBrowse(sourceId, currentPath)}
-                    disabled={!sourceId || browseLoading}
-                    className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium transition hover:bg-gray-50 disabled:opacity-50 dark:border-[#374151] dark:bg-[#242d3c] dark:hover:bg-[#2b3546]"
-                  >
-                    {browseLoading ? t("attachments.sftpLoading") : t("common.refresh")}
-                  </button>
+          ) : (
+            <div className="space-y-5">
+              <div>
+                <label className={`${labelClass} mb-2`}>{t("attachments.sftpSource")} *</label>
+                <div className="grid gap-2 lg:grid-cols-2">
+                  {sources.map((source) => (
+                    <button
+                      key={source.id}
+                      onClick={() => {
+                        setSourceId(source.id);
+                        setExternalPath("");
+                        setFilename("");
+                      }}
+                      className={`w-full rounded-lg border px-3 py-3 text-left transition ${sourceId === source.id ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10" : "border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-white dark:border-[#374151] dark:bg-[#242d3c] dark:hover:border-blue-500/60 dark:hover:bg-[#2b3546]"}`}
+                    >
+                      <div className="text-sm font-medium">{source.name}</div>
+                      <div className="mt-1 text-xs text-gray-500">{summarizeExternalSource(source)}</div>
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className="max-h-64 overflow-y-auto bg-white dark:bg-[#242d3c]">
-                {browseLoading ? (
-                  <div className="px-3 py-8 text-center text-sm text-gray-500">{t("attachments.sftpLoading")}</div>
-                ) : browseEntries.length === 0 ? (
-                  <div className="px-3 py-8 text-center text-sm text-gray-500">{t("attachments.sftpEmpty")}</div>
-                ) : (
-                  <div className="divide-y divide-gray-100 dark:divide-[#374151]">
-                    {browseEntries.map((entry) => (
-                      <button
-                        key={`${entry.path}:${entry.is_dir ? "d" : "f"}`}
-                        type="button"
-                        onClick={() => selectBrowseEntry(entry)}
-                        className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-gray-50 dark:hover:bg-[#2b3546] ${!entry.is_dir && externalPath.trim() === entry.path ? "bg-blue-50 dark:bg-blue-500/10" : ""}`}
-                      >
-                        <div className="flex min-w-0 items-center gap-2">
-                          {entry.is_dir ? <Folder className="h-4 w-4 shrink-0 text-blue-500" /> : <FileText className="h-4 w-4 shrink-0 text-gray-400" />}
-                          <div className="min-w-0">
-                            <p className="truncate text-sm">{entry.name}</p>
-                            <p className="truncate text-[11px] text-gray-400">{entry.path}</p>
-                          </div>
-                        </div>
-                        <div className="shrink-0 text-[11px] text-gray-400">
-                          {entry.is_dir ? t("attachments.sftpFolder") : fmtSize(entry.size)}
-                        </div>
-                      </button>
-                    ))}
+
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,0.95fr)]">
+                <div className="space-y-4">
+                  <div>
+                    <label className={labelClass}>{t("attachments.sftpPath")} *</label>
+                    <input
+                      value={externalPath}
+                      onChange={(e) => {
+                        setExternalPath(e.target.value);
+                        setError(null);
+                      }}
+                      placeholder="photos/box-12/front.jpg"
+                      className={inputClass}
+                      autoFocus
+                    />
                   </div>
-                )}
+
+                  <div className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-[#374151] dark:bg-[#242d3c]">
+                    <div className="flex flex-col gap-3 border-b border-gray-200 bg-gray-50 px-3 py-3 dark:border-[#374151] dark:bg-[#182131] sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-500">{t("attachments.sftpBrowser")}</p>
+                        <p className="truncate text-xs text-gray-400">{currentPath ? `/${currentPath}` : "/"}</p>
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <button
+                          type="button"
+                          onClick={() => sourceId && loadBrowse(sourceId, parentPath)}
+                          disabled={!sourceId || (!currentPath && !parentPath) || browseLoading}
+                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium transition hover:bg-gray-50 disabled:opacity-50 dark:border-[#374151] dark:bg-[#242d3c] dark:hover:bg-[#2b3546]"
+                        >
+                          <ArrowLeft className="h-3.5 w-3.5" />
+                          {t("common.back")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sourceId && loadBrowse(sourceId, currentPath)}
+                          disabled={!sourceId || browseLoading}
+                          className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium transition hover:bg-gray-50 disabled:opacity-50 dark:border-[#374151] dark:bg-[#242d3c] dark:hover:bg-[#2b3546]"
+                        >
+                          {browseLoading ? t("attachments.sftpLoading") : t("common.refresh")}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="max-h-[340px] overflow-y-auto bg-white dark:bg-[#242d3c]">
+                      {browseLoading ? (
+                        <div className="px-3 py-8 text-center text-sm text-gray-500">{t("attachments.sftpLoading")}</div>
+                      ) : browseEntries.length === 0 ? (
+                        <div className="px-3 py-8 text-center text-sm text-gray-500">{t("attachments.sftpEmpty")}</div>
+                      ) : (
+                        <div className="divide-y divide-gray-100 dark:divide-[#374151]">
+                          {browseEntries.map((entry) => (
+                            <button
+                              key={`${entry.path}:${entry.is_dir ? "d" : "f"}`}
+                              type="button"
+                              onClick={() => selectBrowseEntry(entry)}
+                              className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-gray-50 dark:hover:bg-[#2b3546] ${!entry.is_dir && externalPath.trim() === entry.path ? "bg-blue-50 dark:bg-blue-500/10" : ""}`}
+                            >
+                              <div className="flex min-w-0 items-center gap-2">
+                                {entry.is_dir ? <Folder className="h-4 w-4 shrink-0 text-blue-500" /> : <FileText className="h-4 w-4 shrink-0 text-gray-400" />}
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm">{entry.name}</p>
+                                  <p className="truncate text-[11px] text-gray-400">{entry.path}</p>
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-[11px] text-gray-400">
+                                {entry.is_dir ? t("attachments.sftpFolder") : fmtSize(entry.size)}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className={labelClass}>{t("attachments.fileName")} ({t("common.optional")})</label>
+                    <input
+                      value={filename}
+                      onChange={(e) => {
+                        setFilename(e.target.value);
+                        setError(null);
+                      }}
+                      placeholder={t("attachments.sftpFilenamePlaceholder")}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>{t("attachments.linkDescription")}</label>
+                    <input
+                      value={description}
+                      onChange={(e) => {
+                        setDescription(e.target.value);
+                        setError(null);
+                      }}
+                      placeholder={t("attachments.linkPlaceholder")}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 dark:border-[#374151] dark:bg-[#242d3c]">
+                    <div className={`relative h-5 w-9 rounded-full transition ${gallery ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}>
+                      <div className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${gallery ? "translate-x-4" : ""}`} />
+                    </div>
+                    <input type="checkbox" checked={gallery} onChange={(e) => setGallery(e.target.checked)} className="sr-only" />
+                    <span className="text-sm">{t("attachments.showInGallery")}</span>
+                  </label>
+                </div>
               </div>
             </div>
+          )}
+        </div>
 
-            <div>
-              <label className={labelClass}>{t("attachments.fileName")} ({t("common.optional")})</label>
-              <input
-                value={filename}
-                onChange={(e) => {
-                  setFilename(e.target.value);
-                  setError(null);
-                }}
-                placeholder={t("attachments.sftpFilenamePlaceholder")}
-                className={inputClass}
-              />
-            </div>
-
-            <div>
-              <label className={labelClass}>{t("attachments.linkDescription")}</label>
-              <input
-                value={description}
-                onChange={(e) => {
-                  setDescription(e.target.value);
-                  setError(null);
-                }}
-                placeholder={t("attachments.linkPlaceholder")}
-                className={inputClass}
-              />
-            </div>
-
-            <label className="flex cursor-pointer items-center gap-3">
-              <div className={`relative h-5 w-9 rounded-full transition ${gallery ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}>
-                <div className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${gallery ? "translate-x-4" : ""}`} />
-              </div>
-              <input type="checkbox" checked={gallery} onChange={(e) => setGallery(e.target.checked)} className="sr-only" />
-              <span className="text-sm">{t("attachments.showInGallery")}</span>
-            </label>
-          </>
-        )}
-
-        <div className="space-y-2 pt-2">
+        <div className="space-y-2 border-t border-gray-200 px-5 py-4 dark:border-[#374151]">
           {error ? <p className="text-sm text-red-500">{error}</p> : null}
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button onClick={onClose} className={secondaryButtonClass}>{t("common.cancel")}</button>
             <button
               onClick={submit}

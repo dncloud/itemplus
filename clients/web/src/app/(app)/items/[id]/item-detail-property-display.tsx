@@ -1,10 +1,25 @@
 "use client";
 
 import { useApp } from "@/lib/app-context";
+import { normalizePropertyValue } from "@/lib/property-values";
 import type { Property } from "@/lib/api";
 import { ALL_AGE_RATINGS, CONDITIONS, PRIORITIES, PRIORITY_BADGE_CLASS } from "@/components/property-field/field";
 import { MarkdownView } from "@/components/ui/markdown";
-import { formatSelectCountValue } from "@/lib/property-options";
+import { formatPropertyChoices, formatSelectCountValue } from "@/lib/property-options";
+import { formatMobyScore, getMobyScoreRange, isMobyScoreProperty, MobyScoreStars } from "@/components/property-field/moby-score";
+
+function LinkedPropertyText({ text }: { text: string }) {
+  const parts = text.split(/((?:https?:\/\/|www\.)[^\s<>"']+)/gi);
+  return <>{parts.map((part, index) => {
+    if (!/^(?:https?:\/\/|www\.)/i.test(part)) return part;
+    const candidate = part.replace(/[.,;!]+$/, "");
+    try {
+      const url = new URL(/^www\./i.test(candidate) ? `https://${candidate}` : candidate);
+      if (!["http:", "https:"].includes(url.protocol) || !url.hostname || url.username || url.password) return part;
+      return <span key={index}><a href={url.href} target="_blank" rel="noopener noreferrer" className="break-words text-blue-500 hover:underline">{candidate}</a>{part.slice(candidate.length)}</span>;
+    } catch { return part; }
+  })}</>;
+}
 
 function formatTimeDuration(value: string, locale: string) {
   const match = value.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -28,7 +43,7 @@ function formatTimeDuration(value: string, locale: string) {
 }
 
 export function buildPropertyRows(properties: Property[], values: Record<string, unknown>) {
-  const filled = properties.filter((property) => values[String(property.id)] != null);
+  const filled = properties.filter((property) => normalizePropertyValue(values[String(property.id)]) != null);
   const widthUnits: Record<string, number> = { third: 2, half: 3, full: 6 };
   const rows: { prop: Property; span: number }[][] = [];
   let currentRow: { prop: Property; span: number }[] = [];
@@ -62,7 +77,8 @@ export function buildPropertyRows(properties: Property[], values: Record<string,
 export function PropDisplay({ prop, val: rawVal }: { prop: Property; val: unknown }) {
   const { locale, t } = useApp();
 
-  let val = rawVal;
+  let val = normalizePropertyValue(rawVal);
+  if (val == null) return null;
   if (typeof val === "string") {
     if (val.startsWith("[") || val.startsWith("{")) {
       try {
@@ -79,6 +95,21 @@ export function PropDisplay({ prop, val: rawVal }: { prop: Property; val: unknow
   const label = <p className="mb-1 text-xs font-semibold text-gray-700 dark:text-gray-300">{prop.name}</p>;
   const unitSuffix = prop.unit ? ` ${prop.unit}` : "";
   const badge = "inline-flex items-center px-2.5 py-1 rounded text-xs font-medium";
+
+  if (prop.property_type === "number" && isMobyScoreProperty(prop)) {
+    const score = Number(val);
+    if (!Number.isFinite(score)) return null;
+    const range = getMobyScoreRange(prop);
+    return (
+      <div>
+        {label}
+        <div className="flex flex-wrap items-center gap-2">
+          <MobyScoreStars value={score} max={range.max} />
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{formatMobyScore(score, locale, range.max)}</span>
+        </div>
+      </div>
+    );
+  }
 
   switch (prop.property_type) {
     case "age_rating": {
@@ -152,11 +183,13 @@ export function PropDisplay({ prop, val: rawVal }: { prop: Property; val: unknow
     case "number":
       return <div>{label}<p className="text-xs text-gray-500 dark:text-gray-400">{String(val)}{unitSuffix}</p></div>;
     case "select":
-      return <div>{label}<p className="text-xs text-gray-500 dark:text-gray-400">{formatSelectCountValue(val, locale)}{unitSuffix}</p></div>;
+      return <div>{label}<p className="text-xs text-gray-500 dark:text-gray-400"><LinkedPropertyText text={formatSelectCountValue(val, locale, prop.options)} />{unitSuffix}</p></div>;
+    case "multiselect":
+      return <div>{label}<p className="text-xs text-gray-500 dark:text-gray-400"><LinkedPropertyText text={formatPropertyChoices(val, prop.options, locale)} />{unitSuffix}</p></div>;
     case "time":
       return <div>{label}<p className="text-xs text-gray-500 dark:text-gray-400">{formatTimeDuration(String(val), locale)}</p></div>;
     case "textblock":
-      return <div>{label}<div className="text-sm/6 text-gray-700 dark:text-gray-300"><MarkdownView content={String(val)} /></div></div>;
+      return <div>{label}<div className="text-sm/6 text-gray-700 dark:text-gray-300"><MarkdownView content={String(val)} openLinksInNewTab /></div></div>;
     default: {
       let display = val;
       if (typeof val === "string" && val.startsWith("[")) {
@@ -164,7 +197,7 @@ export function PropDisplay({ prop, val: rawVal }: { prop: Property; val: unknow
           display = JSON.parse(val);
         } catch {}
       }
-      return <div>{label}<p className="text-xs text-gray-500 dark:text-gray-400">{Array.isArray(display) ? display.join(", ") : String(display)}{unitSuffix}</p></div>;
+      return <div>{label}<p className="text-xs text-gray-500 dark:text-gray-400"><LinkedPropertyText text={Array.isArray(display) ? display.join(", ") : String(display)} />{unitSuffix}</p></div>;
     }
   }
 }

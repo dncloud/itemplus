@@ -96,6 +96,7 @@ func OpenPrepared(url string) (*sqlx.DB, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	loadTextColumns(db, driver)
 	return db, nil
 }
 
@@ -306,6 +307,7 @@ func schemaStatementsBase() []string {
 			host TEXT NOT NULL,
 			port INTEGER NOT NULL DEFAULT 22,
 			username TEXT NOT NULL,
+			share_name TEXT NOT NULL DEFAULT '',
 			auth_type TEXT NOT NULL DEFAULT 'password',
 			password TEXT,
 			private_key TEXT,
@@ -351,6 +353,20 @@ func schemaStatementsBase() []string {
 			email TEXT NOT NULL,
 			locale TEXT,
 			token TEXT UNIQUE NOT NULL,
+			expires_at DATETIME NOT NULL,
+			used BOOLEAN DEFAULT 0
+		)`,
+
+		// Apple ID link tokens: e-mail codes and QR links for attaching an
+		// Apple ID to an account that was registered by e-mail.
+		`CREATE TABLE IF NOT EXISTS apple_link_tokens (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			token TEXT UNIQUE NOT NULL,
+			kind TEXT NOT NULL,
+			user_id INTEGER,
+			apple_sub TEXT,
+			code_hash TEXT,
+			attempts INTEGER NOT NULL DEFAULT 0,
 			expires_at DATETIME NOT NULL,
 			used BOOLEAN DEFAULT 0
 		)`,
@@ -415,35 +431,9 @@ func adapterForDriver(driver string) driverAdapter {
 	}
 }
 
-func LogicalTableNames() []string {
-	tables := []string{
-		"app_settings",
-		"users",
-		"label_templates",
-		"external_sources",
-		"device_sessions",
-		"qr_login_tokens",
-		"magic_link_tokens",
-		"checkout_requests",
-		"ai_usage_events",
-	}
-	for _, realm := range []string{"archive", "collection"} {
-		tables = append(tables,
-			realm+"_categories",
-			realm+"_properties",
-			realm+"_locations",
-			realm+"_manufacturers",
-			realm+"_suppliers",
-			realm+"_vendors",
-			realm+"_items",
-			realm+"_item_properties",
-			realm+"_attachments",
-			realm+"_checkouts",
-		)
-	}
-	return tables
-}
-
+// BackupTableNames lists the tables that format 1 backup bundles (written up
+// to version 1.3.3) contain. It is only used to read such bundles; current
+// backups dump every table that exists, see dump.go.
 func BackupTableNames() []string {
 	tables := []string{
 		"app_settings",
@@ -461,6 +451,8 @@ func BackupTableNames() []string {
 			realm+"_manufacturers",
 			realm+"_suppliers",
 			realm+"_vendors",
+			realm+"_developers",
+			realm+"_publishers",
 			realm+"_items",
 			realm+"_item_properties",
 			realm+"_attachments",
@@ -536,6 +528,11 @@ func realmTables(p string) []string {
 			name TEXT NOT NULL,
 			description TEXT,
 			color TEXT,
+			show_manufacturer BOOLEAN NOT NULL DEFAULT 1,
+			show_supplier BOOLEAN NOT NULL DEFAULT 1,
+			show_vendor BOOLEAN NOT NULL DEFAULT 1,
+			show_developer BOOLEAN NOT NULL DEFAULT 0,
+			show_publisher BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -587,6 +584,8 @@ func realmTables(p string) []string {
 			manufacturer_id INTEGER,
 			supplier_id INTEGER,
 			vendor_id INTEGER,
+			developer_id INTEGER,
+			publisher_id INTEGER,
 			purchase_date TEXT,
 			purchase_price REAL,
 			purchase_currency TEXT DEFAULT 'EUR',
@@ -754,6 +753,40 @@ func realmTables(p string) []string {
 			address TEXT,
 			contact_person TEXT,
 			customer_number TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// Developers
+		`CREATE TABLE IF NOT EXISTS ` + p + `_developers (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			logo TEXT,
+			logo_background TEXT,
+			external_logo_url TEXT,
+			website TEXT,
+			email TEXT,
+			phone TEXT,
+			address TEXT,
+			support_email TEXT,
+			support_phone TEXT,
+			support_url TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// Publishers
+		`CREATE TABLE IF NOT EXISTS ` + p + `_publishers (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			logo TEXT,
+			logo_background TEXT,
+			external_logo_url TEXT,
+			website TEXT,
+			email TEXT,
+			phone TEXT,
+			address TEXT,
+			support_email TEXT,
+			support_phone TEXT,
+			support_url TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,

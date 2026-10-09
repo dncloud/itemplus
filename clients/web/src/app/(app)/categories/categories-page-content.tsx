@@ -12,7 +12,8 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
 import { useRouter } from "next/navigation";
-import { useDeleteFlow } from "@/components/ui/confirm-delete";
+import { inUseMessage, readInUseInfo, useDeleteFlow, type InUseInfo } from "@/components/ui/confirm-delete";
+import { FloatingNotification, type FloatingNotificationState } from "@/components/ui/floating-notification";
 import { getPropertyTypes } from "./categories-sections";
 import { CategoriesPageView } from "./categories-page-view";
 import {
@@ -225,8 +226,19 @@ export default function CategoriesPageContent() {
     setProperties(await fetchCategoryProperties(catId));
   }, []);
 
+  const [notification, setNotification] = useState<FloatingNotificationState>(null);
+  useEffect(() => {
+    if (!notification) return;
+    const timeout = window.setTimeout(() => setNotification(null), 7000);
+    return () => window.clearTimeout(timeout);
+  }, [notification]);
+  const reportInUse = useCallback((info: InUseInfo) => {
+    setNotification({ title: t("categories.deleteRefused"), message: inUseMessage(t, info), tone: "error" });
+  }, [t]);
+
   const deleteFlow = useDeleteFlow({
     realm,
+    onInUse: reportInUse,
     onDeleted: useCallback((entityId: number, entityType: string) => {
       if (entityType === "property") {
         setProperties((current) => current.filter((property) => property.id !== entityId));
@@ -643,6 +655,11 @@ export default function CategoriesPageContent() {
   const deleteCat = (id: number) => {
     if (!canDeleteCategories) return;
     const cat = categories.find((c) => c.id === id);
+    // Known to be refused: say so right away instead of asking for confirmation first.
+    if ((cat?.item_count ?? 0) > 0) {
+      reportInUse({ type: "category", items: cat?.item_count ?? 0, children: 0 });
+      return;
+    }
     deleteFlow.requestDelete(id, cat?.name || `#${id}`, "category");
   };
 
@@ -709,6 +726,8 @@ export default function CategoriesPageContent() {
   };
 
   return (
+    <>
+    <FloatingNotification notification={notification} onClose={() => setNotification(null)} t={t} />
     <CategoriesPageView
       realm={realm}
       t={t}
@@ -791,7 +810,16 @@ export default function CategoriesPageContent() {
       confirmDeleteAction={async () => {
         if (!deleteFlow.confirm) return;
         if (deleteFlow.confirm.type === "category") {
-          await api.deleteCategory(deleteFlow.confirm.id);
+          try {
+            await api.deleteCategory(deleteFlow.confirm.id);
+          } catch (error) {
+            // A category that still has items stays; say why.
+            const inUse = readInUseInfo(error);
+            if (!inUse) throw error;
+            reportInUse(inUse);
+            deleteFlow.cancelConfirm();
+            return;
+          }
           if (expanded === deleteFlow.confirm.id) setExpanded(null);
           await load();
         } else {
@@ -801,5 +829,6 @@ export default function CategoriesPageContent() {
         deleteFlow.cancelConfirm();
       }}
     />
+    </>
   );
 }

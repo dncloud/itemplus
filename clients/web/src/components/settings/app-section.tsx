@@ -17,6 +17,7 @@ import {
   Users,
 } from "lucide-react";
 import { SelectField, ToggleRow } from "@/components/settings/ui";
+import { SettingsCatalogSection } from "@/components/settings/catalog-section";
 import type { SidebarFavorite } from "@/lib/api";
 import type { DateFormat } from "@/lib/app-context-storage";
 import type { Locale } from "@/lib/i18n-data";
@@ -397,6 +398,14 @@ export function SettingsAppSection({
             </div>
           </div>
         </AppSettingsSection>
+      ) : null}
+
+      {isAdmin ? (
+        <SettingsCatalogSection
+          t={t}
+          primaryButtonClass={primaryButtonClass}
+          secondaryButtonClass={secondaryButtonClass}
+        />
       ) : null}
 
       <AppSettingsSection title={t("settings.sidebarFavoritesTitle")} description={t("settings.sidebarFavoritesHint")}>

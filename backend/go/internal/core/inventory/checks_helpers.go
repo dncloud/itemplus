@@ -336,20 +336,20 @@ func buildSessionEntryFromSnapshot(sessionID int, item itemSnapshot, expected bo
 		status = "checked_out"
 	}
 	return SessionEntry{
-		SessionID:       sessionID,
-		ItemID:          intPtrFromNullInt64(sql.NullInt64{Int64: int64(item.ID), Valid: true}),
-		ItemName:        item.Name,
-		CategoryID:      intPtrFromNullInt64(item.CategoryID),
-		CategoryName:    stringPtrFromNullString(item.CategoryName),
-		CategoryColor:   stringPtrFromNullString(item.CategoryColor),
-		LocationID:      intPtrFromNullInt64(item.LocationID),
-		LocationName:    stringPtrFromNullString(item.LocationName),
-		LocationColor:   stringPtrFromNullString(item.LocationColor),
+		SessionID:           sessionID,
+		ItemID:              intPtrFromNullInt64(sql.NullInt64{Int64: int64(item.ID), Valid: true}),
+		ItemName:            item.Name,
+		CategoryID:          intPtrFromNullInt64(item.CategoryID),
+		CategoryName:        stringPtrFromNullString(item.CategoryName),
+		CategoryColor:       stringPtrFromNullString(item.CategoryColor),
+		LocationID:          intPtrFromNullInt64(item.LocationID),
+		LocationName:        stringPtrFromNullString(item.LocationName),
+		LocationColor:       stringPtrFromNullString(item.LocationColor),
 		ActiveCheckoutCount: int(item.ActiveCheckoutCount.Int64),
 		CheckoutUserName:    stringPtrFromNullString(item.CheckoutUserName),
 		CheckoutDueDate:     stringPtrFromNullString(item.CheckoutDueDate),
-		ExpectedInScope: expected,
-		Status:          status,
+		ExpectedInScope:     expected,
+		Status:              status,
 	}
 }
 

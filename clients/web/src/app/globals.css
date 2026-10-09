@@ -107,3 +107,30 @@ textarea::-webkit-resizer {
 .ai-word-reveal {
   animation: ai-word-reveal 420ms ease-out forwards;
 }
+
+/* Catalog media is selected through the card itself, not a form-style checkbox. */
+.game-catalog-section label:has(> input[type="checkbox"]) {
+  position: relative;
+}
+
+.game-catalog-section label:has(> input[type="checkbox"]) > input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.game-catalog-section label:has(> input[type="checkbox"]:checked) {
+  border-color: rgb(125 157 190 / 0.85) !important;
+  background-color: rgb(61 83 109 / 0.28) !important;
+  box-shadow: inset 0 0 0 1px rgb(125 157 190 / 0.2);
+}
+
+.game-catalog-section label:has(> input[type="checkbox"]:focus-visible) {
+  outline: 2px solid rgb(125 157 190);
+  outline-offset: 2px;
+}

@@ -1,4 +1,4 @@
-import { api, type Item } from "@/lib/api";
+import { api, type GameCatalogAsset, type Item } from "@/lib/api";
 import { collectPendingPropertyFiles } from "@/components/item-create/helpers";
 
 export function applySuggestedItemField<K extends keyof Item>(
@@ -57,6 +57,7 @@ type PersistItemOptions = {
   itemId?: number;
   item: Partial<Item>;
   propValues: Record<string, unknown>;
+  catalogAssets?: GameCatalogAsset[];
 };
 
 export async function persistItemWithUploads(options: PersistItemOptions): Promise<number> {
@@ -70,6 +71,12 @@ export async function persistItemWithUploads(options: PersistItemOptions): Promi
     options.isEditMode && options.itemId
       ? await updateExistingItem(options.itemId, payload, pendingFiles)
       : await createNewItem(payload, pendingFiles);
+
+  if (options.catalogAssets?.length) {
+    for (let index = 0; index < options.catalogAssets.length; index += 25) {
+      await api.importGameCatalogAssets(resolvedItemId, options.catalogAssets.slice(index, index + 25));
+    }
+  }
 
   return resolvedItemId;
 }

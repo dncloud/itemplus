@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -18,6 +19,22 @@ type Connection struct {
 	CurrentLabel string
 	CurrentRealm string
 	IsAdmin      bool
+
+	// gorilla/websocket allows only one concurrent writer per connection.
+	writeMu sync.Mutex
+}
+
+const writeWait = 10 * time.Second
+
+// write sends one text frame. A failed or timed-out write closes the
+// connection so its read loop ends and the session is cleaned up.
+func (c *Connection) write(msg []byte) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+	if err := c.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+		_ = c.Conn.Close()
+	}
 }
 
 type Manager struct {
@@ -27,92 +44,80 @@ type Manager struct {
 
 var M = &Manager{connections: make(map[int]*Connection)}
 
+// Add registers conn for its session. Every connection is given a session of
+// its own (see claimDeviceSession), so there is normally nothing to replace;
+// should a session be registered twice anyway, the earlier connection is left
+// open rather than closed, because closing it would only make its client
+// reconnect and push the newer one out in turn.
 func (m *Manager) Add(conn *Connection) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.connections[conn.SessionID] = conn
+	m.mu.Unlock()
 }
 
-func (m *Manager) Remove(sessionID int) {
+// Remove closes conn and unregisters it. It reports false when the session
+// has meanwhile been taken over by a newer connection, which stays registered.
+func (m *Manager) Remove(conn *Connection) bool {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if c, ok := m.connections[sessionID]; ok {
-		c.Conn.Close()
-		delete(m.connections, sessionID)
+	current, ok := m.connections[conn.SessionID]
+	takenOver := ok && current != conn
+	if ok && !takenOver {
+		delete(m.connections, conn.SessionID)
+	}
+	m.mu.Unlock()
+	_ = conn.Conn.Close()
+	return !takenOver
+}
+
+// send delivers the event to every connection matching the filter. Writes
+// happen outside the manager lock so a slow client cannot stall the others.
+func (m *Manager) send(event string, data map[string]interface{}, match func(*Connection) bool) {
+	msg, err := json.Marshal(map[string]interface{}{"event": event, "data": data})
+	if err != nil {
+		log.Printf("WebSocket event %s could not be encoded: %v", event, err)
+		return
+	}
+
+	m.mu.RLock()
+	var targets []*Connection
+	for _, c := range m.connections {
+		if match(c) {
+			targets = append(targets, c)
+		}
+	}
+	m.mu.RUnlock()
+
+	for _, c := range targets {
+		c.write(msg)
 	}
 }
 
 func (m *Manager) SendToSession(sessionID int, event string, data map[string]interface{}) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if c, ok := m.connections[sessionID]; ok {
-		msg, _ := json.Marshal(map[string]interface{}{"event": event, "data": data})
-		c.Conn.WriteMessage(websocket.TextMessage, msg)
-	}
+	m.send(event, data, func(c *Connection) bool { return c.SessionID == sessionID })
 }
 
 func (m *Manager) SendToUser(userID int, event string, data map[string]interface{}) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	msg, _ := json.Marshal(map[string]interface{}{"event": event, "data": data})
-	for _, c := range m.connections {
-		if c.UserID == userID {
-			c.Conn.WriteMessage(websocket.TextMessage, msg)
-		}
-	}
+	m.send(event, data, func(c *Connection) bool { return c.UserID == userID })
 }
 
 func (m *Manager) SendToUserExcept(userID int, excludeSessionID int, event string, data map[string]interface{}) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	msg, _ := json.Marshal(map[string]interface{}{"event": event, "data": data})
-	for _, c := range m.connections {
-		if c.UserID == userID && c.SessionID != excludeSessionID {
-			c.Conn.WriteMessage(websocket.TextMessage, msg)
-		}
-	}
+	m.send(event, data, func(c *Connection) bool { return c.UserID == userID && c.SessionID != excludeSessionID })
 }
 
 func (m *Manager) SendToUserBrowsers(userID int, event string, data map[string]interface{}) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	msg, _ := json.Marshal(map[string]interface{}{"event": event, "data": data})
-	for _, c := range m.connections {
-		if c.UserID == userID && c.DeviceType == "browser" {
-			c.Conn.WriteMessage(websocket.TextMessage, msg)
-		}
-	}
+	m.send(event, data, func(c *Connection) bool { return c.UserID == userID && c.DeviceType == "browser" })
 }
 
 func (m *Manager) SendToUserIOS(userID int, event string, data map[string]interface{}) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	msg, _ := json.Marshal(map[string]interface{}{"event": event, "data": data})
-	for _, c := range m.connections {
-		if c.UserID == userID && c.DeviceType == "ios" {
-			c.Conn.WriteMessage(websocket.TextMessage, msg)
-		}
-	}
+	m.send(event, data, func(c *Connection) bool { return c.UserID == userID && c.DeviceType == "ios" })
 }
 
 func (m *Manager) SendToAdmins(event string, data map[string]interface{}) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	msg, _ := json.Marshal(map[string]interface{}{"event": event, "data": data})
-	for _, c := range m.connections {
-		if c.IsAdmin {
-			c.Conn.WriteMessage(websocket.TextMessage, msg)
-		}
-	}
+	m.send(event, data, func(c *Connection) bool { return c.IsAdmin })
 }
 
 func (m *Manager) Broadcast(event string, data map[string]interface{}) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	msg, _ := json.Marshal(map[string]interface{}{"event": event, "data": data})
-	for _, c := range m.connections {
-		c.Conn.WriteMessage(websocket.TextMessage, msg)
-	}
+	m.send(event, data, func(*Connection) bool { return true })
 }
 
 func (m *Manager) HasIOSDevices(userID int) bool {
@@ -173,13 +178,17 @@ func (m *Manager) GetUserDevices(userID int) []map[string]interface{} {
 
 func (m *Manager) Kick(sessionID int) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if c, ok := m.connections[sessionID]; ok {
-		msg, _ := json.Marshal(map[string]interface{}{"event": "session.kicked", "data": map[string]interface{}{}})
-		c.Conn.WriteMessage(websocket.TextMessage, msg)
-		c.Conn.Close()
+	c, ok := m.connections[sessionID]
+	if ok {
 		delete(m.connections, sessionID)
 	}
+	m.mu.Unlock()
+	if !ok {
+		return
+	}
+	msg, _ := json.Marshal(map[string]interface{}{"event": "session.kicked", "data": map[string]interface{}{}})
+	c.write(msg)
+	_ = c.Conn.Close()
 }
 
 func (m *Manager) CheckPermission(userID int, perm string) bool {

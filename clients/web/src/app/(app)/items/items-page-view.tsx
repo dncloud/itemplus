@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import clsx from "clsx";
 import { ArrowLeftRight, CircleCheck, ClipboardList, Printer, Trash2, Wrench, X } from "lucide-react";
 import type { CheckoutRequest, Item, Property } from "@/lib/api";
@@ -11,6 +12,7 @@ import {
   quantityValueTone,
 } from "@/app/(app)/items/items-page-utils";
 import { buildPaginationPages } from "@/app/(app)/items/items-page-navigation";
+import { MarkdownView } from "@/components/ui/markdown";
 
 function renderRequestBadge(
   itemId: number,
@@ -98,6 +100,13 @@ function formatListDate(locale: string, value?: string | null) {
   return new Date(value).toLocaleDateString(locale === "en" ? "en-US" : "de-DE");
 }
 
+const WIDE_COVER_RATIO = 1.25;
+
+function coverAspectClass(ratio?: number) {
+  if (ratio && ratio >= 0.9) return "aspect-square";
+  return "aspect-[4/5]";
+}
+
 export function ItemsGrid({
   items,
   pendingRequestsByItem,
@@ -119,6 +128,7 @@ export function ItemsGrid({
   itemStockWarningPercent,
   itemStockCriticalPercent,
   listProps,
+  categoryProperties,
   filterCategory,
   filterLocation,
   catName,
@@ -157,6 +167,7 @@ export function ItemsGrid({
   itemStockWarningPercent: number;
   itemStockCriticalPercent: number;
   listProps: Property[];
+  categoryProperties: Property[];
   filterCategory?: number;
   filterLocation?: number;
   catName: (id?: number) => string;
@@ -175,28 +186,52 @@ export function ItemsGrid({
   onPrint: (item: Item) => void;
   onRemove: (itemId: number) => void;
 }) {
+  const [coverRatios, setCoverRatios] = useState<Record<number, number>>({});
+
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {items.map((item) => (
-        <div
+      {items.map((item) => {
+        const image = item.attachments?.find((attachment) => attachment.gallery && (attachment.file_path || attachment.download_url) && /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(attachment.filename));
+        const isCatalogItem = categoryProperties.some((property) => {
+          if (property.category_id !== item.category_id) return false;
+          const catalog = property.options?.game_catalog;
+          return !!catalog && typeof catalog === "object" && !Array.isArray(catalog);
+        });
+        const isCatalogImage = Boolean(image && isCatalogItem);
+        const coverRatio = image ? coverRatios[image.id] : undefined;
+        const isWideCover = Boolean(coverRatio && coverRatio >= WIDE_COVER_RATIO);
+        const useCoverCard = isCatalogImage && !isWideCover;
+
+        return (
+          <div
           key={item.id}
           className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-900/5 transition hover:bg-gray-50 dark:bg-gray-800/50 dark:outline-white/10 dark:hover:bg-white/2.5"
           onClick={() => onOpenItem(item.id)}
         >
           {showItemImages && (() => {
-            const img = item.attachments?.find((a) => a.gallery && (a.file_path || a.download_url) && /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(a.filename));
-            if (!img && !showItemPlaceholders) return null;
+            if (!image && !showItemPlaceholders) return null;
             return (
-              <div className="h-44 w-full shrink-0 overflow-hidden bg-gray-100 sm:h-40 xl:h-44 dark:bg-white/5">
+              <div className={clsx(
+                "w-full shrink-0 overflow-hidden bg-gray-100 dark:bg-white/5",
+                useCoverCard ? coverAspectClass(coverRatio) : isWideCover ? "aspect-[4/3]" : "h-44 sm:h-40 xl:h-44",
+              )}>
                 <img
-                  src={img ? (img.download_url ? `${serverURL}${img.download_url}` : `${serverURL}/uploads/${img.file_path}`) : (isDark ? "/item-placeholder-dark.svg" : "/item-placeholder.svg")}
+                  src={image ? (image.download_url ? `${serverURL}${image.download_url}` : `${serverURL}/uploads/${image.file_path}`) : (isDark ? "/item-placeholder-dark.svg" : "/item-placeholder.svg")}
                   alt=""
-                  className="h-full w-full object-cover"
+                  className={isCatalogImage ? "h-full w-full" : "h-full w-full object-cover"}
+                  onLoad={isCatalogImage ? (event) => {
+                    const { naturalHeight, naturalWidth } = event.currentTarget;
+                    if (!naturalWidth || !naturalHeight || !image) return;
+                    const ratio = naturalWidth / naturalHeight;
+                    setCoverRatios((current) => current[image.id] === ratio ? current : { ...current, [image.id]: ratio });
+                  } : undefined}
                 />
               </div>
             );
           })()}
-          <div className="flex flex-1 flex-col p-4">
+          <div className={clsx(
+            "flex flex-1 flex-col p-4",
+          )}>
             <div className="min-w-0">
               {(item.is_bundle || item.parentBundle || pendingRequestsByItem[item.id]?.length || item.checked_out_to || (item.maintenance_summary?.due_count || 0) > 0 || (item.maintenance_summary?.overdue_count || 0) > 0 || (item.item_status && item.item_status !== "active")) ? (
                 <div className="mb-2 flex flex-wrap items-start gap-1.5">
@@ -235,7 +270,9 @@ export function ItemsGrid({
             </div>
 
             {showItemDescription && item.description ? (
-              <p className="mt-2 break-words text-xs text-gray-500 line-clamp-4 dark:text-gray-400">{item.description}</p>
+              <div onClick={(event) => { if (event.target instanceof Element && event.target.closest("a")) event.stopPropagation(); }}>
+                <MarkdownView content={item.description} className="mt-2 line-clamp-4 break-words !text-xs !text-gray-500 dark:!text-gray-400 [&_p]:!my-0 [&_p]:!leading-normal [&_img]:hidden" />
+              </div>
             ) : null}
 
             {item.parentBundle ? (
@@ -292,7 +329,7 @@ export function ItemsGrid({
                   {pv.map((p) => (
                     <div key={p.id} className="break-words">
                       <span className="font-semibold text-gray-700 dark:text-gray-300">{p.name}:</span>{" "}
-                      <span className="whitespace-normal">{formatPropShort(p.value, p.type, locale)}{p.unit ? ` ${p.unit}` : ""}</span>
+                      <span className="whitespace-normal">{formatPropShort(p.value, p.type, locale, p.options)}{p.unit ? ` ${p.unit}` : ""}</span>
                     </div>
                   ))}
                 </div>
@@ -349,8 +386,9 @@ export function ItemsGrid({
               </div>
             )}
           </div>
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }

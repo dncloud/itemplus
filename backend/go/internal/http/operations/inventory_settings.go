@@ -54,8 +54,16 @@ func inventoryCheckoutAffectsMovementQuantity() bool {
 	return value
 }
 
+// checkoutMovementQuantities looks the setting up itself and therefore must
+// not be called while a transaction is open: SQLite runs on one connection,
+// and the lookup would wait forever for the one the transaction holds.
+// Inside a transaction, read the setting first and use movementQuantities.
 func checkoutMovementQuantities(totalQuantity int, movementType string) (int, int) {
-	if !inventoryCheckoutAffectsMovementQuantity() {
+	return movementQuantities(inventoryCheckoutAffectsMovementQuantity(), totalQuantity, movementType)
+}
+
+func movementQuantities(checkoutAffectsQuantity bool, totalQuantity int, movementType string) (int, int) {
+	if !checkoutAffectsQuantity {
 		return totalQuantity, totalQuantity
 	}
 

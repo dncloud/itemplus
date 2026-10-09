@@ -11,6 +11,8 @@ func RegisterAdminRoutes(g *gin.RouterGroup) {
 
 	g.GET("/export-bundle", adminExportBundle)
 	g.POST("/recover-bundle", adminRecoverBundle)
+	g.GET("/unconnected-files", adminListUnconnectedFiles)
+	g.POST("/unconnected-files/delete", adminDeleteUnconnectedFiles)
 	g.GET("/health/locations", adminHealthLocations)
 	g.POST("/health/locations/fix", adminFixLocations)
 	g.PUT("/branding", settingshandlers.AdminUpdateBranding)

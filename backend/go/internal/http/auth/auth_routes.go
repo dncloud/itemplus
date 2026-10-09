@@ -70,6 +70,7 @@ func RegisterAuthRoutes(g *gin.RouterGroup) {
 	g.POST("/magic/verify", magicLinkVerify)
 	g.POST("/logout", authLogout)
 	g.POST("/ws-ticket", middleware.Auth(), wsTicketGenerate)
+	registerAppleLinkRoutes(g.Group("/apple/link"))
 }
 
 func randomURLToken(n int) (string, error) {
@@ -78,16 +79,6 @@ func randomURLToken(n int) (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
-}
-
-func resolvedLoginEmail(explicit *string, fallback string) *string {
-	if explicit != nil && strings.TrimSpace(*explicit) != "" {
-		return explicit
-	}
-	if strings.TrimSpace(fallback) == "" {
-		return nil
-	}
-	return &fallback
 }
 
 func normalizedUserLocale(locale *string) *string {

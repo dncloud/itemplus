@@ -3,6 +3,7 @@ package storage
 import (
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"os"
 	"path"
@@ -157,4 +158,40 @@ func safeFilename(name string) string {
 		name = "upload"
 	}
 	return name
+}
+
+// inlineExtensions are shown in the browser; everything else is offered as a download.
+var inlineExtensions = map[string]bool{
+	// Images
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".svg": true, ".bmp": true, ".heic": true,
+	// Video
+	".mp4": true, ".mov": true, ".avi": true, ".mkv": true, ".webm": true,
+	// Audio
+	".mp3": true, ".wav": true, ".flac": true, ".ogg": true, ".m4a": true, ".aac": true,
+	// PDF
+	".pdf": true,
+}
+
+// svgContentSecurityPolicy keeps an SVG that is opened directly from running
+// scripts or loading anything in the app's origin. SVGs shown through <img>
+// are unaffected.
+const svgContentSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+
+// SetFileResponseHeaders sets the headers for delivering a stored or proxied
+// user file under the given display filename.
+func SetFileResponseHeaders(c *gin.Context, filename string) {
+	ext := strings.ToLower(filepath.Ext(filename))
+
+	disposition := "attachment"
+	if inlineExtensions[ext] {
+		disposition = "inline"
+	}
+	if value := mime.FormatMediaType(disposition, map[string]string{"filename": filename}); value != "" {
+		disposition = value
+	}
+	c.Header("Content-Disposition", disposition)
+	c.Header("X-Content-Type-Options", "nosniff")
+	if ext == ".svg" {
+		c.Header("Content-Security-Policy", svgContentSecurityPolicy)
+	}
 }

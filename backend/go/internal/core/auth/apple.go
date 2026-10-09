@@ -9,6 +9,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,8 +18,28 @@ import (
 )
 
 type AppleClaims struct {
-	Email string `json:"email"`
+	Email         string    `json:"email"`
+	EmailVerified appleBool `json:"email_verified"`
 	jwt.RegisteredClaims
+}
+
+// appleBool decodes email_verified, which Apple sends either as a JSON
+// boolean or as the string "true".
+type appleBool bool
+
+func (b *appleBool) UnmarshalJSON(data []byte) error {
+	*b = appleBool(strings.Trim(string(data), `"`) == "true")
+	return nil
+}
+
+// VerifiedEmail returns the normalized address Apple vouches for, or "" when
+// the token carries no address or Apple has not verified it. This is the only
+// e-mail from an Apple sign-in that may be used to identify an account.
+func (c *AppleClaims) VerifiedEmail() string {
+	if !c.EmailVerified {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(c.Email))
 }
 
 // appleJWKS caches Apple's public keys.

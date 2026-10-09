@@ -44,6 +44,32 @@ export function SettingsStorageSection({
   secondaryButtonClass: string;
   dangerButtonClass: string;
 }) {
+  const isFilesystem = externalSourceDraft.source_type === "filesystem";
+  const isSMB = externalSourceDraft.source_type === "smb";
+  const isSFTP = externalSourceDraft.source_type === "sftp";
+
+  const applySourceType = (nextType: ExternalSourceDraft["source_type"]) => {
+    setExternalSourceDraft({
+      ...externalSourceDraft,
+      source_type: nextType,
+      port: nextType === "smb" ? 445 : nextType === "filesystem" ? 0 : 22,
+      auth_type: nextType === "filesystem" ? "none" : "password",
+      host: nextType === "filesystem" ? "" : externalSourceDraft.host,
+      username: nextType === "filesystem" ? "" : externalSourceDraft.username,
+      share_name: nextType === "smb" ? externalSourceDraft.share_name || "" : "",
+      private_key: nextType === "sftp" ? externalSourceDraft.private_key : "",
+      known_host_key: nextType === "sftp" ? externalSourceDraft.known_host_key : "",
+      base_path: nextType === "filesystem" ? (externalSourceDraft.base_path || "/") : externalSourceDraft.base_path || "/",
+    });
+  };
+
+  const basePathLabel = isFilesystem ? t("settings.externalSourceBasePathFilesystem") : t("settings.externalSourceBasePath");
+  const basePathHint = isFilesystem
+    ? t("settings.externalSourceBasePathFilesystemHint")
+    : isSMB
+      ? t("settings.externalSourceBasePathSmbHint")
+      : t("settings.externalSourceBasePathSftpHint");
+
   return (
     <section id="storage" className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-[16rem_minmax(0,1fr)]">
       <div>
@@ -78,7 +104,13 @@ export function SettingsStorageSection({
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">{source.name}</div>
-                      <div className="truncate text-xs text-gray-500">{source.username}@{source.host}:{source.port}</div>
+                      <div className="truncate text-xs text-gray-500">
+                        {source.source_type === "filesystem"
+                          ? source.base_path
+                          : source.source_type === "smb"
+                            ? `${source.username}@${source.host}:${source.port}/${source.share_name || ""}`
+                            : `${source.username}@${source.host}:${source.port}`}
+                      </div>
                     </div>
                     {source.is_active ? (
                       <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
@@ -96,6 +128,33 @@ export function SettingsStorageSection({
               <div className="text-sm text-gray-500">{t("settings.noExternalSources")}</div>
             ) : (
               <>
+                <div className="space-y-3 border-b border-gray-200 pb-8 dark:border-white/10">
+                  <label className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceType")}</label>
+                  <div className="grid grid-cols-1 gap-2 xl:grid-cols-3">
+                    <ChoiceTile
+                      active={isFilesystem}
+                      onClick={() => applySourceType("filesystem")}
+                      title={t("settings.externalSourceTypeFilesystem")}
+                      description={t("settings.externalSourceTypeFilesystemHint")}
+                      accent="emerald"
+                    />
+                    <ChoiceTile
+                      active={isSMB}
+                      onClick={() => applySourceType("smb")}
+                      title={t("settings.externalSourceTypeSmb")}
+                      description={t("settings.externalSourceTypeSmbHint")}
+                      accent="emerald"
+                    />
+                    <ChoiceTile
+                      active={isSFTP}
+                      onClick={() => applySourceType("sftp")}
+                      title={t("settings.externalSourceTypeSftp")}
+                      description={t("settings.externalSourceTypeSftpHint")}
+                      accent="emerald"
+                    />
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceName")}</label>
@@ -106,42 +165,55 @@ export function SettingsStorageSection({
                     <input value={externalSourceDraft.description || ""} onChange={(e) => setExternalSourceDraft({ ...externalSourceDraft, description: e.target.value })} className={inputClass} />
                   </div>
                   <div>
-                    <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceHost")}</label>
-                    <input value={externalSourceDraft.host} onChange={(e) => setExternalSourceDraft({ ...externalSourceDraft, host: e.target.value })} className={inputClass} />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourcePort")}</label>
-                    <input type="number" value={externalSourceDraft.port} onChange={(e) => setExternalSourceDraft({ ...externalSourceDraft, port: Number(e.target.value) || 22 })} className={inputClass} />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceUsername")}</label>
-                    <input value={externalSourceDraft.username} onChange={(e) => setExternalSourceDraft({ ...externalSourceDraft, username: e.target.value })} className={inputClass} />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceBasePath")}</label>
+                    <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{basePathLabel}</label>
                     <input value={externalSourceDraft.base_path} onChange={(e) => setExternalSourceDraft({ ...externalSourceDraft, base_path: e.target.value })} className={inputClass} />
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{basePathHint}</p>
                   </div>
+                  {!isFilesystem ? (
+                    <>
+                      <div>
+                        <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceHost")}</label>
+                        <input value={externalSourceDraft.host} onChange={(e) => setExternalSourceDraft({ ...externalSourceDraft, host: e.target.value })} className={inputClass} />
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourcePort")}</label>
+                        <input type="number" value={externalSourceDraft.port} onChange={(e) => setExternalSourceDraft({ ...externalSourceDraft, port: Number(e.target.value) || (isSMB ? 445 : 22) })} className={inputClass} />
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceUsername")}</label>
+                        <input value={externalSourceDraft.username} onChange={(e) => setExternalSourceDraft({ ...externalSourceDraft, username: e.target.value })} className={inputClass} />
+                      </div>
+                      {isSMB ? (
+                        <div>
+                          <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceShareName")}</label>
+                          <input value={externalSourceDraft.share_name || ""} onChange={(e) => setExternalSourceDraft({ ...externalSourceDraft, share_name: e.target.value })} className={inputClass} />
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
                 </div>
 
-                <div className="space-y-3 border-t border-gray-200 pt-8 dark:border-white/10">
-                  <label className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceAuthType")}</label>
-                  <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                    <ChoiceTile
-                      active={externalSourceDraft.auth_type === "password"}
-                      onClick={() => setExternalSourceDraft({ ...externalSourceDraft, auth_type: "password", private_key: "" })}
-                      title={t("settings.externalSourceAuthPassword")}
-                      accent="emerald"
-                    />
-                    <ChoiceTile
-                      active={externalSourceDraft.auth_type === "ssh_key"}
-                      onClick={() => setExternalSourceDraft({ ...externalSourceDraft, auth_type: "ssh_key", password: "" })}
-                      title={t("settings.externalSourceAuthKey")}
-                      accent="emerald"
-                    />
+                {!isFilesystem && isSFTP ? (
+                  <div className="space-y-3 border-t border-gray-200 pt-8 dark:border-white/10">
+                    <label className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceAuthType")}</label>
+                    <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                      <ChoiceTile
+                        active={externalSourceDraft.auth_type === "password"}
+                        onClick={() => setExternalSourceDraft({ ...externalSourceDraft, auth_type: "password", private_key: "" })}
+                        title={t("settings.externalSourceAuthPassword")}
+                        accent="emerald"
+                      />
+                      <ChoiceTile
+                        active={externalSourceDraft.auth_type === "ssh_key"}
+                        onClick={() => setExternalSourceDraft({ ...externalSourceDraft, auth_type: "ssh_key", password: "" })}
+                        title={t("settings.externalSourceAuthKey")}
+                        accent="emerald"
+                      />
+                    </div>
                   </div>
-                </div>
+                ) : null}
 
-                {externalSourceDraft.auth_type === "password" ? (
+                {!isFilesystem && externalSourceDraft.auth_type === "password" ? (
                   <div>
                     <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourcePassword")}</label>
                     <input
@@ -153,7 +225,7 @@ export function SettingsStorageSection({
                     />
                   </div>
                 ) : (
-                  <div>
+                  isSFTP ? <div>
                     <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourcePrivateKey")}</label>
                     <textarea
                       value={externalSourceDraft.private_key || ""}
@@ -162,10 +234,10 @@ export function SettingsStorageSection({
                       placeholder={selectedExternalSource?.has_private_key ? t("settings.externalSourcePrivateKeyPlaceholder") : ""}
                       className={monoTextareaClass}
                     />
-                  </div>
+                  </div> : null
                 )}
 
-                <div className="space-y-2">
+                {isSFTP ? <div className="space-y-2">
                   <label className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceKnownHostKey")}</label>
                   <textarea
                     value={externalSourceDraft.known_host_key}
@@ -174,7 +246,7 @@ export function SettingsStorageSection({
                     className={monoTextareaClass}
                   />
                   <p className="text-sm/6 text-gray-500 dark:text-gray-400">{t("settings.externalSourceKnownHostKeyHint")}</p>
-                </div>
+                </div> : null}
 
                 <div className="border-t border-gray-200 pt-8 dark:border-white/10">
                   <ToggleRow
@@ -187,9 +259,11 @@ export function SettingsStorageSection({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-8 dark:border-white/10">
-                  <button onClick={fetchExternalSourceHostKey} disabled={!externalSourceDraft.host.trim() || !!externalSourceBusy} className={`${secondaryButtonClass} disabled:opacity-50`}>
-                    {externalSourceBusy === "hostkey" ? t("settings.externalSourceFetchingHostKey") : t("settings.externalSourceFetchHostKey")}
-                  </button>
+                  {isSFTP ? (
+                    <button onClick={fetchExternalSourceHostKey} disabled={!externalSourceDraft.host.trim() || !!externalSourceBusy} className={`${secondaryButtonClass} disabled:opacity-50`}>
+                      {externalSourceBusy === "hostkey" ? t("settings.externalSourceFetchingHostKey") : t("settings.externalSourceFetchHostKey")}
+                    </button>
+                  ) : null}
                   <button onClick={testExternalSource} disabled={!!externalSourceBusy} className={`${secondaryButtonClass} disabled:opacity-50`}>
                     {externalSourceBusy === "test" ? t("settings.externalSourceTesting") : t("settings.externalSourceTestConnection")}
                   </button>

@@ -7,6 +7,7 @@ import { ArrowDownWideNarrow, Sparkles } from "lucide-react";
 import ColorPreviewBadge from "@/components/ui/color-preview-badge";
 import SelectPicker from "@/components/ui/select-picker";
 import type { Category, Property } from "@/lib/api";
+import { isMasterDataRoleVisible } from "@/lib/category-master-data";
 import { getPropertyOptionConfig } from "@/lib/property-options";
 import { SortableChoice } from "./categories-sortables-private";
 import { TYPES_WITH_CHOICES, TYPES_WITH_UNIT } from "./categories-property-meta";
@@ -20,6 +21,15 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
       <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{label}</label>
       <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={categoryInputClass} />
     </div>
+  );
+}
+
+function RoleVisibilityToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+  return (
+    <button type="button" onClick={onChange} className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">
+      <span>{label}</span>
+      <span className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition ${checked ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}><span className={`inline-block h-3.5 w-3.5 translate-y-[3px] rounded-full bg-white transition ${checked ? "translate-x-[18px]" : "translate-x-[3px]"}`} /></span>
+    </button>
   );
 }
 
@@ -191,6 +201,16 @@ export function CategoryInlineForm({
               {t("common.remove")}
             </button>
           ) : null}
+        </div>
+      </div>
+      <div>
+        <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("categories.masterDataRoles")}</label>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          <RoleVisibilityToggle label={t("items.manufacturer")} checked={isMasterDataRoleVisible(category as Category, "manufacturer")} onChange={() => onChange({ ...category, show_manufacturer: !isMasterDataRoleVisible(category as Category, "manufacturer") })} />
+          <RoleVisibilityToggle label={t("items.supplier")} checked={isMasterDataRoleVisible(category as Category, "supplier")} onChange={() => onChange({ ...category, show_supplier: !isMasterDataRoleVisible(category as Category, "supplier") })} />
+          <RoleVisibilityToggle label={t("items.vendor")} checked={isMasterDataRoleVisible(category as Category, "vendor")} onChange={() => onChange({ ...category, show_vendor: !isMasterDataRoleVisible(category as Category, "vendor") })} />
+          <RoleVisibilityToggle label={t("items.developer")} checked={isMasterDataRoleVisible(category as Category, "developer")} onChange={() => onChange({ ...category, show_developer: !isMasterDataRoleVisible(category as Category, "developer") })} />
+          <RoleVisibilityToggle label={t("items.publisher")} checked={isMasterDataRoleVisible(category as Category, "publisher")} onChange={() => onChange({ ...category, show_publisher: !isMasterDataRoleVisible(category as Category, "publisher") })} />
         </div>
       </div>
       <div className="flex justify-end gap-2 pt-2">

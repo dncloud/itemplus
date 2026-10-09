@@ -104,11 +104,12 @@ export interface ExternalSource {
   id: number;
   name: string;
   description?: string | null;
-  source_type: "sftp";
+  source_type: "sftp" | "filesystem" | "smb";
   host: string;
   port: number;
   username: string;
-  auth_type: "password" | "ssh_key";
+  share_name?: string | null;
+  auth_type: "none" | "password" | "ssh_key";
   known_host_key: string;
   base_path: string;
   is_active: boolean;
@@ -121,11 +122,12 @@ export interface ExternalSource {
 export interface ExternalSourcePayload {
   name: string;
   description?: string | null;
-  source_type: "sftp";
+  source_type: "sftp" | "filesystem" | "smb";
   host: string;
   port: number;
   username: string;
-  auth_type: "password" | "ssh_key";
+  share_name?: string | null;
+  auth_type: "none" | "password" | "ssh_key";
   password?: string | null;
   private_key?: string | null;
   known_host_key: string;
@@ -515,15 +517,21 @@ class Api {
     this.post<AICategoryPropertySuggestionResult>("/ai/suggest-category-properties", data);
   suggestPropertyEnhancement = (data: { realm: "archive" | "collection"; prompt: string; locale?: string; category_id: number; property_id: number; allow_web_search?: boolean }) =>
     this.post<AIPropertyEnhancementSuggestionResult>("/ai/suggest-property-enhancement", data);
-  suggestVendor = (data: { realm: "archive" | "collection"; entity_type: "manufacturer" | "supplier" | "vendor" | "sales_platform"; prompt: string; locale?: string; allow_web_search?: boolean; draft?: Partial<Vendor> }) =>
+  suggestVendor = (data: { realm: "archive" | "collection"; entity_type: "manufacturer" | "supplier" | "vendor" | "developer" | "publisher" | "sales_platform"; prompt: string; locale?: string; allow_web_search?: boolean; draft?: Partial<Vendor> }) =>
     this.post<AIVendorSuggestionResult>("/ai/suggest-vendor", data);
   resolveVendorLogo = (data: { name?: string; website?: string; support_url?: string; external_logo_url?: string }) =>
     this.post<VendorLogoPreviewResult>("/ai/resolve-vendor-logo", data);
+
+  // -- Unconnected uploads (admin) --
+  getUnconnectedFiles = () => this.get<{ files: UnconnectedFile[]; total_size: number }>("/admin/unconnected-files");
+  deleteUnconnectedFiles = (paths: string[]) => this.post<{ deleted: string[]; skipped: string[] }>("/admin/unconnected-files/delete", { paths });
 
   // -- User --
   getMe = () => this.get<User>("/user");
   updateMe = (data: { display_name?: string; email?: string; locale?: string }) => this.put<User>("/user", data);
   deleteMe = () => this.del<void>("/user");
+  createAppleLink = () => this.post<{ link_token: string; qr_value: string; expires_in: number }>("/auth/apple/link/qr");
+  getAppleLinkStatus = (token: string) => this.get<{ status: "pending" | "linked" | "expired" }>(`/auth/apple/link/qr/${encodeURIComponent(token)}/status`);
   uploadMyAvatar = (file: File) => this.postForm<User>("/user/avatar", buildSingleFileForm(file));
   deleteMyAvatar = () => this.del<User>("/user/avatar");
   getSidebarFavorites = () => this.get<{ favorites: SidebarFavorite[] }>("/user/sidebar-favorites");
@@ -625,6 +633,19 @@ class Api {
   createProperty = (data: Partial<Property>) => this.post<Property>(`/${this.realm}/properties`, data);
   updateProperty = (id: number, data: Partial<Property>) => this.put<Property>(`/${this.realm}/properties/${id}`, data);
   deleteProperty = (id: number) => this.del(`/${this.realm}/properties/${id}`);
+  getGameCatalogProfiles = () => this.get<GameCatalogContract>(`/${this.realm}/items/game-catalog/profiles`);
+  searchGlobalGameCatalog = (query: string) => this.get<{ items: GameCatalogSearchResult[] }>(this.withQuery(`/${this.realm}/items/game-catalog/search`, { q: query }));
+  searchGameCatalog = (profileKey: string, query: string, locale = "en", platform?: string) => this.get<{ items: GameCatalogSearchResult[] }>(this.withQuery(`/${this.realm}/items/game-catalog/profiles/${encodeURIComponent(profileKey)}/search`, { q: query, locale, platform }));
+  getGameCatalogGame = (profileKey: string, gameId: number, locale = "en", platform?: string) => this.get<GameCatalogGame>(this.withQuery(`/${this.realm}/items/game-catalog/profiles/${encodeURIComponent(profileKey)}/games/${gameId}`, { locale, platform }));
+  getGameCatalogAssets = (profileKey: string, gameId: number, offset = 0, limit = 24) => this.get<GameCatalogAssetPage>(this.withQuery(`/${this.realm}/items/game-catalog/profiles/${encodeURIComponent(profileKey)}/games/${gameId}/assets`, { offset, limit }));
+  importGameCatalogAssets = (itemId: number, assets: GameCatalogAsset[]) => this.post<{ attachments: Attachment[] }>(`/${this.realm}/items/${itemId}/game-catalog/assets`, { assets });
+  getCollectionCategories = () => this.get<Category[]>("/collection/categories");
+  createCollectionCategory = (data: Partial<Category>) => this.post<Category>("/collection/categories", data);
+  updateCollectionCategory = (id: number, data: Partial<Category>) => this.put<Category>(`/collection/categories/${id}`, data);
+  getCollectionProperties = (categoryId: number) => this.get<Property[]>(this.withQuery("/collection/properties", { category_id: categoryId }));
+  createCollectionProperty = (data: Partial<Property>) => this.post<Property>("/collection/properties", data);
+  updateCollectionProperty = (id: number, data: Partial<Property>) => this.put<Property>(`/collection/properties/${id}`, data);
+  getCollectionGameCatalogProfiles = () => this.get<GameCatalogContract>("/collection/items/game-catalog/profiles");
 
   getLocations = () => this.get<Location[]>(`/${this.realm}/locations`);
   createLocation = (data: Partial<Location>) => this.post<Location>(`/${this.realm}/locations`, data);
@@ -635,6 +656,10 @@ class Api {
   createManufacturer = (data: Partial<Vendor>) => this.post<Vendor>(`/${this.realm}/manufacturers`, data);
   getSuppliers = () => this.get<Vendor[]>(`/${this.realm}/suppliers`);
   getVendors = () => this.get<Vendor[]>(`/${this.realm}/vendors`);
+  getDevelopers = () => this.get<Vendor[]>(`/${this.realm}/developers`);
+  createDeveloper = (data: Partial<Vendor>) => this.post<Vendor>(`/${this.realm}/developers`, data);
+  getPublishers = () => this.get<Vendor[]>(`/${this.realm}/publishers`);
+  createPublisher = (data: Partial<Vendor>) => this.post<Vendor>(`/${this.realm}/publishers`, data);
   getSalesPlatforms = () => this.get<Vendor[]>("/sales-platforms");
 
   // -- Print --
@@ -697,8 +722,9 @@ class Api {
   updateAttachment = (id: number, data: Partial<Attachment>) => this.put<Attachment>(`/${this.realm}/attachments/${id}`, data);
   addLinkAttachment = (itemId: number, data: { url: string; filename?: string; description?: string; order?: number }) =>
     this.post<Attachment>(`/${this.realm}/items/${itemId}/attachments/link`, data);
-  addExternalSFTPAttachment = (itemId: number, data: { external_source_id: number; external_path: string; filename?: string; description?: string; order?: number; gallery?: boolean }) =>
+  addExternalSourceAttachment = (itemId: number, data: { external_source_id: number; external_path: string; filename?: string; description?: string; order?: number; gallery?: boolean }) =>
     this.post<Attachment>(`/${this.realm}/items/${itemId}/attachments/external-sftp`, data);
+  addExternalSFTPAttachment = this.addExternalSourceAttachment;
   getAttachmentExternalSources = () => this.get<ExternalSource[]>(`/${this.realm}/attachments/external-sources`);
   browseAttachmentExternalSource = (sourceId: number, path = "") => {
     return this.get<ExternalSourceBrowseResult>(
@@ -719,9 +745,20 @@ class Api {
 
 // -- Types --
 
+export interface UnconnectedFile {
+  path: string;
+  realm: "archive" | "collection";
+  item_id: number;
+  original_name: string;
+  size: number;
+  modified_at: string;
+  reason: "item_deleted" | "unreferenced";
+}
+
 export interface User {
   id: number;
   sub?: string;
+  apple_linked?: boolean;
   email?: string;
   name?: string;
   locale?: string | null;
@@ -759,6 +796,10 @@ export interface Item {
   supplier_name?: string;
   vendor_id?: number;
   vendor_name?: string;
+  developer_id?: number;
+  developer_name?: string;
+  publisher_id?: number;
+  publisher_name?: string;
   purchase_date?: string;
   purchase_price?: number;
   purchase_currency?: string;
@@ -868,7 +909,14 @@ export interface Category {
   name: string;
   description?: string;
   color?: string;
+  show_manufacturer?: boolean;
+  show_supplier?: boolean;
+  show_vendor?: boolean;
+  show_developer?: boolean;
+  show_publisher?: boolean;
   position: number;
+  /** Number of items in this category; a category in use cannot be deleted. */
+  item_count?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -888,12 +936,44 @@ export interface Property {
   updated_at?: string;
 }
 
+export interface GameCatalogText { name: string; description?: string }
+export interface GameCatalogProperty { key: string; name: string; translations?: Record<string, GameCatalogText>; property_type: Property["property_type"]; display_width?: Property["display_width"]; required?: boolean; show_in_list?: boolean; setup?: { enabled_by_default?: boolean }; options?: Record<string, unknown> }
+export interface GameCatalogProfile { key: string; name: string; translations?: Record<string, GameCatalogText>; category: GameCatalogText & { translations?: Record<string, GameCatalogText> }; endpoints: { search: string; detail: string; assets?: string }; properties: GameCatalogProperty[]; platform_selection?: { parameter: string; required: boolean; choices: { key: string; name: string }[] } }
+export interface GameCatalogContract { contract_version: string; default_locale?: string; supported_locales?: string[]; profiles: GameCatalogProfile[]; global_search?: { shortcuts: Record<string, { profile_key: string | null; platform_key: string | null }> } }
+export interface GameCatalogSearchResult { id: number; moby_id?: number; canonical_title: string; matched_title?: string; first_release_year?: number; platforms?: string[]; profile_key?: string; platform_key?: string }
+export interface GameCatalogAsset {
+  media_id: number;
+  kind: string;
+  role: string;
+  label?: string;
+  label_de?: string;
+  media_type?: string;
+  asset_type?: string;
+  asset_type_de?: string;
+  presentation?: { type?: string | null; position?: string | null; packaging?: string | null; label?: string | null; label_de?: string | null; description?: string | null; description_de?: string | null };
+  image_text?: string;
+  image_text_de?: string;
+  comment_de?: string;
+  content_path: string;
+  platforms?: { name: string; slug?: string }[];
+  countries?: { code: string; name?: string }[];
+  attributes?: Record<string, string[]>;
+  comment?: string;
+  mime_type?: string;
+  bytes?: number;
+  sha256?: string;
+  sequence?: number;
+}
+export interface GameCatalogTitle { title: string; language?: string | null; country_code?: string | null; title_type?: string; note?: string | null; note_de?: string | null; platform?: string | null }
+export interface GameCatalogGame { id: number; moby_id?: number; platform_key?: string; canonical_title: string; itemplus: { profile_key: string; selected_platform?: string; catalog?: { titles?: GameCatalogTitle[] }; item: { name: string; external_id: string; moby_id?: string; updated_at?: string; description?: string; description_markdown?: string | null }; assets: { primary?: GameCatalogAsset | null; gallery: GameCatalogAsset[]; gallery_total: number; gallery_endpoint?: string }; property_values: Record<string, unknown> } }
+export interface GameCatalogAssetPage { items: GameCatalogAsset[]; total: number }
+
 export interface Attachment {
   id: number;
   item_id: number;
   filename: string;
   file_path: string;
-  storage_backend?: "local" | "external_url" | "external_sftp";
+  storage_backend?: "local" | "external_url" | "external_sftp" | "external_source";
   attachment_type: string;
   url?: string;
   download_url?: string;
@@ -915,6 +995,8 @@ export interface Location {
   image?: string;
   capacity?: number;
   position: number;
+  /** Number of items stored directly at this location; a location in use cannot be deleted. */
+  item_count?: number;
   created_at?: string;
   updated_at?: string;
 }

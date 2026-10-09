@@ -4,6 +4,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import { Trash2, Upload } from "lucide-react";
 import type { User } from "@/lib/api";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { SettingsAppleLink } from "./settings-apple-link";
 
 export function SettingsAccountSection({
   t,
@@ -12,6 +13,7 @@ export function SettingsAccountSection({
   displayNameDraft,
   setDisplayNameDraft,
   saveAccount,
+  refreshAccount,
   uploadAccountAvatar,
   removeAccountAvatar,
   accountInfoRows,
@@ -31,6 +33,7 @@ export function SettingsAccountSection({
   displayNameDraft: string;
   setDisplayNameDraft: Dispatch<SetStateAction<string>>;
   saveAccount: () => void;
+  refreshAccount: () => Promise<void>;
   uploadAccountAvatar: (file?: File | null) => Promise<void>;
   removeAccountAvatar: () => Promise<void>;
   accountInfoRows: { label: string; value: string }[];
@@ -125,6 +128,13 @@ export function SettingsAccountSection({
               </div>
             </dl>
           </div>
+
+          <SettingsAppleLink
+            t={t}
+            linked={!!me.apple_linked}
+            onLinked={refreshAccount}
+            buttonClass={settingsSecondaryButtonClass}
+          />
 
           <div className="space-y-4 border-t border-gray-200 pt-8 dark:border-white/10">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

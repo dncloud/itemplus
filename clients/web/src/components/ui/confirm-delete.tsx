@@ -15,6 +15,31 @@ function getDeleteEventTarget(data: Record<string, unknown>): DeleteTarget {
   };
 }
 
+/** Why the server refused to delete a category or location. */
+export type InUseInfo = { type: string; items: number; children: number };
+
+/** Reads the refusal details from an API error or a `delete.rejected` event; null when it is something else. */
+export function readInUseInfo(source: unknown): InUseInfo | null {
+  if (!source || typeof source !== "object") return null;
+  const data = source as Record<string, unknown>;
+  const code = typeof data.code === "string" ? data.code : typeof data.reason === "string" ? data.reason : "";
+  if (!code.endsWith("_in_use")) return null;
+  return {
+    type: code.replace(/_in_use$/, ""),
+    items: typeof data.in_use_items === "number" ? data.in_use_items : 0,
+    children: typeof data.in_use_children === "number" ? data.in_use_children : 0,
+  };
+}
+
+/** A sentence telling the user what still uses the category or location. */
+export function inUseMessage(t: (k: string, vars?: Record<string, string | number>) => string, info: InUseInfo) {
+  if (info.type === "category") return t("categories.inUse", { count: info.items });
+  const parts: string[] = [];
+  if (info.items > 0) parts.push(t("locations.inUseItems", { count: info.items }));
+  if (info.children > 0) parts.push(t("locations.inUseChildren", { count: info.children }));
+  return parts.join(" ");
+}
+
 function matchesDeleteTarget(target: DeleteTarget | null, candidate: Pick<DeleteTarget, "id" | "type">) {
   return !!target && target.id === candidate.id && target.type === candidate.type;
 }
@@ -27,6 +52,8 @@ function matchesDeleteTarget(target: DeleteTarget | null, candidate: Pick<Delete
 export function useDeleteFlow(opts: {
   realm: string;
   onDeleted: (entityId: number, entityType: string) => void;
+  /** Called when the server refuses because the category or location is still in use. */
+  onInUse?: (info: InUseInfo) => void;
 }) {
   const { iosDeleteConfirm } = useApp();
   const [pending, setPending] = useState<DeleteTarget | null>(null);
@@ -37,9 +64,15 @@ export function useDeleteFlow(opts: {
 
   const onDeletedRef = useRef(opts.onDeleted);
 
+  const onInUseRef = useRef(opts.onInUse);
+
   useEffect(() => {
     onDeletedRef.current = opts.onDeleted;
   }, [opts.onDeleted]);
+
+  useEffect(() => {
+    onInUseRef.current = opts.onInUse;
+  }, [opts.onInUse]);
 
   useEffect(() => {
     pendingRef.current = pending;
@@ -68,6 +101,8 @@ export function useDeleteFlow(opts: {
         return;
       }
       setPending(null);
+      const inUse = readInUseInfo(data);
+      if (inUse) onInUseRef.current?.(inUse);
     });
     const unsub3 = wsClient.on("delete.no_device", (data) => {
       const { id, name, type } = getDeleteEventTarget(data);

@@ -127,7 +127,7 @@ export function ActiveUsersSection({
   permissionLabels: Record<(typeof ALL_PERMISSIONS)[number], string>;
   fmtDateTime: (value: string | null | undefined) => string;
   t: (key: string, params?: Record<string, string | number>) => string;
-  updateUser: (userId: number, data: Record<string, unknown>) => void;
+  updateUser: (userId: number, data: Record<string, unknown>) => Promise<boolean>;
   deleteUser: (userId: number) => void;
   pendingDeleteUserId: number | null;
 }) {
@@ -228,7 +228,11 @@ export function ActiveUsersSection({
                             <input
                               defaultValue={user.name || ""}
                               onBlur={(e) => {
-                                if (e.target.value !== (user.name || "")) updateUser(user.id, { display_name: e.target.value });
+                                const input = e.currentTarget;
+                                if (input.value === (user.name || "")) return;
+                                void updateUser(user.id, { display_name: input.value }).then((saved) => {
+                                  if (!saved) input.value = user.name || "";
+                                });
                               }}
                               className={userInputClass}
                             />
@@ -238,7 +242,12 @@ export function ActiveUsersSection({
                             <input
                               defaultValue={user.email || ""}
                               onBlur={(e) => {
-                                if (e.target.value !== (user.email || "")) updateUser(user.id, { email: e.target.value });
+                                const input = e.currentTarget;
+                                if (input.value === (user.email || "")) return;
+                                // A refused address (taken, malformed) must not stay in the field as if saved.
+                                void updateUser(user.id, { email: input.value }).then((saved) => {
+                                  if (!saved) input.value = user.email || "";
+                                });
                               }}
                               className={userInputClass}
                             />

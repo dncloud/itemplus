@@ -43,7 +43,7 @@ export function VendorTabs({
   t: (k: string, vars?: Record<string, string | number>) => string;
 }) {
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       {TABS.map(({ key, labelKey, icon: Icon }) => (
         <button
           key={key}
@@ -76,14 +76,25 @@ export function VendorSearchBar({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="relative flex-1">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <input
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder={t("common.search")}
-          className="w-full h-[38px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+      <div className="flex flex-1">
+        <div className="-mr-px grid grow grid-cols-1 focus-within:relative">
+          <input
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder={t("common.search")}
+            aria-label={t("common.search")}
+            className="col-start-1 row-start-1 block w-full rounded-l-md bg-white py-1.5 pr-3 pl-10 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 sm:pl-9 sm:text-sm/6 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500"
+          />
+          <Search className="pointer-events-none col-start-1 row-start-1 ml-3 size-5 self-center text-gray-400 sm:size-4" />
+        </div>
+        <button
+          type="button"
+          className="inline-flex shrink-0 items-center justify-center rounded-r-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 outline-1 -outline-offset-1 outline-gray-300 hover:bg-gray-50 focus:relative focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 dark:bg-white/10 dark:text-white dark:outline-white/5 dark:hover:bg-white/20 dark:focus:outline-indigo-500"
+          title={t("common.search")}
+          aria-label={t("common.search")}
+        >
+          <Search className="h-4 w-4 text-gray-400 dark:text-gray-300" />
+        </button>
       </div>
       {canCreate ? (
         <button

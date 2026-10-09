@@ -98,6 +98,7 @@ func main() {
 		log.Printf("Warning: could not reset device sessions to offline on startup: %v", err)
 	}
 	bootstrap.EnsureInitialAdmin()
+	httpapi.ApplyStoredPrinterConfig()
 
 	if !config.C.Debug {
 		gin.SetMode(gin.ReleaseMode)
@@ -153,8 +154,8 @@ func main() {
 		status := c.Writer.Status()
 		method := c.Request.Method
 		path := c.Request.URL.Path
-		if c.Request.URL.RawQuery != "" {
-			path += "?" + c.Request.URL.RawQuery
+		if query := redactedQuery(c.Request.URL.Query()); query != "" {
+			path += "?" + query
 		}
 		ip := config.ResolveClientIP(c.Request.RemoteAddr, c.Request.Header)
 		log.Printf("%s %3d %12s  %s %s", ip, status, latency.Round(time.Microsecond), method, path)
@@ -206,27 +207,7 @@ func main() {
 			return
 		}
 
-		ext := strings.ToLower(filepath.Ext(cleanRelPath))
-		filename := filepath.Base(cleanRelPath)
-
-		// Determine Content-Disposition based on file type
-		inlineTypes := map[string]bool{
-			// Images
-			".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".svg": true, ".bmp": true, ".heic": true,
-			// Video
-			".mp4": true, ".mov": true, ".avi": true, ".mkv": true, ".webm": true,
-			// Audio
-			".mp3": true, ".wav": true, ".flac": true, ".ogg": true, ".m4a": true, ".aac": true,
-			// PDF
-			".pdf": true,
-		}
-
-		if inlineTypes[ext] {
-			c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", filename))
-		} else {
-			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
-		}
-		c.Header("X-Content-Type-Options", "nosniff")
+		storage.SetFileResponseHeaders(c, filepath.Base(cleanRelPath))
 
 		c.File(fullPath)
 	})
@@ -251,6 +232,8 @@ func main() {
 			httpapi.RegisterCRUD(rg.Group("/manufacturers"), realm+"_manufacturers", "vendors.read", "vendors.write", "vendors.delete")
 			httpapi.RegisterCRUD(rg.Group("/suppliers"), realm+"_suppliers", "vendors.read", "vendors.write", "vendors.delete")
 			httpapi.RegisterCRUD(rg.Group("/vendors"), realm+"_vendors", "vendors.read", "vendors.write", "vendors.delete")
+			httpapi.RegisterCRUD(rg.Group("/developers"), realm+"_developers", "vendors.read", "vendors.write", "vendors.delete")
+			httpapi.RegisterCRUD(rg.Group("/publishers"), realm+"_publishers", "vendors.read", "vendors.write", "vendors.delete")
 			httpapi.RegisterItemRoutes(rg.Group("/items"), realm)
 			httpapi.RegisterAttachmentRoutes(rg.Group("/attachments"), realm)
 			httpapi.RegisterPropertyRoutes(rg.Group("/properties"), realm)
@@ -598,6 +581,17 @@ func displayHost(host string) string {
 }
 
 // ── Helpers ──
+
+// redactedQuery renders a query string for the access log with credentials
+// masked: the /ws endpoint receives login tokens and tickets as parameters.
+func redactedQuery(values url.Values) string {
+	for _, key := range []string{"token", "ticket"} {
+		if _, ok := values[key]; ok {
+			values[key] = []string{"REDACTED"}
+		}
+	}
+	return values.Encode()
+}
 
 func extractFS(fsys embed.FS, root, dest string) error {
 	var mu sync.Mutex

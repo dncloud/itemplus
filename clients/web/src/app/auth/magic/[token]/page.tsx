@@ -26,6 +26,13 @@ export default function MagicLinkVerifyPage() {
             body: JSON.stringify({ token: tokenValue }),
           });
           if (!res.ok) {
+            // A link works once. Reloading this page after signing in sends it
+            // again, so an existing session counts as success.
+            const session = await fetch("/api/user", { credentials: "include" });
+            if (session.ok && (await session.json()).is_active) {
+              window.location.href = "/dashboard";
+              return;
+            }
             setStatus("error");
             return;
           }

@@ -1,5 +1,5 @@
 import type { Item, Property } from "@/lib/api";
-import { formatSelectCountValue } from "@/lib/property-options";
+import { formatPropertyChoices, formatSelectCountValue } from "@/lib/property-options";
 
 export function formatTimeDuration(value: string, locale: string) {
   const match = value.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -22,7 +22,7 @@ export function formatTimeDuration(value: string, locale: string) {
   return parts.join(", ") || `0 ${secondLabel}`;
 }
 
-export function formatPropShort(val: unknown, type: string, locale: string): string {
+export function formatPropShort(val: unknown, type: string, locale: string, options?: Record<string, unknown>): string {
   if (val == null) return "";
   if (typeof val === "boolean") return val ? (locale === "en" ? "Yes" : "Ja") : (locale === "en" ? "No" : "Nein");
   if (type === "rating") return "★".repeat(Number(val));
@@ -43,7 +43,8 @@ export function formatPropShort(val: unknown, type: string, locale: string): str
     return `${weight.value} ${weight.unit || "g"}`;
   }
   if (type === "time") return formatTimeDuration(String(val), locale);
-  if (type === "select") return formatSelectCountValue(val, locale);
+  if (type === "select") return formatSelectCountValue(val, locale, options);
+  if (type === "multiselect") return formatPropertyChoices(val, options, locale);
   if (Array.isArray(val)) return val.join(", ");
   if (typeof val === "object") {
     const obj = val as Record<string, unknown>;
@@ -61,6 +62,7 @@ export function getListPropValues(item: Item, listProps: Property[]) {
       id: property.id,
       name: property.name,
       unit: property.unit,
+      options: property.options,
       value: item.properties![String(property.id)],
       type: property.property_type,
     }));

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -31,6 +32,8 @@ func createItem(realm string) gin.HandlerFunc {
 			ManufacturerID   *int                   `json:"manufacturer_id"`
 			SupplierID       *int                   `json:"supplier_id"`
 			VendorID         *int                   `json:"vendor_id"`
+			DeveloperID      *int                   `json:"developer_id"`
+			PublisherID      *int                   `json:"publisher_id"`
 			PurchaseDate     *string                `json:"purchase_date"`
 			PurchasePrice    *float64               `json:"purchase_price"`
 			PurchaseCurrency *string                `json:"purchase_currency"`
@@ -53,6 +56,10 @@ func createItem(realm string) gin.HandlerFunc {
 		quantity := 1
 		if body.Quantity != nil {
 			quantity = *body.Quantity
+		}
+		if quantity < 0 || (body.MinimumQuantity != nil && *body.MinimumQuantity < 0) {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Quantities must not be negative", "code": "invalid_quantity"})
+			return
 		}
 		isConsumable := false
 		if body.IsConsumable != nil {
@@ -79,12 +86,12 @@ func createItem(realm string) gin.HandlerFunc {
 
 		result, err := tx.Exec(
 			fmt.Sprintf(`INSERT INTO %s (name, description, category_id, location_id, item_status, is_bundle, quantity, is_consumable,
-				minimum_quantity, manufacturer_id, supplier_id, vendor_id, purchase_date, purchase_price,
+				minimum_quantity, manufacturer_id, supplier_id, vendor_id, developer_id, publisher_id, purchase_date, purchase_price,
 				purchase_currency, sales_platform_id, asking_price, sold_price, sold_at, created_at, updated_at)
-				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, itemsTable),
+				VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, itemsTable),
 			body.Name, body.Description, body.CategoryID, body.LocationID,
 			itemStatus, isBundle, quantity, isConsumable, body.MinimumQuantity,
-			body.ManufacturerID, body.SupplierID, body.VendorID,
+			body.ManufacturerID, body.SupplierID, body.VendorID, body.DeveloperID, body.PublisherID,
 			body.PurchaseDate, body.PurchasePrice, purchaseCurrency,
 			body.SalesPlatformID, body.AskingPrice, body.SoldPrice, body.SoldAt,
 			now, now,
@@ -103,7 +110,11 @@ func createItem(realm string) gin.HandlerFunc {
 		}
 
 		if len(body.Properties) > 0 {
-			savePropertiesTx(tx, realm, int(newID), body.Properties)
+			if err := savePropertiesTx(tx, realm, int(newID), body.Properties); err != nil {
+				log.Printf("DB property save error in createItem %s: %v", realm, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+				return
+			}
 		}
 		user := middleware.GetUser(c)
 		var createdBy interface{}
@@ -159,7 +170,7 @@ func updateItem(realm string) gin.HandlerFunc {
 			"name": true, "description": true, "category_id": true, "location_id": true,
 			"item_status": true, "is_bundle": true,
 			"quantity": true, "is_consumable": true, "minimum_quantity": true,
-			"manufacturer_id": true, "supplier_id": true, "vendor_id": true,
+			"manufacturer_id": true, "supplier_id": true, "vendor_id": true, "developer_id": true, "publisher_id": true,
 			"purchase_date": true, "purchase_price": true, "purchase_currency": true,
 			"sales_platform_id": true, "asking_price": true, "sold_price": true, "sold_at": true,
 		}
@@ -174,7 +185,23 @@ func updateItem(realm string) gin.HandlerFunc {
 		}
 		clean["updated_at"] = database.TimestampNow()
 		delete(clean, "component_item_ids")
+		for _, field := range []string{"quantity", "minimum_quantity"} {
+			if value, present := clean[field]; present && value != nil && !isWholeNonNegative(value) {
+				c.JSON(http.StatusBadRequest, gin.H{"detail": "Quantities must be whole numbers and not negative", "code": "invalid_quantity"})
+				return
+			}
+		}
+		if value, present := clean["quantity"]; present && value == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "Quantity is required", "code": "invalid_quantity"})
+			return
+		}
 		_, quantityWillChange := clean["quantity"]
+
+		// An unknown id is "not found", not a server error.
+		if !itemExists(itemsTable, id) {
+			c.JSON(http.StatusNotFound, gin.H{"detail": "Item not found"})
+			return
+		}
 
 		tx, err := database.DB.Beginx()
 		if err != nil {
@@ -212,7 +239,11 @@ func updateItem(realm string) gin.HandlerFunc {
 		if hasProps {
 			if propsMap, ok := props.(map[string]interface{}); ok {
 				itemIDInt, _ := strconv.Atoi(id)
-				savePropertiesTx(tx, realm, itemIDInt, propsMap)
+				if err := savePropertiesTx(tx, realm, itemIDInt, propsMap); err != nil {
+					log.Printf("DB property save error in updateItem %s: %v", realm, err)
+					c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+					return
+				}
 			}
 		}
 		if quantityWillChange {
@@ -288,41 +319,27 @@ func updateItem(realm string) gin.HandlerFunc {
 }
 
 func deleteItem(realm string) gin.HandlerFunc {
-	itemsTable := realm + "_items"
-	componentsTable := realm + "_item_components"
-
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		tx, err := database.DB.Beginx()
-		if err != nil {
-			log.Printf("DB begin error in deleteItem %s: %v", realm, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
-			return
-		}
-		defer tx.Rollback()
-
-		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE parent_item_id = ?", componentsTable), id); err != nil {
-			log.Printf("DB release child items error in deleteItem %s: %v", realm, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
-			return
-		}
-		result, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", itemsTable), id)
+		found, err := itemscore.DeleteItem(realm, id)
 		if err != nil {
 			log.Printf("DB delete error in deleteItem %s: %v", realm, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 			return
 		}
-		affected, _ := result.RowsAffected()
-		if affected == 0 {
+		if !found {
 			c.JSON(http.StatusNotFound, gin.H{"detail": "Item not found"})
 			return
 		}
-		if err := tx.Commit(); err != nil {
-			log.Printf("DB commit error in deleteItem %s: %v", realm, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
-			return
-		}
+		user := middleware.GetUser(c)
+		middleware.Audit(user.ID, "item.delete", fmt.Sprintf("realm=%s item=%s", realm, id))
 		ws.M.Broadcast("stats."+realm+"_updated", nil)
 		c.Status(http.StatusNoContent)
 	}
+}
+
+// isWholeNonNegative reports whether a JSON number is a count: 0, 1, 2, …
+func isWholeNonNegative(value interface{}) bool {
+	number, ok := value.(float64)
+	return ok && number >= 0 && number == math.Trunc(number) && number < 1e12
 }

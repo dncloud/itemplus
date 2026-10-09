@@ -24,6 +24,6 @@ export async function addExternalAttachmentAndRefresh(
   data: { external_source_id: number; external_path: string; filename?: string; description?: string; gallery?: boolean },
   onDone: () => void,
 ) {
-  await api.addExternalSFTPAttachment(itemId, { ...data, order });
+  await api.addExternalSourceAttachment(itemId, { ...data, order });
   onDone();
 }

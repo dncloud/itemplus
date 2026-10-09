@@ -12,10 +12,12 @@ export function AgeRatingField({
   label,
   selected,
   onToggle,
+  systems,
 }: {
   label: React.ReactNode;
   selected: string[];
   onToggle: (value: string) => void;
+  systems?: string[];
 }) {
   return (
     <div>
@@ -41,7 +43,7 @@ export function AgeRatingField({
           })}
         </div>
       ) : null}
-      <AgeRatingPicker selected={selected} onToggle={onToggle} />
+      <AgeRatingPicker selected={selected} onToggle={onToggle} systems={systems} />
     </div>
   );
 }
@@ -49,18 +51,21 @@ export function AgeRatingField({
 function AgeRatingPicker({
   selected,
   onToggle,
+  systems,
 }: {
   selected: string[];
   onToggle: (value: string) => void;
+  systems?: string[];
 }) {
-  const [system, setSystem] = useState(AGE_RATINGS[0].system);
-  const currentSystem = AGE_RATINGS.find((entry) => entry.system === system) || AGE_RATINGS[0];
+  const availableSystems = AGE_RATINGS.filter((entry) => !systems?.length || systems.includes(entry.system));
+  const [system, setSystem] = useState(availableSystems[0]?.system || AGE_RATINGS[0].system);
+  const currentSystem = availableSystems.find((entry) => entry.system === system) || availableSystems[0] || AGE_RATINGS[0];
 
   return (
     <div className="space-y-3">
-      <nav aria-label="Freigabesystem">
+      {availableSystems.length > 1 ? <nav aria-label="Freigabesystem">
         <ol role="list" className="space-y-2 sm:flex sm:space-x-4 sm:space-y-0">
-          {AGE_RATINGS.map((entry) => (
+          {availableSystems.map((entry) => (
             <li key={entry.system} className="sm:flex-1">
               <button
                 type="button"
@@ -79,7 +84,7 @@ function AgeRatingPicker({
             </li>
           ))}
         </ol>
-      </nav>
+      </nav> : null}
 
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
         {currentSystem.ratings.map((rating) => {
