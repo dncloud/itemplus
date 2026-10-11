@@ -11,7 +11,10 @@ import {
   ArrowLeftRight,
   Building2,
   BarChart3,
+  Bot,
+  Boxes,
   CalendarDays,
+  ClipboardCheck,
   Database,
   ClipboardList,
   Settings,
@@ -19,10 +22,12 @@ import {
   Monitor,
   Box,
   House,
+  Layers,
   MapPin,
   Moon,
   Plus,
   Printer,
+  Server,
   Sparkles,
   Sun,
   Tag,
@@ -33,6 +38,7 @@ import {
 } from "lucide-react";
 import { LogoFull } from "@/components/branding/logo";
 import { api, type SidebarFavorite } from "@/lib/api";
+import { realmBadgeKey } from "./app-layout-utils";
 
 const enableNavPrefetch = process.env.NODE_ENV === "production";
 
@@ -44,10 +50,10 @@ const navItems = [
   { href: "/categories", labelKey: "nav.categories", icon: Tag, perm: "categories.read" },
   { href: "/locations", labelKey: "nav.locations", icon: MapPin, perm: "locations.read" },
   { href: "/vendors", labelKey: "nav.vendors", icon: Building2, perm: "vendors.read" },
-  { href: "/inventory-checks", labelKey: "nav.inventoryChecks", icon: ClipboardList, perm: "inventory.read" },
-  { href: "/inventory-movements", labelKey: "nav.inventoryMovements", icon: ClipboardList, perm: "inventory.read" },
+  { href: "/inventory-checks", labelKey: "nav.inventoryChecks", icon: ClipboardCheck, perm: "inventory.read" },
+  { href: "/inventory-movements", labelKey: "nav.inventoryMovements", icon: Layers, perm: "inventory.read" },
   { href: "/maintenance", labelKey: "nav.maintenance", icon: CalendarDays, perm: "maintenance.read" },
-  { href: "/checkouts", labelKey: "nav.checkouts", icon: ArrowLeftRight, perm: "checkout.manage" },
+  { href: "/checkouts", labelKey: "nav.checkouts", icon: ArrowLeftRight },
   { href: "/users", labelKey: "nav.users", icon: Users, admin: true },
   { href: "/settings", labelKey: "nav.settings", icon: Settings },
 ];
@@ -61,14 +67,14 @@ const settingsNavItems = [
   { href: "/settings?section=app", labelKey: "settings.sectionApp", icon: Monitor },
   { href: "/settings?section=printer", labelKey: "settings.printerTitle", icon: Printer, perm: "print" },
   { href: "/settings?section=storage", labelKey: "settings.externalSources", icon: Database, admin: true },
-  { href: "/settings?section=ai", labelKey: "settings.sectionAI", icon: Sparkles, admin: true },
+  { href: "/settings?section=ai", labelKey: "settings.sectionAI", icon: Bot, admin: true },
   { href: "/settings?section=backup", labelKey: "settings.sectionSystem", icon: Wrench, admin: true },
 ];
 const navSections = [
   { id: "overview", labelKey: "nav.dashboard", icon: House, paths: ["/dashboard"] },
-  { id: "inventory", labelKey: "nav.inventoryGroup", icon: Box, paths: primaryNav.filter((href) => href !== "/dashboard") },
-  { id: "operations", labelKey: "nav.operationsGroup", icon: ArrowLeftRight, paths: operationsNav },
-  { id: "system", labelKey: "nav.systemGroup", icon: Sparkles, paths: systemNav },
+  { id: "inventory", labelKey: "nav.inventoryGroup", icon: Boxes, paths: primaryNav.filter((href) => href !== "/dashboard") },
+  { id: "operations", labelKey: "nav.operationsGroup", icon: ClipboardList, paths: operationsNav },
+  { id: "system", labelKey: "nav.systemGroup", icon: Server, paths: systemNav },
   { id: "settings", labelKey: "nav.settings", icon: Settings, paths: settingsNav },
 ] as const;
 
@@ -81,7 +87,7 @@ const sidebarFavoriteIcons: Record<string, React.ComponentType<{ className?: str
   categories: Tag,
   locations: MapPin,
   vendors: Building2,
-  movements: ClipboardList,
+  movements: Layers,
   maintenance: CalendarDays,
   checkouts: ArrowLeftRight,
   chat: Sparkles,
@@ -94,6 +100,17 @@ const defaultSidebarFavorites: SidebarFavorite[] = [
   { id: "items", label: "Items", icon: "items", href: "/items" },
 ];
 const preferredSidebarSectionStorageKey = "itemplus.sidebar.preferred-section";
+const lastSidebarPagesStorageKey = "itemplus.sidebar.last-pages";
+
+function readLastSidebarPages(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(lastSidebarPagesStorageKey) || "{}");
+    return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+  } catch {
+    return {};
+  }
+}
 
 function canAccessFavoriteHref(href: string, isAdmin: boolean, can: (perm: string) => boolean) {
   if (href === "/dashboard" || href === "/settings") return true;
@@ -105,9 +122,27 @@ function canAccessFavoriteHref(href: string, isAdmin: boolean, can: (perm: strin
   if (href === "/inventory-checks") return isAdmin || can("inventory.read");
   if (href === "/inventory-movements") return isAdmin || can("inventory.read");
   if (href === "/maintenance") return isAdmin || can("maintenance.read");
-  if (href === "/checkouts") return isAdmin || can("checkout.manage");
   if (href === "/chat" || href === "/ai-usage" || href === "/users") return isAdmin;
   return true;
+}
+
+function SidebarTileBadge({ count }: { count?: number }) {
+  if (!count) return null;
+  return (
+    <span className="absolute right-1.5 top-1.5 min-w-4 rounded-full bg-orange-500 px-1 text-center text-[10px]/4 font-semibold text-white dark:bg-orange-400 dark:text-gray-900">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+// On the realm you are not in: how much is waiting over there.
+function RealmSwitchBadge({ count, label }: { count?: number; label: string }) {
+  if (!count) return null;
+  return (
+    <span title={label} aria-label={label} className="min-w-4 rounded-full bg-orange-500 px-1 text-center text-[10px]/4 font-semibold text-white dark:bg-orange-400 dark:text-gray-900">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
 }
 
 function SidebarNavLink({
@@ -133,17 +168,15 @@ function SidebarNavLink({
       className={clsx(
         "group relative flex min-h-16 flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border px-2 py-2 text-center text-xs font-semibold transition",
         active
-          ? "border-gray-200 bg-white text-gray-900 shadow-xs dark:border-white/10 dark:bg-white/10 dark:text-white dark:shadow-none"
-          : "border-gray-200 bg-gray-50 text-gray-500 hover:bg-white hover:text-gray-900 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white",
+          ? "border-gray-300 bg-white text-gray-900 shadow-sm dark:border-white/10 dark:bg-white/10 dark:text-white dark:shadow-none"
+          : "border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white",
       )}
     >
       <span className={clsx("flex shrink-0 items-center", active ? "text-gray-900 dark:text-white" : "text-gray-400 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white")}>
         <Icon className="h-5 w-5" />
       </span>
       <span className="max-w-full truncate">{label}</span>
-      {badge ? (
-        <span className="absolute inset-y-0 right-0 w-0.5 rounded-r-lg bg-orange-500 dark:bg-orange-400" />
-      ) : null}
+      <SidebarTileBadge count={badge} />
     </Link>
   );
 }
@@ -169,16 +202,14 @@ function SidebarSectionTile({
       className={clsx(
         "group relative flex min-h-16 cursor-pointer select-none flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border px-2 py-2 text-center text-xs font-semibold transition",
         active
-          ? "border-gray-200 bg-white text-gray-900 shadow-xs dark:border-white/10 dark:bg-white/10 dark:text-white dark:shadow-none"
-          : "border-gray-200 bg-gray-50 text-gray-500 hover:bg-white hover:text-gray-900 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white",
+          ? "border-gray-300 bg-white text-gray-900 shadow-sm dark:border-white/10 dark:bg-white/10 dark:text-white dark:shadow-none"
+          : "border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white",
         disabled && "cursor-not-allowed opacity-40 hover:bg-gray-50 hover:text-gray-500 dark:hover:bg-white/5 dark:hover:text-gray-400",
       )}
     >
       <Icon className={clsx("h-5 w-5", active ? "text-gray-900 dark:text-white" : "text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white")} />
       <span className="max-w-full truncate">{label}</span>
-      {badge ? (
-        <span className="absolute inset-y-0 right-0 w-0.5 rounded-r-lg bg-orange-500 dark:bg-orange-400" />
-      ) : null}
+      <SidebarTileBadge count={badge} />
     </div>
   );
 }
@@ -250,6 +281,26 @@ export function AppSidebar({
     }))
     .filter((section) => section.id === "overview" || section.items.length > 0);
   const sectionForPath = visibleSections.find((section) => section.items.some((item) => isActivePath(item.href)))?.id || "overview";
+  const activeHref = visibleSections.flatMap((section) => section.items).find((item) => isActivePath(item.href))?.href;
+  // A group tile leads straight to a page: the one last visited in that group,
+  // otherwise its first. The settings tiles are sorted by label, so their
+  // first page is taken from the fixed order instead.
+  const sectionTarget = (section: (typeof visibleSections)[number]) => {
+    const remembered = readLastSidebarPages()[section.id];
+    if (remembered && section.items.some((item) => item.href === remembered)) return remembered;
+    const ordered = section.id === "settings" ? settingsNavItems.filter((item) => section.items.some((visible) => visible.href === item.href)) : section.items;
+    return ordered[0]?.href;
+  };
+  const openSection = (section: (typeof visibleSections)[number]) => {
+    setPreferredSectionId(section.id);
+    if (section.id === "overview") {
+      if (pathname !== "/dashboard") routerPush("/dashboard");
+      setSidebarOpen(false);
+      return;
+    }
+    const target = sectionTarget(section);
+    if (target && sectionForPath !== section.id) routerPush(target);
+  };
   const [sidebarFavorites, setSidebarFavorites] = useState<SidebarFavorite[]>(defaultSidebarFavorites);
   const visibleSidebarFavorites = sidebarFavorites.filter((favorite) => canAccessFavoriteHref(favorite.href, isAdmin, can));
   const favoritePathActive = visibleSidebarFavorites.some((favorite) => isActivePath(favorite.href));
@@ -277,6 +328,13 @@ export function AppSidebar({
     if (typeof window === "undefined" || !preferredSectionId) return;
     window.sessionStorage.setItem(preferredSidebarSectionStorageKey, preferredSectionId);
   }, [preferredSectionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !activeHref || sectionForPath === "overview") return;
+    try {
+      window.sessionStorage.setItem(lastSidebarPagesStorageKey, JSON.stringify({ ...readLastSidebarPages(), [sectionForPath]: activeHref }));
+    } catch {}
+  }, [activeHref, sectionForPath]);
 
   useEffect(() => {
     let active = true;
@@ -338,6 +396,7 @@ export function AppSidebar({
           >
             <Archive className="h-4 w-4" />
             <span>{t("realm.archive")}</span>
+            {realm !== "archive" ? <RealmSwitchBadge count={badges[realmBadgeKey("archive")]} label={t("nav.waitingInRealm", { count: badges[realmBadgeKey("archive")] || 0, realm: t("realm.archive") })} /> : null}
           </Radio>
           <Radio
             value="collection"
@@ -350,6 +409,7 @@ export function AppSidebar({
           >
             <Gem className="h-4 w-4" />
             <span>{t("realm.collection")}</span>
+            {realm !== "collection" ? <RealmSwitchBadge count={badges[realmBadgeKey("collection")]} label={t("nav.waitingInRealm", { count: badges[realmBadgeKey("collection")] || 0, realm: t("realm.collection") })} /> : null}
           </Radio>
         </RadioGroup>
 
@@ -359,11 +419,7 @@ export function AppSidebar({
           onChange={(index) => {
             const nextSection = visibleSections[index];
             if (!nextSection || nextSection.items.length === 0) return;
-            setPreferredSectionId(nextSection.id);
-            if (nextSection.id === "overview") {
-              routerPush("/dashboard");
-              setSidebarOpen(false);
-            }
+            openSection(nextSection);
           }}
         >
           <TabList className="mb-5 grid grid-cols-2 gap-2">
@@ -377,13 +433,7 @@ export function AppSidebar({
                       active={selected}
                       disabled={section.items.length === 0}
                       badge={sectionBadgeCount(section.id)}
-                      onClick={() => {
-                        setPreferredSectionId(section.id);
-                        if (section.id === "overview" && pathname !== "/dashboard") {
-                          routerPush("/dashboard");
-                          setSidebarOpen(false);
-                        }
-                      }}
+                      onClick={() => openSection(section)}
                     />
                   </div>
                 )}

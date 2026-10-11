@@ -19,6 +19,7 @@ func listActiveCheckouts(c *gin.Context) {
 	if !ensureCheckoutRealm(c, realm) {
 		return
 	}
+	ownerFilter, args := ownCheckoutsFilter(c)
 
 	query := fmt.Sprintf(
 		`SELECT co.*, i.name AS item_name, COALESCE(u.display_name, u.email) AS user_name,
@@ -26,10 +27,10 @@ func listActiveCheckouts(c *gin.Context) {
 		FROM %s co
 		LEFT JOIN %s i ON co.item_id = i.id
 		LEFT JOIN users u ON co.user_id = u.id
-		WHERE co.status = 'active' AND co.bundle_parent_item_id IS NULL
-		ORDER BY co.created_at DESC`, table, itemsTable)
+		WHERE co.status = 'active' AND co.bundle_parent_item_id IS NULL %s
+		ORDER BY co.created_at DESC`, table, itemsTable, ownerFilter)
 
-	result, err := loadCheckoutRows(query, realm)
+	result, err := loadCheckoutRows(query, realm, args...)
 	if err != nil {
 		log.Printf("DB query error in listActiveCheckouts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
@@ -49,23 +50,34 @@ func listCheckoutHistory(c *gin.Context) {
 	if !ensureCheckoutRealm(c, realm) {
 		return
 	}
+	ownerFilter, args := ownCheckoutsFilter(c)
 
 	query := fmt.Sprintf(
 		`SELECT co.*, i.name AS item_name, COALESCE(u.display_name, u.email) AS user_name
 		FROM %s co
 		LEFT JOIN %s i ON co.item_id = i.id
 		LEFT JOIN users u ON co.user_id = u.id
-		WHERE co.status = 'returned' AND co.bundle_parent_item_id IS NULL
+		WHERE co.status = 'returned' AND co.bundle_parent_item_id IS NULL %s
 		ORDER BY co.updated_at DESC
-		LIMIT 50`, table, itemsTable)
+		LIMIT 50`, table, itemsTable, ownerFilter)
 
-	result, err := loadCheckoutRows(query, realm)
+	result, err := loadCheckoutRows(query, realm, args...)
 	if err != nil {
 		log.Printf("DB query error in listCheckoutHistory: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// ownCheckoutsFilter narrows a checkout list to the caller's own rows unless
+// they manage checkouts: who borrowed what is nobody else's business.
+func ownCheckoutsFilter(c *gin.Context) (string, []interface{}) {
+	user := middleware.GetUser(c)
+	if user.HasPermission("checkout.manage") {
+		return "", nil
+	}
+	return "AND co.user_id = ?", []interface{}{user.ID}
 }
 
 func listMyOverdueCheckouts(c *gin.Context) {

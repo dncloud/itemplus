@@ -89,7 +89,7 @@ func loadAIUsageStatsTotal(now time.Time) aiUsageStatsPeriod {
 func buildAIUsageBuckets(label string, since time.Time, until time.Time, eventRows []aiUsageEventRow) []aiUsageStatsBucket {
 	location := since.Location()
 	bucketsByKey := make(map[string]*aiUsageStatsBucket)
-	knownProviders := []string{"openai", "ollama"}
+	knownProviders := []string{"openai", "anthropic", "ollama"}
 
 	for cursor := aiUsageBucketStart(label, since); !cursor.After(until); cursor = aiUsageNextBucket(label, cursor) {
 		bucketLabel := cursor.Format(time.RFC3339)

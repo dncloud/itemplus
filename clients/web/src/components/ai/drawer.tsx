@@ -122,7 +122,7 @@ export function AIDrawerChatMessage({
         <div
           className={`rounded-2xl px-4 py-3 text-sm ${
             isUser
-              ? "bg-blue-500 text-white"
+              ? "bg-indigo-600 text-white dark:bg-indigo-500"
               : "border border-gray-200 bg-gray-50 text-gray-800 dark:border-white/10 dark:bg-white/5 dark:text-gray-200"
           }`}
         >
@@ -207,7 +207,7 @@ export function AIDrawerTabs({
 }) {
   const tabClass = (tab: AIDrawerTab) =>
     activeTab === tab
-      ? "bg-blue-500 text-white"
+      ? "bg-indigo-600 text-white dark:bg-indigo-500"
       : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10";
 
   return (

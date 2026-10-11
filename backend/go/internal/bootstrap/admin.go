@@ -1,12 +1,12 @@
 package bootstrap
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"strings"
 
-	huh "charm.land/huh/v2"
 	"github.com/itemplus/backend/internal/database"
 )
 
@@ -46,29 +46,32 @@ func createInitialAdmin(name, email string) error {
 	return err
 }
 
+// promptInitialAdmin asks for the first account when the setup has already
+// run but the database is empty, for example after pointing item+ at a new one.
 func promptInitialAdmin() (string, string) {
-	name := ""
-	email := ""
+	a := &asker{languageKnown: true}
+	if defaultSetupLang() == "de" {
+		a.l = langDE
+	}
+	l := a.l
+	name, email := "", ""
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewNote().
-				Title("Welcome to item+").
-				Description("No users were found in this database yet.\n\nLet's create the first admin account for this server."),
-			huh.NewInput().
-				Title("Admin display name").
-				Description("Shown in the app and used as the first admin account name.").
-				Value(&name).
-				Validate(validateRequired),
-			huh.NewInput().
-				Title("Admin email").
-				Description("Used for magic-link login and as the initial admin identity.").
-				Value(&email).
-				Validate(validateEmail),
-		),
-	).WithShowHelp(false).WithTheme(huh.ThemeFunc(huh.ThemeBase16))
-
-	if err := form.Run(); err != nil {
+	printHeading("", l.tx("admin.title"), l.tx("admin.text"))
+	err := a.text(l.tx("admin.name"), l.tx("admin.name.hint"), "", &name, func(value string) error {
+		if validateRequired(value) != nil {
+			return errors.New(l.tx("needed"))
+		}
+		return nil
+	})
+	if err == nil {
+		err = a.text(l.tx("admin.email"), l.tx("admin.email.hint"), "", &email, func(value string) error {
+			if validateEmail(value) != nil {
+				return errors.New(l.tx("email"))
+			}
+			return nil
+		})
+	}
+	if err != nil {
 		log.Fatal(err)
 	}
 

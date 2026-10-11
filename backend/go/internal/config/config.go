@@ -56,6 +56,10 @@ type Config struct {
 	MagicLinkExpiryMinutes int
 	MagicLinkBaseURL       string
 	GameCatalogURL         string
+	// UpdateCheck says whether the server may ask GitHub for something newer,
+	// and for what: "" (off, the default: item+ contacts nobody on its own),
+	// UpdateCheckRelease or UpdateCheckBuild.
+	UpdateCheck string
 
 	Host string
 	Port int
@@ -64,7 +68,7 @@ type Config struct {
 const DefaultPort = 17117
 
 var C Config
-var defaultAppVersion = "1.3.4"
+var defaultAppVersion = "1.4.0"
 var defaultAppBuild = "dev"
 var cliConfigPath string
 
@@ -110,6 +114,7 @@ var managedConfigEnvKeys = []string{
 	"MAGIC_LINK_EXPIRY_MINUTES",
 	"MAGIC_LINK_BASE_URL",
 	"GAME_CATALOG_URL",
+	"UPDATE_CHECK",
 	"HOST",
 	"PORT",
 	"ITEMPLUS_SETUP_REQUIRED",
@@ -306,6 +311,7 @@ func Load() {
 		MagicLinkExpiryMinutes: envInt("MAGIC_LINK_EXPIRY_MINUTES", 15),
 		MagicLinkBaseURL:       envStr("MAGIC_LINK_BASE_URL", ""),
 		GameCatalogURL:         strings.TrimRight(envStr("GAME_CATALOG_URL", ""), "/"),
+		UpdateCheck:            ParseUpdateCheck(envStr("UPDATE_CHECK", "")),
 
 		Host: envStr("HOST", "0.0.0.0"),
 		Port: envInt("PORT", DefaultPort),
@@ -753,5 +759,26 @@ func gitShortCommit(baseDir string) string {
 		return ref
 	}
 
+	return ""
+}
+
+const (
+	// UpdateCheckRelease reports published releases only.
+	UpdateCheckRelease = "release"
+	// UpdateCheckBuild also reports a newer build: a commit on the main
+	// branch that is not released yet, or a rebuilt release.
+	UpdateCheckBuild = "build"
+)
+
+// ParseUpdateCheck reads the UPDATE_CHECK setting. Only the two modes switch
+// the check on; anything else, a typo included, leaves it off, because a
+// server must never start contacting others by accident.
+func ParseUpdateCheck(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case UpdateCheckRelease:
+		return UpdateCheckRelease
+	case UpdateCheckBuild:
+		return UpdateCheckBuild
+	}
 	return ""
 }

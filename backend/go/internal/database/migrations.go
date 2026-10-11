@@ -153,6 +153,11 @@ func runMigrations(db *sqlx.DB, driver string) error {
 		if err := addColumnIfMissing(db, "ALTER TABLE "+checkoutsTable+" ADD COLUMN last_reminder_sent_at TEXT"); err != nil {
 			return err
 		}
+		// Set when the borrower says the item is back; the loan stays open
+		// until someone who manages loans confirms it.
+		if err := addColumnIfMissing(db, "ALTER TABLE "+checkoutsTable+" ADD COLUMN return_requested_at TEXT"); err != nil {
+			return err
+		}
 		if err := addColumnIfMissing(db, "ALTER TABLE "+manufacturersTable+" ADD COLUMN external_logo_url TEXT"); err != nil {
 			return err
 		}
@@ -241,6 +246,13 @@ func runMigrations(db *sqlx.DB, driver string) error {
 		return err
 	}
 	if err := addColumnIfMissing(db, "ALTER TABLE generic_sales_platforms ADD COLUMN logo_background TEXT"); err != nil {
+		return err
+	}
+
+	if _, err := RemoveOrphanedRows(db); err != nil {
+		return err
+	}
+	if _, err := RepairAttachmentOrder(db); err != nil {
 		return err
 	}
 

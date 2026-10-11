@@ -57,11 +57,14 @@ export function Field({
 }
 
 export function ModalSection({
+  id,
   title,
   description,
   children,
   noTopBorder = false,
 }: {
+  // Target of the jump links in the form's action bar.
+  id?: string;
   title: string;
   description?: string;
   children: ReactNode;
@@ -69,12 +72,14 @@ export function ModalSection({
 }) {
   return (
     <div
+      id={id}
       className={clsx(
-        "grid grid-cols-1 gap-x-8 gap-y-6 border-t border-gray-200 pt-8 md:grid-cols-[16rem_minmax(0,1fr)] first:border-t-0 first:pt-0 dark:border-white/10",
+        "grid scroll-mt-24 grid-cols-1 gap-x-8 gap-y-6 border-t border-gray-200 pt-8 md:grid-cols-[16rem_minmax(0,1fr)] first:border-t-0 first:pt-0 dark:border-white/10",
         noTopBorder && "border-t-0 pt-0",
       )}
     >
-      <div>
+      {/* The title stays in view while its section scrolls past. */}
+      <div className="md:sticky md:top-24 md:self-start">
         <h3 className="text-base/7 font-semibold text-gray-900 dark:text-white">{title}</h3>
         {description ? <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{description}</p> : null}
       </div>

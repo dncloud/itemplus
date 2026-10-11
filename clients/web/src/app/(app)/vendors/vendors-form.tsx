@@ -2,7 +2,7 @@
 
 import type React from "react";
 import type { Vendor } from "@/lib/api";
-import { Sparkles } from "lucide-react";
+import { FormFooter, cancelButtonClass, formCardClass } from "@/components/ui/list-controls";
 import type { EntityType } from "./vendors-types";
 import { VendorField, VendorLogoThumb } from "./vendors-ui";
 
@@ -48,7 +48,8 @@ export function VendorInlineForm({
   t: (k: string, vars?: Record<string, string | number>) => string;
 }) {
   return (
-    <div className="space-y-4">
+    <div className={formCardClass}>
+     <div className="space-y-4">
       <div>
         <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("vendors.logo")}</label>
         <div className="flex items-center gap-3">
@@ -59,7 +60,7 @@ export function VendorInlineForm({
             fallback={<CurrentTabIcon className="h-7 w-7 text-gray-300" />}
           />
           <div className="flex flex-col gap-1">
-            <label className="cursor-pointer rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+            <label className={`cursor-pointer ${cancelButtonClass}`}>
               <input
                 type="file"
                 accept="image/*"
@@ -96,31 +97,33 @@ export function VendorInlineForm({
               />
               {t("vendors.selectLogo")}
             </label>
-            {editItem.logo ? <button type="button" onClick={() => setEditItem({ ...editItem, logo: null as unknown as string })} className="text-xs text-blue-500 hover:text-blue-600">{t("common.remove")}</button> : null}
+            {editItem.logo ? <button type="button" onClick={() => setEditItem({ ...editItem, logo: null as unknown as string })} className="text-left text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">{t("common.remove")}</button> : null}
           </div>
         </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-[auto,1fr,auto] sm:items-center">
-          <div className="flex items-center gap-2">
-            <input type="color" value={editItem.logo_background || "#ffffff"} onChange={(event) => setEditItem({ ...editItem, logo_background: event.target.value })} className="h-10 w-10 cursor-pointer rounded-lg border border-gray-300 bg-transparent p-1 dark:border-gray-700" aria-label={t("vendors.logoBackground")} />
-            <button type="button" onClick={() => setEditItem({ ...editItem, logo_background: undefined })} className="inline-flex h-[38px] items-center justify-center rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-              {t("vendors.logoBackgroundReset")}
-            </button>
+        <div className="mt-4">
+          <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("vendors.logoBackground")}</label>
+          <div className="flex flex-wrap items-center gap-2">
+            <input type="color" value={editItem.logo_background || "#ffffff"} onChange={(event) => setEditItem({ ...editItem, logo_background: event.target.value })} className="h-[38px] w-11 shrink-0 cursor-pointer rounded-md border border-gray-300 bg-transparent p-1 dark:border-gray-700" aria-label={t("vendors.logoBackground")} />
+            <input value={editItem.logo_background || ""} onChange={(event) => setEditItem({ ...editItem, logo_background: event.target.value || undefined })} placeholder="#ffffff" aria-label={t("vendors.logoBackground")} className={`${vendorInputClass} max-w-40`} />
+            {editItem.logo_background ? (
+              <button type="button" onClick={() => setEditItem({ ...editItem, logo_background: undefined })} className="text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">
+                {t("vendors.logoBackgroundReset")}
+              </button>
+            ) : null}
           </div>
-          <div>
-            <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("vendors.logoBackground")}</label>
-            <input value={editItem.logo_background || ""} onChange={(event) => setEditItem({ ...editItem, logo_background: event.target.value || undefined })} placeholder="#ffffff" className={vendorInputClass} />
-            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{t("vendors.logoBackgroundHint")}</p>
-          </div>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{t("vendors.logoBackgroundHint")}</p>
         </div>
       </div>
 
-      <VendorField label={`${t("vendors.name")} *`} value={editItem.name || ""} onChange={(v) => setEditItem({ ...editItem, name: v })} />
-      <VendorField label={t("vendors.website")} value={editItem.website || ""} onChange={(v) => setEditItem({ ...editItem, website: v || undefined })} placeholder="https://..." type="url" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <VendorField label={`${t("vendors.name")} *`} value={editItem.name || ""} onChange={(v) => setEditItem({ ...editItem, name: v })} />
+        <VendorField label={t("vendors.website")} value={editItem.website || ""} onChange={(v) => setEditItem({ ...editItem, website: v || undefined })} placeholder="https://..." type="url" />
+      </div>
       <div>
         <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("vendors.logoSourceUrl")}</label>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <input value={logoSourceUrl} onChange={(event) => onLogoSourceUrlChange(event.target.value)} placeholder="https://..." type="url" className={`${vendorInputClass} flex-1`} />
-          <button type="button" onClick={onImportLogoFromSource} disabled={logoImportBusy || !logoSourceUrl.trim()} className="inline-flex h-[38px] items-center justify-center rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+          <button type="button" onClick={onImportLogoFromSource} disabled={logoImportBusy || !logoSourceUrl.trim()} className={`shrink-0 disabled:cursor-not-allowed disabled:opacity-60 ${cancelButtonClass}`}>
             {logoImportBusy ? t("vendors.logoSourceLoading") : t("vendors.logoSourceLoad")}
           </button>
         </div>
@@ -128,7 +131,7 @@ export function VendorInlineForm({
         {logoImportError ? <p className="mt-2 text-xs text-red-500">{logoImportError}</p> : null}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <VendorField label={t("vendors.email")} value={editItem.email || ""} onChange={(v) => setEditItem({ ...editItem, email: v || undefined })} type="email" />
         <VendorField label={t("vendors.phone")} value={editItem.phone || ""} onChange={(v) => setEditItem({ ...editItem, phone: v || undefined })} type="tel" />
       </div>
@@ -159,16 +162,14 @@ export function VendorInlineForm({
         </div>
       ) : null}
 
-      <div className="flex justify-end gap-2 pt-2">
-        {validationError ? <p className="text-xs text-red-500 flex-1">{validationError}</p> : null}
-        {showAIButton ? (
-          <button type="button" onClick={onRunAI} disabled={aiBusy} className="mr-auto inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 p-2 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20" title={t("vendors.aiButton")}>
-            {aiBusy ? <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current/40 border-t-current" /> : <Sparkles className="h-4 w-4" />}
-          </button>
-        ) : null}
-        <button onClick={() => { onCancel(); setValidationError(null); }} className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">{t("common.cancel")}</button>
-        <button onClick={save} className="px-4 py-2 text-sm rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600">{t("common.save")}</button>
-      </div>
+     </div>
+      <FormFooter
+        onCancel={() => { onCancel(); setValidationError(null); }}
+        onSave={save}
+        error={validationError}
+        ai={showAIButton && onRunAI ? { busy: aiBusy, label: t("vendors.aiButton"), busyLabel: t("vendors.aiRunning"), onRun: onRunAI } : undefined}
+        t={t}
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import type {
   LabelTemplate,
   LabelTemplatePayload,
 } from "@/lib/api";
+import { aiProviderLabel, isHostedAIProvider } from "@/lib/ai-providers";
 
 export type LabelTemplateDraft = LabelTemplatePayload;
 export type ExternalSourceDraft = ExternalSourcePayload;
@@ -118,11 +119,13 @@ export function draftFromExternalSource(source: ExternalSource): ExternalSourceD
 
 export function defaultAIBaseURL(provider: AIProfileDraft["provider"]): string {
   if (provider === "ollama") return "http://localhost:11434/v1";
+  if (provider === "anthropic") return "https://api.anthropic.com";
   return "https://api.openai.com/v1";
 }
 
 export function defaultAIModel(provider: AIProfileDraft["provider"]): string {
   if (provider === "ollama") return "gpt-oss:20b";
+  if (provider === "anthropic") return "claude-opus-5-5";
   return "gpt-5-mini";
 }
 
@@ -130,16 +133,17 @@ export function isAIKeyOptional(provider: AIProfileDraft["provider"]): boolean {
   return provider === "ollama";
 }
 
-export function createEmptyAIProfileDraft(provider: AIProfileDraft["provider"] = "ollama", index = 1): AIProfileDraft {
+export function createEmptyAIProfileDraft(provider: AIProfileDraft["provider"] = "openai", index = 1): AIProfileDraft {
   return {
     id: `profile-${index}`,
-    name: provider === "ollama" ? `Ollama ${index}` : `OpenAI ${index}`,
+    name: `${aiProviderLabel(provider)} ${index}`,
     provider,
     model: defaultAIModel(provider),
     base_url: defaultAIBaseURL(provider),
     api_key: "",
-    enabled: provider === "openai",
-    supports_vision: provider === "openai",
+    // The hosted models are ready to use and read images; a local model is switched on once it is set up.
+    enabled: isHostedAIProvider(provider),
+    supports_vision: isHostedAIProvider(provider),
     has_api_key: false,
     api_key_preview: "",
     chat_prompt: "",
@@ -175,7 +179,7 @@ export function createProviderDraft(
     name: previous?.name || next.name,
     api_key: previous?.api_key || "",
     enabled: previous?.enabled ?? next.enabled,
-    supports_vision: provider === "openai" ? true : previous?.provider === provider ? previous.supports_vision : false,
+    supports_vision: isHostedAIProvider(provider) ? true : previous?.provider === provider ? previous.supports_vision : false,
     has_api_key: previous?.has_api_key ?? false,
     api_key_preview: previous?.api_key_preview ?? "",
     chat_prompt: previous?.chat_prompt ?? "",

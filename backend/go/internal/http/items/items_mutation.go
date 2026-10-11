@@ -52,6 +52,10 @@ func createItem(realm string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "Name is required"})
 			return
 		}
+		if body.CategoryID == nil || !categoryExists(realm, *body.CategoryID) {
+			refuseWithoutCategory(c)
+			return
+		}
 
 		quantity := 1
 		if body.Quantity != nil {
@@ -155,6 +159,18 @@ func createItem(realm string) gin.HandlerFunc {
 	}
 }
 
+// Every item belongs to a category: it decides which properties the item has
+// and where it is found. An item cannot be saved without one, which is also
+// why a category that still has items cannot be deleted.
+func categoryExists(realm string, categoryID int) bool {
+	var exists int
+	return database.DB.Get(&exists, fmt.Sprintf("SELECT COUNT(*) FROM %s_categories WHERE id = ?", realm), categoryID) == nil && exists > 0
+}
+
+func refuseWithoutCategory(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, gin.H{"detail": "An item needs a category that exists", "code": "category_required"})
+}
+
 func updateItem(realm string) gin.HandlerFunc {
 	itemsTable := realm + "_items"
 
@@ -194,6 +210,15 @@ func updateItem(realm string) gin.HandlerFunc {
 		if value, present := clean["quantity"]; present && value == nil {
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "Quantity is required", "code": "invalid_quantity"})
 			return
+		}
+		// A partial update that does not mention the category leaves it alone;
+		// one that does must name a category that exists.
+		if value, present := clean["category_id"]; present {
+			categoryID, isNumber := value.(float64)
+			if !isNumber || categoryID != float64(int(categoryID)) || !categoryExists(realm, int(categoryID)) {
+				refuseWithoutCategory(c)
+				return
+			}
 		}
 		_, quantityWillChange := clean["quantity"]
 
@@ -322,6 +347,15 @@ func deleteItem(realm string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
 		found, err := itemscore.DeleteItem(realm, id)
+		var checkedOut *itemscore.CheckedOutError
+		if errors.As(err, &checkedOut) {
+			c.JSON(http.StatusConflict, gin.H{
+				"detail":           "The item is checked out and cannot be deleted until it has been returned",
+				"code":             "item_in_use",
+				"in_use_checkouts": checkedOut.Active,
+			})
+			return
+		}
 		if err != nil {
 			log.Printf("DB delete error in deleteItem %s: %v", realm, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})

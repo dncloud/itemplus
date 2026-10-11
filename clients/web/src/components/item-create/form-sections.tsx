@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import clsx from "clsx";
 import type { Item, ItemComponent, Property } from "@/lib/api";
 import { BooleanToggle, ConsumableToggle } from "@/components/item-create/form-controls";
 import { Field, ModalSection, SuggestionRow, TWPStringSelect } from "@/components/item-create/ui";
 import PropertyField from "@/components/property-field/field";
+import { normalizePropertyValue } from "@/lib/property-values";
 
 export function InventorySection({
   t,
@@ -14,8 +16,10 @@ export function InventorySection({
   valuesEqual,
   applySuggestedField,
   setEditItem,
+  realm,
 }: {
   t: (key: string, vars?: Record<string, string | number>) => string;
+  realm: "archive" | "collection";
   editItem: Partial<Item>;
   itemComponents: ItemComponent[];
   aiSuggestedItem: Partial<Item>;
@@ -28,6 +32,12 @@ export function InventorySection({
   const bundleLockedByParent = !!editItem.parentBundle;
   const selectedComponents = itemComponents.filter((component) => selectedComponentIDs.has(component.id));
   const [componentSearch, setComponentSearch] = useState("");
+  // Quantity, minimum, consumable and bundle are everyday fields in the
+  // inventory. In a collection they are rarely touched, so they are folded
+  // away unless the item already uses them.
+  const usesStockFields = (editItem.quantity ?? 1) !== 1 || editItem.minimum_quantity != null || !!editItem.is_consumable || !!editItem.is_bundle;
+  const [moreOpen, setMoreOpen] = useState(false);
+  const showStockFields = realm === "archive" || usesStockFields || moreOpen;
   const currentItemID = typeof editItem.id === "number" ? editItem.id : undefined;
 
   const getComponentHelper = (component: ItemComponent, isSelected: boolean) => {
@@ -83,7 +93,7 @@ export function InventorySection({
   };
 
   return (
-    <ModalSection title={t("items.modalInventoryTitle")} description={t("items.modalInventoryDescription")}>
+    <ModalSection id="item-stock" title={t("items.modalInventoryTitle")} description={t("items.modalInventoryDescription")}>
       <div className="w-full space-y-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <TWPStringSelect
@@ -110,7 +120,7 @@ export function InventorySection({
               { value: "sold", label: t("items.status.sold") },
             ]}
           />
-          <BooleanToggle
+          {showStockFields ? <BooleanToggle
             label={t("items.bundle")}
             yesLabel={t("common.yes")}
             noLabel={t("common.no")}
@@ -124,7 +134,7 @@ export function InventorySection({
                 componentItemIds: nextBundle ? editItem.componentItemIds || [] : [],
               });
             }}
-          />
+          /> : null}
         </div>
         {bundleLockedByParent && editItem.parentBundle ? (
           <p className="text-xs text-amber-600 dark:text-amber-400">
@@ -170,7 +180,7 @@ export function InventorySection({
             onChange={(v) => setEditItem({ ...editItem, purchase_date: v || undefined })}
           />
         </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        {showStockFields ? <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
             <Field
               label={t("items.quantity")}
@@ -197,7 +207,15 @@ export function InventorySection({
             checked={!!editItem.is_consumable}
             onChange={() => setEditItem({ ...editItem, is_consumable: !editItem.is_consumable })}
           />
-        </div>
+        </div> : (
+          <button
+            type="button"
+            onClick={() => setMoreOpen(true)}
+            className="text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300"
+          >
+            {t("items.moreStockFields")}
+          </button>
+        )}
         {(itemStatus === "for_sale" || itemStatus === "sold") ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <Field
@@ -317,8 +335,11 @@ export function PropertiesSection({
   formatSuggestionValue,
   applySuggestedProperty,
   setPropValues,
+  collapseEmpty = false,
 }: {
   t: (key: string, vars?: Record<string, string | number>) => string;
+  // Fold the properties that are empty, as when editing an existing item.
+  collapseEmpty?: boolean;
   catProperties: Property[];
   propValues: Record<string, unknown>;
   aiSuggestedPropValues: Record<string, unknown>;
@@ -327,6 +348,7 @@ export function PropertiesSection({
   applySuggestedProperty: (propertyId: string) => void;
   setPropValues: (updater: (prev: Record<string, unknown>) => Record<string, unknown>) => void;
 }) {
+  const [showAll, setShowAll] = useState(false);
   const visibleProperties = catProperties.filter((property) => {
     const catalog = property.options?.game_catalog;
     const key = catalog && typeof catalog === "object" && !Array.isArray(catalog) ? (catalog as Record<string, unknown>).property_key : undefined;
@@ -334,14 +356,30 @@ export function PropertiesSection({
   });
   if (visibleProperties.length === 0) return null;
 
+  // A catalog category can have dozens of properties. When editing, the ones
+  // that are filled in, required or have a suggestion waiting are shown; the
+  // rest wait behind one button. A new item shows all of them.
+  const matters = (property: Property) =>
+    property.required ||
+    normalizePropertyValue(propValues[String(property.id)]) != null ||
+    typeof aiSuggestedPropValues[String(property.id)] !== "undefined";
+  const folded = collapseEmpty && !showAll ? visibleProperties.filter((property) => !matters(property)) : [];
+  const shown = visibleProperties.filter((property) => !folded.includes(property));
+  const spanClass = (property: Property) =>
+    property.property_type === "textblock" || property.display_width === "full"
+      ? "sm:col-span-6"
+      : property.display_width === "half"
+        ? "sm:col-span-3"
+        : "sm:col-span-2";
+
   return (
-    <ModalSection title={t("items.properties")} description={t("items.modalPropertiesDescription")}>
-      <div className="w-full space-y-4">
-        {visibleProperties.map((prop) => {
+    <ModalSection id="item-properties" title={t("items.properties")} description={t("items.modalPropertiesDescription")}>
+      <div className="grid w-full grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-6">
+        {shown.map((prop) => {
           const suggestion = aiSuggestedPropValues[String(prop.id)];
           const showSuggestion = typeof suggestion !== "undefined" && !valuesEqual(propValues[String(prop.id)], suggestion);
           return (
-            <div key={prop.id}>
+            <div key={prop.id} className={clsx("min-w-0", spanClass(prop))}>
               <PropertyField
                 property={prop}
                 value={propValues[String(prop.id)]}
@@ -358,6 +396,15 @@ export function PropertiesSection({
           );
         })}
       </div>
+      {collapseEmpty && (folded.length > 0 || showAll) ? (
+        <button
+          type="button"
+          onClick={() => setShowAll(!showAll)}
+          className="text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300"
+        >
+          {showAll ? t("items.hideEmptyProperties") : t("items.showMoreProperties", { count: folded.length })}
+        </button>
+      ) : null}
     </ModalSection>
   );
 }

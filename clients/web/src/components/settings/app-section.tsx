@@ -5,10 +5,10 @@ import {
   Building2,
   BarChart3,
   CalendarDays,
-  ClipboardList,
   Settings,
   Box,
   House,
+  Layers,
   MapPin,
   Plus,
   Sparkles,
@@ -19,6 +19,7 @@ import {
 import { SelectField, ToggleRow } from "@/components/settings/ui";
 import { SettingsCatalogSection } from "@/components/settings/catalog-section";
 import type { SidebarFavorite } from "@/lib/api";
+import { useApp } from "@/lib/app-context";
 import type { DateFormat } from "@/lib/app-context-storage";
 import type { Locale } from "@/lib/i18n-data";
 
@@ -208,7 +209,7 @@ export function SettingsAppSection({
     { value: "categories", label: t("settings.sidebarFavoriteIconCategories"), icon: Tag },
     { value: "locations", label: t("settings.sidebarFavoriteIconLocations"), icon: MapPin },
     { value: "vendors", label: t("settings.sidebarFavoriteIconVendors"), icon: Building2 },
-    { value: "movements", label: t("settings.sidebarFavoriteIconMovements"), icon: ClipboardList },
+    { value: "movements", label: t("settings.sidebarFavoriteIconMovements"), icon: Layers },
     { value: "maintenance", label: t("settings.sidebarFavoriteIconMaintenance"), icon: CalendarDays },
     { value: "checkouts", label: t("settings.sidebarFavoriteIconCheckouts"), icon: ArrowLeftRight },
     { value: "chat", label: t("settings.sidebarFavoriteIconChat"), icon: Sparkles },
@@ -258,6 +259,10 @@ export function SettingsAppSection({
   const primaryButtonClass =
     "inline-flex items-center justify-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60";
 
+  // What an item card shows is stored per realm.
+  const { realm } = useApp();
+  const itemListRealmNote = t("settings.itemListRealmNote").replace("{realm}", t(`realm.${realm}`));
+
   return (
     <div className="space-y-10">
       <AppSettingsSection id="app" title={t("settings.sectionApp")} description={t("settings.appDescription")}>
@@ -292,7 +297,7 @@ export function SettingsAppSection({
         </div>
       </AppSettingsSection>
 
-      <AppSettingsSection title={t("settings.itemListImages")} description={t("settings.itemListImagesHint")}>
+      <AppSettingsSection title={t("settings.displayBehaviorTitle")} description={`${t("settings.displayBehaviorHint")} ${itemListRealmNote}`}>
         <div className="space-y-4">
           <ToggleRow
             title={t("settings.iosDeleteConfirm")}
@@ -321,7 +326,7 @@ export function SettingsAppSection({
         </div>
       </AppSettingsSection>
 
-      <AppSettingsSection title={t("settings.itemListFields")} description={t("settings.itemListFieldsHint")}>
+      <AppSettingsSection title={t("settings.itemListFields")} description={`${t("settings.itemListFieldsHint")} ${itemListRealmNote}`}>
         <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
           {itemFieldToggles.map((toggle) => (
             <div key={String(toggle.title)}>

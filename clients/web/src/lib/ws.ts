@@ -14,7 +14,7 @@ const VALID_EVENTS = new Set([
   "delete.confirm_request", "delete.done", "delete.rejected", "delete.no_device",
   "session.ready", "session.kicked", "login.confirmed", "user.activated",
   "print.done", "print.failed",
-  "checkout.approved", "checkout.rejected",
+  "checkout.approved", "checkout.rejected", "notifications.updated",
   "admin.new_user_registered", "admin.checkout_requested",
   "stats.archive_updated", "stats.collection_updated",
 ]);

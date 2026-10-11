@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { Trash2 } from "lucide-react";
+import { Building2, ChevronDown, Cloud, Cpu, type LucideIcon, MessageSquare, Plus, ScanText, SlidersHorizontal, Sparkles, Tag, Trash2 } from "lucide-react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { AI_PROVIDERS, type AIProvider, aiProviderLabel, isHostedAIProvider } from "@/lib/ai-providers";
 import type { AIProfileDraft, AISettingsDraft } from "@/components/settings/drafts";
 import type { AIModelOption } from "@/lib/api";
 import {
@@ -44,6 +46,13 @@ function promptDefaultForTab(profile: AIProfileDraft, tab: PromptTab) {
       return profile.vendor_prompt_default;
   }
 }
+
+const providerIcon: Record<AIProvider, LucideIcon> = { openai: Cloud, anthropic: Sparkles, ollama: Cpu };
+const providerHint: Record<AIProvider, string> = {
+  openai: "settings.aiProviderOpenAIHint",
+  anthropic: "settings.aiProviderAnthropicHint",
+  ollama: "settings.aiProviderOllamaHint",
+};
 
 export function SettingsAISection({
   t,
@@ -117,12 +126,12 @@ export function SettingsAISection({
     });
   };
 
-  const promptTabs: Array<{ id: PromptTab; label: string; hint: string }> = [
-    { id: "chat", label: t("settings.aiPromptChat"), hint: t("settings.aiPromptChatHint") },
-    { id: "parse", label: t("settings.aiParsePrompt"), hint: t("settings.aiParsePromptHint") },
-    { id: "category", label: t("settings.aiCategoryPrompt"), hint: t("settings.aiCategoryPromptHint") },
-    { id: "property", label: t("settings.aiPropertyPrompt"), hint: t("settings.aiPropertyPromptHint") },
-    { id: "vendor", label: t("settings.aiVendorPrompt"), hint: t("settings.aiVendorPromptHint") },
+  const promptTabs: Array<{ id: PromptTab; label: string; hint: string; icon: LucideIcon }> = [
+    { id: "chat", label: t("settings.aiPromptChat"), hint: t("settings.aiPromptChatHint"), icon: MessageSquare },
+    { id: "parse", label: t("settings.aiParsePrompt"), hint: t("settings.aiParsePromptHint"), icon: ScanText },
+    { id: "category", label: t("settings.aiCategoryPrompt"), hint: t("settings.aiCategoryPromptHint"), icon: Tag },
+    { id: "property", label: t("settings.aiPropertyPrompt"), hint: t("settings.aiPropertyPromptHint"), icon: SlidersHorizontal },
+    { id: "vendor", label: t("settings.aiVendorPrompt"), hint: t("settings.aiVendorPromptHint"), icon: Building2 },
   ];
 
   const isLegacyProfile = selectedProfile?.id === "profile-1";
@@ -133,7 +142,7 @@ export function SettingsAISection({
   const apiKeyPreview = selectedProfile?.api_key_preview?.trim() || "";
 
   const onLoadModels = async () => {
-    if (!selectedProfile || selectedProfile.provider !== "openai") return;
+    if (!selectedProfile || !isHostedAIProvider(selectedProfile.provider)) return;
     try {
       const models = await loadAIModels(selectedProfile);
       setLoadedModelsByProfile((prev) => ({ ...prev, [selectedProfile.id]: models }));
@@ -163,49 +172,54 @@ export function SettingsAISection({
               <p className="text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.aiProfiles")}</p>
               <p className="mt-1 text-sm/6 text-gray-500 dark:text-gray-400">{t("settings.aiPromptTemplatesHint")}</p>
             </div>
-            <div className="flex flex-wrap gap-2 lg:ml-auto lg:justify-end">
-              <button type="button" onClick={() => addProfile("openai")} className={secondaryButtonClass}>
-                {t("settings.aiAddOpenAIProfile")}
-              </button>
-              <button type="button" onClick={() => addProfile("ollama")} className={secondaryButtonClass}>
-                {t("settings.aiAddOllamaProfile")}
-              </button>
-            </div>
+            {/* One button; the provider is chosen in its menu. */}
+            <Menu as="div" className="relative shrink-0 lg:ml-auto">
+              <MenuButton className={`inline-flex items-center gap-x-1.5 ${secondaryButtonClass}`}>
+                <Plus aria-hidden="true" className="-ml-0.5 size-4" />
+                {t("settings.aiAddProfile")}
+                <ChevronDown aria-hidden="true" className="-mr-1 size-4 text-gray-400" />
+              </MenuButton>
+              <MenuItems
+                anchor="bottom end"
+                transition
+                className="z-50 mt-2 w-72 origin-top-right rounded-md bg-white py-1 shadow-lg outline-1 outline-black/5 transition data-[closed]:scale-95 data-[closed]:opacity-0 data-[enter]:duration-100 data-[leave]:duration-75 dark:bg-gray-800 dark:shadow-none dark:-outline-offset-1 dark:outline-white/10"
+              >
+                {AI_PROVIDERS.map((provider) => {
+                  const Icon = providerIcon[provider];
+                  return (
+                    <MenuItem key={provider}>
+                      <button
+                        type="button"
+                        onClick={() => addProfile(provider)}
+                        className="group flex w-full items-center gap-3 px-3 py-2 text-left data-[focus]:bg-gray-50 data-[focus]:outline-hidden dark:data-[focus]:bg-white/5"
+                      >
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500 group-data-[focus]:bg-indigo-600 group-data-[focus]:text-white dark:bg-white/10 dark:text-gray-400 dark:group-data-[focus]:bg-indigo-500">
+                          <Icon aria-hidden="true" className="size-4" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-gray-900 dark:text-white">{aiProviderLabel(provider)}</span>
+                          <span className="block text-xs text-gray-500 dark:text-gray-400">{t(providerHint[provider])}</span>
+                        </span>
+                      </button>
+                    </MenuItem>
+                  );
+                })}
+              </MenuItems>
+            </Menu>
           </div>
 
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {aiDraft.profiles.map((profile) => {
-              const active = profile.id === selectedProfile?.id;
-              const isActiveProfile = profile.id === aiDraft.active_profile_id;
-              return (
-                <button
-                  key={profile.id}
-                  type="button"
-                  onClick={() => setSelectedProfileId(profile.id)}
-                  className={`w-full rounded-lg border p-4 text-left transition ${
-                    active
-                      ? "border-blue-400 bg-blue-50 ring-1 ring-blue-200 dark:border-blue-600 dark:bg-blue-900/20 dark:ring-blue-900"
-                      : "border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-gray-900 dark:text-white">
-                        {profile.name || t("settings.aiUnnamedProfile")}
-                      </div>
-                      <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-                        {profile.provider === "ollama" ? "Ollama" : "OpenAI"} · {profile.model || defaultAIModel(profile.provider)}
-                      </div>
-                    </div>
-                    {isActiveProfile ? (
-                      <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                        {t("settings.aiActiveProfile")}
-                      </span>
-                    ) : null}
-                  </div>
-                </button>
-              );
-            })}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {aiDraft.profiles.map((profile) => (
+              <ChoiceTile
+                key={profile.id}
+                active={profile.id === selectedProfile?.id}
+                onClick={() => setSelectedProfileId(profile.id)}
+                icon={providerIcon[profile.provider] || Cloud}
+                title={profile.name || t("settings.aiUnnamedProfile")}
+                description={`${aiProviderLabel(profile.provider)} · ${profile.model || defaultAIModel(profile.provider)}`}
+                badge={profile.id === aiDraft.active_profile_id ? t("settings.aiActiveProfile") : undefined}
+              />
+            ))}
           </div>
 
           {selectedProfile ? (
@@ -250,23 +264,17 @@ export function SettingsAISection({
 
                 <div className="space-y-3">
                   <label className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.aiProvider")}</label>
-                  <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                    <ChoiceTile
-                      active={selectedProfile.provider === "ollama"}
-                      onClick={() =>
-                        updateSelectedProfile((profile) => createProviderDraft("ollama", profile, aiDraft.profiles.length))
-                      }
-                      title={t("settings.aiProviderOllama")}
-                      description={t("settings.aiProviderOllamaHint")}
-                    />
-                    <ChoiceTile
-                      active={selectedProfile.provider === "openai"}
-                      onClick={() =>
-                        updateSelectedProfile((profile) => createProviderDraft("openai", profile, aiDraft.profiles.length))
-                      }
-                      title="OpenAI"
-                      description={t("settings.aiProviderOpenAIHint")}
-                    />
+                  <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+                    {AI_PROVIDERS.map((provider) => (
+                      <ChoiceTile
+                        key={provider}
+                        active={selectedProfile.provider === provider}
+                        icon={providerIcon[provider]}
+                        onClick={() => updateSelectedProfile((profile) => createProviderDraft(provider, profile, aiDraft.profiles.length))}
+                        title={aiProviderLabel(provider)}
+                        description={t(providerHint[provider])}
+                      />
+                    ))}
                   </div>
                 </div>
 
@@ -274,7 +282,7 @@ export function SettingsAISection({
                   <div>
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <label className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.aiModel")}</label>
-                      {selectedProfile.provider === "openai" ? (
+                      {isHostedAIProvider(selectedProfile.provider) ? (
                         <button
                           type="button"
                           onClick={onLoadModels}
@@ -285,7 +293,7 @@ export function SettingsAISection({
                         </button>
                       ) : null}
                     </div>
-                    {selectedProfile.provider === "openai" && loadedModels.length > 0 ? (
+                    {isHostedAIProvider(selectedProfile.provider) && loadedModels.length > 0 ? (
                       <div className="mb-3">
                         <SelectField
                           label={t("settings.aiAvailableModels")}
@@ -305,8 +313,8 @@ export function SettingsAISection({
                       placeholder={defaultAIModel(selectedProfile.provider)}
                     />
                     <div className="mt-2 space-y-1 text-sm/6 text-gray-500 dark:text-gray-400">
-                      {selectedProfile.provider === "openai" ? <p>{t("settings.aiModelHint")}</p> : null}
-                      {visibleModelStatus ? <p className="text-blue-600 dark:text-blue-300">{visibleModelStatus}</p> : null}
+                      {isHostedAIProvider(selectedProfile.provider) ? <p>{t("settings.aiModelHint")}</p> : null}
+                      {visibleModelStatus ? <p className="text-indigo-600 dark:text-indigo-300">{visibleModelStatus}</p> : null}
                     </div>
                   </div>
 
@@ -368,21 +376,16 @@ export function SettingsAISection({
                   <p className="mt-1 text-sm/6 text-gray-500 dark:text-gray-400">{t("settings.aiPromptTemplatesHint")}</p>
                 </div>
 
-                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {promptTabs.map((tab) => (
-                    <button
+                    <ChoiceTile
                       key={tab.id}
-                      type="button"
+                      active={activePromptTab === tab.id}
                       onClick={() => setActivePromptTab(tab.id)}
-                      className={`w-full rounded-lg border p-4 text-left transition ${
-                        activePromptTab === tab.id
-                          ? "border-blue-400 bg-blue-50 ring-1 ring-blue-200 dark:border-blue-600 dark:bg-blue-900/20 dark:ring-blue-900"
-                          : "border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600"
-                      }`}
-                    >
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">{tab.label}</div>
-                      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{tab.hint}</div>
-                    </button>
+                      icon={tab.icon}
+                      title={tab.label}
+                      description={tab.hint}
+                    />
                   ))}
                 </div>
 

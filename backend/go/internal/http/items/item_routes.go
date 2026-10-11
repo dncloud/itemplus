@@ -19,6 +19,7 @@ func RegisterItemRoutes(g *gin.RouterGroup, realm string) {
 	g.GET("/lookup", middleware.Auth(), middleware.RequirePermission("items.read"), listItemLookup(realm))
 	if realm == "collection" {
 		g.GET("/game-catalog/profiles", middleware.Auth(), middleware.RequirePermission("items.write"), listGameCatalogProfiles)
+		g.GET("/game-catalog/progress", middleware.Auth(), middleware.RequirePermission("items.read"), getGameCatalogProgress)
 		g.GET("/game-catalog/search", middleware.Auth(), middleware.RequirePermission("items.write"), listGlobalGameCatalogMatches)
 		g.GET("/game-catalog/profiles/:profileKey/search", middleware.Auth(), middleware.RequirePermission("items.write"), listGameCatalogMatches)
 		g.GET("/game-catalog/profiles/:profileKey/games/:gameID", middleware.Auth(), middleware.RequirePermission("items.write"), getGameCatalogGame)
@@ -38,6 +39,7 @@ func RegisterItemRoutes(g *gin.RouterGroup, realm string) {
 
 	g.POST("/:id/attachments", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), uploadRL, uploadAttachment(realm))
 	g.POST("/:id/attachments/link", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), addLinkAttachment(realm))
+	g.PUT("/:id/attachments/order", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), reorderAttachments(realm))
 	g.POST("/:id/attachments/external-sftp", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.read"), addExternalSFTPAttachment(realm))
 	if realm == "collection" {
 		g.POST("/:id/game-catalog/assets", middleware.Auth(), middleware.RequireAllPermissions("attachments.write", "items.write"), importGameCatalogAssets(realm))

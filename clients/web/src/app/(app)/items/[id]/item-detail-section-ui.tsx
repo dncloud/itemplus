@@ -15,7 +15,7 @@ export function DetailSection({
     "overflow-hidden rounded-xl bg-white shadow-xs outline outline-1 -outline-offset-1 outline-gray-900/5 dark:bg-gray-800/50 dark:outline-white/10";
   return (
     <div className="space-y-2">
-      <p className="font-semibold text-white">{title}</p>
+      <h2 className="font-semibold text-gray-900 dark:text-white">{title}</h2>
       <section className={sectionClass}>{children}</section>
     </div>
   );

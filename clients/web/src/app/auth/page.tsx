@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import clsx from "clsx";
 import {
   CircleCheck,
   Mail,
@@ -9,10 +10,13 @@ import {
 import { useApp } from "@/lib/app-context";
 import { api } from "@/lib/api";
 import { BrandTitle, LogoIcon } from "@/components/branding/logo";
+import { ServerUnreachableNotice } from "@/components/branding/server-unreachable";
 
 export default function AuthPage() {
   const { t, ready, brandingTitle, brandingSubtitle, locale } = useApp();
   const [connected, setConnected] = useState(false);
+  // Until the first health check has answered, nothing is known about the server.
+  const [serverChecked, setServerChecked] = useState(false);
 
   const [authMode, setAuthMode] = useState<"qr" | "email">("qr");
   const [email, setEmail] = useState("");
@@ -23,6 +27,7 @@ export default function AuthPage() {
   const [qrToken, setQrToken] = useState("");
   const [qrValue, setQrValue] = useState("");
   const [qrExpiry, setQrExpiry] = useState(0);
+  const [qrExpired, setQrExpired] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -41,13 +46,34 @@ export default function AuthPage() {
     } catch {
       setConnected(false);
     }
+    setServerChecked(true);
   };
 
-  // Auto-request QR when connected
+  // Someone who is already signed in has no business on the sign-in page.
   useEffect(() => {
-    if (connected && !qrToken && qrStatus !== "confirmed") requestQR();
+    if (!connected) return;
+    let cancelled = false;
+    fetch("/api/user", { credentials: "include", cache: "no-store" })
+      .then((res) => {
+        if (res.ok && !cancelled) window.location.replace("/dashboard");
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [connected]);
+
+  // A phone cannot scan its own screen, so it starts on the e-mail tab.
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 639px), (pointer: coarse)").matches) setAuthMode("email");
+  }, []);
+
+  // The first QR code comes by itself. An expired one is only replaced on
+  // request, so a forgotten tab does not keep asking the server for codes.
+  useEffect(() => {
+    if (connected && authMode === "qr" && !qrToken && !qrExpired && qrStatus !== "confirmed") requestQR();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, qrToken]);
+  }, [connected, authMode, qrToken, qrExpired]);
 
   const waitForBrowserSession = async () => {
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -72,6 +98,7 @@ export default function AuthPage() {
       setQrToken(data.qr_token);
       setQrValue(data.qr_value);
       setQrExpiry(data.expires_in);
+      setQrExpired(false);
       setQrStatus("waiting");
 
       if (pollRef.current) clearInterval(pollRef.current);
@@ -93,6 +120,7 @@ export default function AuthPage() {
           } else if (result.status === "expired") {
             if (pollRef.current) clearInterval(pollRef.current);
             if (countdownRef.current) clearInterval(countdownRef.current);
+            setQrExpired(true);
             setQrToken("");
           }
         } catch {}
@@ -106,6 +134,7 @@ export default function AuthPage() {
         if (remaining <= 0) {
           if (countdownRef.current) clearInterval(countdownRef.current);
           if (pollRef.current) clearInterval(pollRef.current);
+          setQrExpired(true);
           setQrToken("");
         }
       }, 1000);
@@ -133,155 +162,178 @@ export default function AuthPage() {
   }, []);
 
   const authInputClass = "block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 sm:text-sm/6 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500";
-  const authPrimaryButtonClass = "flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm/6 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:focus-visible:outline-indigo-500";
+  const authPrimaryButtonClass = "flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm/6 font-semibold text-white shadow-xs hover:bg-indigo-500 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-indigo-500 dark:shadow-none dark:hover:bg-indigo-400 dark:focus-visible:outline-indigo-500";
   const authTitle = brandingTitle.trim() || "item+";
   const authSubtitle = brandingSubtitle.trim() || "Inventory & Collection Management";
+  const tabs = [
+    { id: "qr" as const, label: t("auth.qrTab"), icon: QrCode },
+    { id: "email" as const, label: t("auth.emailTab"), icon: Mail },
+  ];
 
   return (
-    <div className="flex min-h-full items-start justify-center px-4 pt-[15vh]">
-      <div className="w-full max-w-sm space-y-8">
-
-        {/* Logo */}
-        <div className="text-center space-y-3">
+    <div className="flex min-h-dvh flex-col">
+      <div className="flex flex-1 flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="space-y-3 text-center sm:mx-auto sm:w-full sm:max-w-md">
           <LogoIcon size={80} className="mx-auto" />
           <BrandTitle title={authTitle} className="block text-3xl font-bold" />
           <p className="text-sm text-gray-500 dark:text-gray-400">{authSubtitle}</p>
         </div>
 
-        {/* Login Methods */}
-        {connected && (
-          <div className="space-y-4 pt-2">
-            {/* Tabs */}
-            <div className="flex rounded-lg bg-white p-1 outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-white/5 dark:outline-white/10">
-              <button
-                onClick={() => setAuthMode("qr")}
-                className={`flex-1 flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm/6 font-semibold transition ${
-                  authMode === "qr"
-                    ? "bg-gray-50 text-gray-900 shadow-xs dark:bg-white/10 dark:text-white dark:shadow-none"
-                    : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-                }`}
-              >
-                <QrCode className="h-4 w-4" />
-                {t("auth.qrTab")}
-              </button>
-              <button
-                onClick={() => setAuthMode("email")}
-                className={`flex-1 flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm/6 font-semibold transition ${
-                  authMode === "email"
-                    ? "bg-gray-50 text-gray-900 shadow-xs dark:bg-white/10 dark:text-white dark:shadow-none"
-                    : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-                }`}
-              >
-                <Mail className="h-4 w-4" />
-                {t("auth.emailTab")}
-              </button>
-            </div>
+        <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-[480px]">
+          <div className="bg-white px-6 pt-2 pb-10 shadow-sm sm:rounded-lg sm:px-12 dark:bg-gray-800/50 dark:shadow-none dark:outline dark:-outline-offset-1 dark:outline-white/10">
+            {!serverChecked ? (
+              <div className="flex justify-center pt-8">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+              </div>
+            ) : !connected ? (
+              <ServerUnreachableNotice />
+            ) : (
+              <div className="space-y-6">
+                <div className="border-b border-gray-200 dark:border-white/10">
+                  <nav aria-label={t("auth.title")} className="-mb-px flex">
+                    {tabs.map((tab) => {
+                      const current = authMode === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setAuthMode(tab.id)}
+                          aria-current={current ? "page" : undefined}
+                          className={clsx(
+                            current
+                              ? "border-indigo-500 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
+                              : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-white/20 dark:hover:text-gray-300",
+                            "group inline-flex flex-1 items-center justify-center border-b-2 px-1 py-4 text-sm font-medium",
+                          )}
+                        >
+                          <tab.icon
+                            aria-hidden="true"
+                            className={clsx(
+                              current
+                                ? "text-indigo-500 dark:text-indigo-400"
+                                : "text-gray-400 group-hover:text-gray-500 dark:text-gray-500 dark:group-hover:text-gray-400",
+                              "mr-2 -ml-0.5 size-5",
+                            )}
+                          />
+                          <span>{tab.label}</span>
+                        </button>
+                      );
+                    })}
+                  </nav>
+                </div>
 
-            {/* QR Login */}
-            {authMode === "qr" && (
-              <div className="text-center space-y-4">
-                {qrStatus === "confirmed" ? (
-                  <div className="py-6 space-y-3">
-                    <div className="h-16 w-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto">
-                      <CircleCheck className="h-8 w-8 text-green-600" />
-                    </div>
-                    <p className="text-sm font-medium text-green-600">{t("settings.connected")}!</p>
-                  </div>
-                ) : qrToken ? (
-                  <>
-                    <div className="inline-block rounded-xl bg-white p-4 outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-white dark:outline-white/10">
-                      <img
-                        src={`/api/print/qr/generate.svg?data=${encodeURIComponent(qrValue)}`}
-                        alt="QR Code"
-                        className="w-48 h-48"
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500">{t("auth.scanQrHint")}</p>
-                    <div className="text-sm/6 text-gray-400">
-                      <span className={`font-mono ${qrExpiry < 30 ? "text-red-500" : ""}`}>
-                        {Math.floor(qrExpiry / 60)}:{String(qrExpiry % 60).padStart(2, "0")}
-                      </span>
-                      {qrExpiry <= 0 && (
-                        <button onClick={requestQR} className="ml-2 font-semibold text-indigo-500 hover:text-indigo-400">
+                {authMode === "qr" ? (
+                  <div className="space-y-4 text-center">
+                    {qrStatus === "confirmed" ? (
+                      <div className="space-y-3 py-6">
+                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                          <CircleCheck className="h-8 w-8 text-green-600" />
+                        </div>
+                        <p className="text-sm font-medium text-green-600">{t("settings.connected")}</p>
+                      </div>
+                    ) : qrToken ? (
+                      <>
+                        <div className="inline-block rounded-xl bg-white p-4 outline outline-1 -outline-offset-1 outline-gray-200 dark:outline-white/10">
+                          <img
+                            src={`/api/print/qr/generate.svg?data=${encodeURIComponent(qrValue)}`}
+                            alt={t("auth.qrTab")}
+                            className="h-48 w-48"
+                          />
+                        </div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{t("auth.scanQrHint")}</p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                          {t("auth.qrValidFor")}{" "}
+                          <span className={clsx("font-mono", qrExpiry < 30 && "text-red-500")}>
+                            {Math.floor(qrExpiry / 60)}:{String(qrExpiry % 60).padStart(2, "0")}
+                          </span>
+                        </p>
+                      </>
+                    ) : qrExpired ? (
+                      <div className="space-y-4 py-6">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{t("auth.qrExpired")}</p>
+                        <button type="button" onClick={requestQR} className={authPrimaryButtonClass}>
                           {t("auth.regenerateQr")}
                         </button>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-3 py-2">
-                    <div className="mx-auto inline-flex rounded-xl bg-white p-4 outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-white dark:outline-white/10">
-                      <div className="flex h-48 w-48 items-center justify-center rounded-lg bg-gray-50 text-gray-400">
-                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
                       </div>
-                    </div>
-                    <p className="text-xs text-gray-500">{t("auth.scanQrHint")}</p>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="mx-auto inline-flex rounded-xl bg-white p-4 outline outline-1 -outline-offset-1 outline-gray-200 dark:outline-white/10">
+                          <div className="flex h-48 w-48 items-center justify-center rounded-lg bg-gray-50 text-gray-400">
+                            <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{t("auth.scanQrHint")}</p>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* Magic Link */}
-            {authMode === "email" && (
-              <div className="space-y-4">
-                {emailStatus === "sent" ? (
-                  <div className="text-center py-6 space-y-3">
-                    <div className="h-16 w-16 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto">
-                      <Mail className="h-8 w-8 text-blue-600" />
+                ) : emailStatus === "sent" ? (
+                  <div className="space-y-3 py-6 text-center">
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900/30">
+                      <Mail className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
                     </div>
-                    <p className="text-sm font-medium">{t("auth.emailSent")}</p>
-                    <p className="text-xs text-gray-500">{t("auth.emailSentHint")}</p>
-                    <button onClick={() => setEmailStatus("idle")} className="text-xs text-gray-400 hover:text-gray-600">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{t("auth.emailSent")}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{t("auth.emailSentHint")}</p>
+                    <button type="button" onClick={() => setEmailStatus("idle")} className="text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
                       {t("auth.useAnotherEmail")}
                     </button>
                   </div>
                 ) : (
-                  <>
+                  <form
+                    className="space-y-6"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void sendMagicLink();
+                    }}
+                  >
                     <div>
-                      <label className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("auth.emailPlaceholder")}</label>
+                      <label htmlFor="auth-email" className="block text-sm/6 font-medium text-gray-900 dark:text-white">
+                        {t("auth.emailPlaceholder")}
+                      </label>
                       <div className="mt-2">
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => { setEmail(e.target.value); setEmailStatus("idle"); }}
-                      onKeyDown={(e) => e.key === "Enter" && sendMagicLink()}
-                      placeholder={t("auth.emailPlaceholder")}
-                      className={authInputClass}
-                      autoFocus
-                    />
+                        <input
+                          id="auth-email"
+                          name="email"
+                          type="email"
+                          autoComplete="email"
+                          required
+                          value={email}
+                          onChange={(e) => { setEmail(e.target.value); setEmailStatus("idle"); }}
+                          placeholder={t("auth.emailExample")}
+                          className={authInputClass}
+                          autoFocus
+                        />
                       </div>
+                      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{t("auth.emailLoginHint")}</p>
                     </div>
-                    <button
-                      onClick={sendMagicLink}
-                      disabled={!email || emailStatus === "sending"}
-                      className={authPrimaryButtonClass}
-                    >
+                    <button type="submit" disabled={!email || emailStatus === "sending"} className={authPrimaryButtonClass}>
                       {emailStatus === "sending" ? t("auth.emailSending") : t("auth.sendMagicLink")}
                     </button>
-                    {emailStatus === "error" && (
-                      <p className="text-xs text-red-500 text-center">{t("auth.emailSendFailed")}</p>
-                    )}
-                    <p className="text-xs text-gray-400 text-center">{t("auth.emailLoginHint")}</p>
-                  </>
+                    {emailStatus === "error" ? (
+                      <p className="text-center text-sm text-red-600 dark:text-red-400">{t("auth.emailSendFailed")}</p>
+                    ) : null}
+                  </form>
                 )}
               </div>
             )}
           </div>
-        )}
+
+          {connected ? (
+            <p className="mt-10 px-6 text-center text-sm/6 text-gray-500 dark:text-gray-400">{t("auth.newUserHint")}</p>
+          ) : null}
+        </div>
       </div>
 
-      {/* Footer */}
-      <div className="fixed bottom-0 left-0 right-0 text-center py-4 text-[11px] text-gray-400 dark:text-gray-600 space-x-3">
-        <span>&copy; 2025–2026 Oliver Cermann</span>
-        <span>·</span>
+      <footer className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-4 text-[11px] text-gray-400 dark:text-gray-600">
+        <span className="whitespace-nowrap">&copy; 2025–2026 Oliver Cermann</span>
+        <span aria-hidden="true">·</span>
         <a href="https://itemplus.app/imprint" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500">Impressum</a>
-        <span>·</span>
-        <span>MIT License</span>
-        <span>·</span>
+        <span aria-hidden="true">·</span>
+        <span className="whitespace-nowrap">MIT License</span>
+        <span aria-hidden="true">·</span>
         <a href="https://github.com/dncloud/itemplus" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500">GitHub</a>
-        <span>·</span>
+        <span aria-hidden="true">·</span>
         <a href="https://itemplus.app" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500">itemplus.app</a>
-      </div>
+      </footer>
     </div>
   );
 }

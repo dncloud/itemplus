@@ -69,10 +69,13 @@ func main() {
 
 	if config.C.SetupRequired {
 		fmt.Print(banner)
-		fmt.Println("item+ first-start setup")
 		fmt.Println()
 		if err := bootstrap.RunInitialSetup(); err != nil {
-			log.Fatal(err)
+			// Said plainly, without a log timestamp: this is an answer to the
+			// person at the terminal, not a log line.
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
 		}
 		config.Load()
 		applyCLIOverrides(*bindFlag, *portFlag, *databaseFlag, *uploadFlag, *logsFlag)
@@ -281,6 +284,10 @@ func main() {
 	httpServer := &http.Server{
 		Addr:    apiAddr,
 		Handler: r,
+	}
+
+	if httpapi.StartUpdateChecker() {
+		log.Printf("Update check is on (UPDATE_CHECK=%s): asking api.github.com once a day", config.C.UpdateCheck)
 	}
 
 	errCh := make(chan error, 1)

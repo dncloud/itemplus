@@ -6,9 +6,10 @@ import clsx from "clsx";
 import { RefreshCw, ChevronRight } from "lucide-react";
 import { api, type AIUsageStats, type AIUsageStatsBucket, type AIUsageStatsPeriod } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import { AI_PROVIDERS, type AIProvider, aiProviderLabel } from "@/lib/ai-providers";
 
 type PeriodKey = "hour" | "day" | "week" | "month" | "total";
-type ProviderFilter = "all" | "openai" | "ollama";
+type ProviderFilter = "all" | AIProvider;
 
 type UsageTotals = {
   requests: number;
@@ -23,7 +24,8 @@ type UsageTotals = {
 };
 
 const periodKeys: PeriodKey[] = ["hour", "day", "week", "month", "total"];
-const providerFilters: ProviderFilter[] = ["all", "openai", "ollama"];
+const providerFilters: ProviderFilter[] = ["all", ...AI_PROVIDERS];
+const providerBarClass: Record<AIProvider, string> = { openai: "bg-blue-500", anthropic: "bg-orange-500", ollama: "bg-violet-500" };
 
 const emptyTotals: UsageTotals = {
   requests: 0,
@@ -175,9 +177,7 @@ function DashboardMetric({
 }
 
 function providerLabel(filter: ProviderFilter, allLabel: string) {
-  if (filter === "openai") return "OpenAI";
-  if (filter === "ollama") return "Ollama";
-  return allLabel;
+  return filter === "all" ? allLabel : aiProviderLabel(filter);
 }
 
 export default function AIUsagePage() {
@@ -196,8 +196,16 @@ export default function AIUsagePage() {
   );
   const chartBuckets = useMemo(() => aggregateBucketsByLabel(filteredBuckets), [filteredBuckets]);
   const totals = useMemo(() => sumBuckets(filteredBuckets), [filteredBuckets]);
-  const openAITotals = useMemo(() => sumBuckets((activeStats?.buckets || []).filter((bucket) => bucket.provider === "openai")), [activeStats]);
-  const ollamaTotals = useMemo(() => sumBuckets((activeStats?.buckets || []).filter((bucket) => bucket.provider === "ollama")), [activeStats]);
+  // Tokens per provider; a provider nobody used is not listed.
+  const providerSplit = useMemo(() => {
+    const rows = AI_PROVIDERS.map((provider) => ({
+      provider,
+      tokens: sumBuckets((activeStats?.buckets || []).filter((bucket) => bucket.provider === provider)).total_tokens,
+    }));
+    const all = rows.reduce((sum, row) => sum + row.tokens, 0);
+    const used = rows.filter((row) => row.tokens > 0);
+    return { all, rows: used.length > 0 ? used : rows.slice(0, 2) };
+  }, [activeStats]);
   const averageTokens = totals.requests > 0 ? Math.round(totals.total_tokens / totals.requests) : 0;
 
   const tokenSeries = seriesFor(chartBuckets, "total_tokens");
@@ -267,7 +275,7 @@ export default function AIUsagePage() {
               className={clsx(
                 "rounded-lg px-4 py-2 text-sm font-semibold transition",
                 activePeriod === period
-                  ? "bg-blue-500 text-white shadow-sm shadow-blue-500/20"
+                  ? "bg-indigo-600 text-white dark:bg-indigo-500"
                   : "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10",
               )}
             >
@@ -331,20 +339,17 @@ export default function AIUsagePage() {
             <div className="min-h-32 border-b border-gray-200 p-4 dark:border-white/10 lg:border-b-0">
               <p className="text-sm/6 font-medium text-gray-500 dark:text-gray-400">{t("aiUsage.providerSplit")}</p>
               <div className="mt-2 grid gap-2">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">OpenAI</span>
-                  <span className="font-mono text-sm text-gray-500 dark:text-gray-400">{formatNumber(openAITotals.total_tokens)}</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-white/10">
-                  <div className="h-full rounded-full bg-blue-500" style={{ width: `${Math.min(100, Math.max(3, (openAITotals.total_tokens / Math.max(1, openAITotals.total_tokens + ollamaTotals.total_tokens)) * 100))}%` }} />
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">Ollama</span>
-                  <span className="font-mono text-sm text-gray-500 dark:text-gray-400">{formatNumber(ollamaTotals.total_tokens)}</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-white/10">
-                  <div className="h-full rounded-full bg-violet-500" style={{ width: `${Math.min(100, Math.max(3, (ollamaTotals.total_tokens / Math.max(1, openAITotals.total_tokens + ollamaTotals.total_tokens)) * 100))}%` }} />
-                </div>
+                {providerSplit.rows.map((row) => (
+                  <div key={row.provider}>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{aiProviderLabel(row.provider)}</span>
+                      <span className="font-mono text-sm text-gray-500 dark:text-gray-400">{formatNumber(row.tokens)}</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-white/10">
+                      <div className={clsx("h-full rounded-full", providerBarClass[row.provider])} style={{ width: `${Math.min(100, Math.max(3, (row.tokens / Math.max(1, providerSplit.all)) * 100))}%` }} />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

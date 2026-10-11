@@ -2,9 +2,11 @@
 
 import clsx from "clsx";
 import Link from "next/link";
-import { Barcode, ChevronDown, ChevronRight, ChevronUp, Filter, Search, Plus, X } from "lucide-react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { ArrowDownUp, Barcode, Check, ChevronRight, Filter, LayoutGrid, Search, Plus, TableProperties, X } from "lucide-react";
 import { Filter as FunnelSolid } from "lucide-react";
 import { type Category, type Location } from "@/lib/api";
+import type { ItemListView } from "@/lib/app-context-storage";
 import { ItemsFilterPicker as FilterPicker } from "@/app/(app)/items/items-filter-picker";
 
 type Translator = (key: string, vars?: Record<string, string | number>) => string;
@@ -67,11 +69,12 @@ export function ItemsPageHeader({
         )}
         {canWrite && (
           <button
+            type="button"
             onClick={onOpenNew}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            title={t("common.new")}
+            className="inline-flex items-center gap-x-1.5 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-indigo-500 dark:shadow-none dark:hover:bg-indigo-400 dark:focus-visible:outline-indigo-500"
           >
-            <Plus className="h-4 w-4" />
+            <Plus aria-hidden="true" className="-ml-0.5 size-4" />
+            {t("items.new")}
           </button>
         )}
       </div>
@@ -95,6 +98,8 @@ export function ItemsPageToolbar({
   sortField,
   sortOrder,
   setSort,
+  view,
+  setView,
   setFilter,
   categories,
   locations,
@@ -121,6 +126,8 @@ export function ItemsPageToolbar({
   sortField: string;
   sortOrder: string;
   setSort: (field: string, order: string) => void;
+  view: ItemListView;
+  setView: (view: ItemListView) => void;
   setFilter: (category?: number, location?: number, status?: string) => void;
   categories: Category[];
   locations: Location[];
@@ -139,6 +146,18 @@ export function ItemsPageToolbar({
     { value: "for_sale", label: getStatusLabel("for_sale") },
     { value: "sold", label: getStatusLabel("sold") },
   ] as const;
+  const sortOptions = [
+    { field: "id", order: "desc", label: t("items.sortNewestFirst") },
+    { field: "id", order: "asc", label: t("items.sortOldestFirst") },
+    { field: "name", order: "asc", label: t("items.sortNameAsc") },
+    { field: "name", order: "desc", label: t("items.sortNameDesc") },
+    { field: "price", order: "desc", label: t("items.sortPriceDesc") },
+    { field: "price", order: "asc", label: t("items.sortPriceAsc") },
+    { field: "quantity", order: "desc", label: t("items.sortQuantityDesc") },
+    { field: "quantity", order: "asc", label: t("items.sortQuantityAsc") },
+  ] as const;
+  const toolbarButtonClass =
+    "flex shrink-0 items-center gap-x-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 outline-1 -outline-offset-1 outline-gray-300 hover:bg-gray-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-600 dark:bg-white/10 dark:text-white dark:outline-gray-700 dark:hover:bg-white/20 dark:focus-visible:outline-indigo-500";
 
   return (
     <>
@@ -176,7 +195,7 @@ export function ItemsPageToolbar({
                     onClick={() => setFilterOpen(!filterOpen)}
                     className="flex shrink-0 items-center gap-x-1.5 rounded-r-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 outline-1 -outline-offset-1 outline-gray-300 hover:bg-gray-50 focus:relative focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 dark:bg-white/10 dark:text-white dark:outline-white/5 dark:hover:bg-white/20 dark:focus:outline-indigo-500"
                   >
-                    {(filterCategory || filterLocation || filterStatus || sortField !== "id")
+                    {(filterCategory || filterLocation || filterStatus)
                       ? <FunnelSolid className="-ml-0.5 size-4 text-gray-400 dark:text-gray-300" />
                       : <Filter className="-ml-0.5 size-4 text-gray-400 dark:text-gray-300" />}
                     {t("common.filter")}
@@ -185,35 +204,6 @@ export function ItemsPageToolbar({
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setFilterOpen(false)} />
                       <div className="absolute right-0 top-full z-50 mt-2 w-72 space-y-3 rounded-md bg-white p-4 shadow-lg outline-1 outline-gray-900/5 dark:bg-gray-800 dark:outline-white/10">
-                        <div>
-                          <label className="mb-1.5 block text-xs font-medium text-gray-500 dark:text-gray-400">{t("items.sortBy")}</label>
-                          <div className="grid grid-cols-2 gap-1.5">
-                            {([
-                              { field: "name", label: t("items.sortName"), defaultOrd: "asc" },
-                              { field: "price", label: t("items.sortPrice"), defaultOrd: "desc" },
-                              { field: "quantity", label: t("items.sortQuantity"), defaultOrd: "desc" },
-                              { field: "id", label: t("items.sortNewest"), defaultOrd: "desc" },
-                            ] as const).map(({ field, label, defaultOrd }) => {
-                              const active = sortField === field;
-                              return (
-                                <button
-                                  key={field}
-                                  type="button"
-                                  onClick={() => setSort(field, active && sortOrder === defaultOrd ? (defaultOrd === "desc" ? "asc" : "desc") : defaultOrd)}
-                                  className={`flex items-center justify-between rounded-md px-2.5 py-1.5 text-xs transition ${
-                                    active ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300" : "bg-gray-50 hover:bg-gray-100 dark:bg-white/5 dark:hover:bg-white/10"
-                                  }`}
-                                >
-                                  {label}
-                                  {active && (sortOrder === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        <hr className="border-gray-100 dark:border-white/10" />
-
                         <FilterPicker
                           label={t("items.category")}
                           value={filterCategory}
@@ -258,7 +248,7 @@ export function ItemsPageToolbar({
                             ))}
                           </div>
                         </div>
-                        {(filterCategory || filterLocation || filterStatus || sortField !== "id") && (
+                        {(filterCategory || filterLocation || filterStatus) && (
                           <button
                             type="button"
                             onClick={() => { resetAllFilters(); setFilterOpen(false); }}
@@ -272,17 +262,74 @@ export function ItemsPageToolbar({
                   )}
                 </div>
               </div>
+
+              <div className="mt-3 flex items-center gap-2 sm:mt-0 sm:ml-3">
+                <Menu as="div" className="relative">
+                  <MenuButton className={toolbarButtonClass}>
+                    <ArrowDownUp aria-hidden="true" className="-ml-0.5 size-4 text-gray-400 dark:text-gray-300" />
+                    {t("items.sortBy")}
+                  </MenuButton>
+                  <MenuItems
+                    transition
+                    className="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-md bg-white py-1 shadow-lg outline-1 outline-black/5 transition data-[closed]:scale-95 data-[closed]:opacity-0 data-[enter]:duration-100 data-[leave]:duration-75 dark:bg-gray-800 dark:shadow-none dark:-outline-offset-1 dark:outline-white/10"
+                  >
+                    {sortOptions.map((option) => {
+                      const active = sortField === option.field && sortOrder === option.order;
+                      return (
+                        <MenuItem key={`${option.field}-${option.order}`}>
+                          <button
+                            type="button"
+                            onClick={() => setSort(option.field, option.order)}
+                            className={clsx(
+                              "flex w-full items-center justify-between px-4 py-2 text-left text-sm data-[focus]:bg-gray-100 data-[focus]:outline-hidden dark:data-[focus]:bg-white/5",
+                              active ? "font-semibold text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300",
+                            )}
+                          >
+                            {option.label}
+                            {active ? <Check aria-hidden="true" className="size-4 text-indigo-600 dark:text-indigo-400" /> : null}
+                          </button>
+                        </MenuItem>
+                      );
+                    })}
+                  </MenuItems>
+                </Menu>
+
+                <span className="isolate inline-flex rounded-md">
+                  {([
+                    { value: "cards", label: t("items.viewCards"), icon: LayoutGrid },
+                    { value: "table", label: t("items.viewTable"), icon: TableProperties },
+                  ] as const).map((option, index) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setView(option.value)}
+                      title={option.label}
+                      aria-label={option.label}
+                      aria-pressed={view === option.value}
+                      className={clsx(
+                        "relative inline-flex items-center px-2.5 py-2 outline-1 -outline-offset-1 outline-gray-300 focus:z-10 dark:outline-gray-700",
+                        index === 0 ? "rounded-l-md" : "-ml-px rounded-r-md",
+                        view === option.value
+                          ? "bg-gray-100 text-gray-900 dark:bg-white/20 dark:text-white"
+                          : "bg-white text-gray-400 hover:bg-gray-50 dark:bg-white/10 dark:hover:bg-white/20",
+                      )}
+                    >
+                      <option.icon aria-hidden="true" className="size-5" />
+                    </button>
+                  ))}
+                </span>
+              </div>
             </form>
 
             <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-              <span><strong className="text-gray-700 dark:text-gray-300">{total}</strong> {total === 1 ? "Item" : "Items"}</span>
+              <span><strong className="text-gray-700 dark:text-gray-300">{total}</strong> {t("nav.items")}</span>
               {totalValue > 0 && (
                 <span><strong className="text-gray-700 dark:text-gray-300">{totalValue.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}</strong> {t("items.totalValue")}</span>
               )}
               {filterLocation && (() => {
                 const location = locations.find((entry) => entry.id === filterLocation);
                 return location?.capacity ? (
-                  <span><strong className="text-gray-700 dark:text-gray-300">{totalQty}/{location.capacity}</strong> Kapazität</span>
+                  <span><strong className="text-gray-700 dark:text-gray-300">{totalQty}/{location.capacity}</strong> {t("locations.capacity")}</span>
                 ) : null;
               })()}
             </div>

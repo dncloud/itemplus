@@ -59,12 +59,12 @@ func adminListAIModels(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
 		return
 	}
-	if profile.Provider != "openai" {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "Model loading is only supported for OpenAI profiles"})
+	if profile.Provider != "openai" && profile.Provider != "anthropic" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "Model loading is only supported for OpenAI and Claude profiles"})
 		return
 	}
 
-	models, err := aicore.ListOpenAIModels(profile)
+	models, err := aicore.ListAIModels(profile)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"detail": err.Error()})
 		return

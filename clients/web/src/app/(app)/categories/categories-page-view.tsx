@@ -18,6 +18,7 @@ import type {
 } from "@/lib/api";
 import type { AIChatEntry } from "@/lib/ai-chat";
 import { ConfirmDelete } from "@/components/ui/confirm-delete";
+import { CategoryLayoutPreview } from "./categories-layout-preview";
 import {
   AIDrawerChatMessage,
   AIDrawerTabs,
@@ -38,7 +39,6 @@ export function CategoriesPageView({
   t,
   canWriteCategories,
   canDeleteCategories,
-  canReadItems,
   categories,
   editCat,
   setEditCat,
@@ -104,8 +104,7 @@ export function CategoriesPageView({
   onCatDragEnd,
   onPropDragEnd,
   toggleShowInList,
-  fmtDateTime,
-  onShowCategoryItems,
+  setPropertyWidth,
   pendingCategoryDeleteId,
   pendingPropertyDeleteId,
   deleteCat,
@@ -118,7 +117,6 @@ export function CategoriesPageView({
   t: (key: string, vars?: Record<string, string | number>) => string;
   canWriteCategories: boolean;
   canDeleteCategories: boolean;
-  canReadItems: boolean;
   categories: Category[];
   editCat: Partial<Category> | null;
   setEditCat: Dispatch<SetStateAction<Partial<Category> | null>>;
@@ -184,8 +182,7 @@ export function CategoriesPageView({
   onCatDragEnd: (event: DragEndEvent) => Promise<void>;
   onPropDragEnd: (event: DragEndEvent) => Promise<void>;
   toggleShowInList: (prop: Property) => Promise<void>;
-  fmtDateTime: (value: string) => string;
-  onShowCategoryItems: (categoryId: number) => void;
+  setPropertyWidth: (prop: Property, width: "third" | "half" | "full") => Promise<void>;
   pendingCategoryDeleteId: number | null;
   pendingPropertyDeleteId: number | null;
   deleteCat: (categoryId: number) => void;
@@ -223,11 +220,12 @@ export function CategoriesPageView({
         {canWriteCategories ? (
           <div className="flex items-center justify-center gap-2 rounded-sm px-2 py-3 sm:justify-end sm:bg-transparent sm:px-0">
             <button
+              type="button"
               onClick={() => { setEditCat({ name: "" }); setIsNew(true); }}
-              className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-              title={t("common.new")}
+              className="inline-flex items-center gap-x-1.5 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-indigo-500 dark:shadow-none dark:hover:bg-indigo-400 dark:focus-visible:outline-indigo-500"
             >
-              <Plus className="h-4 w-4" />
+              <Plus aria-hidden="true" className="-ml-0.5 size-4" />
+              {t("categories.newCategory")}
             </button>
           </div>
         ) : null}
@@ -236,7 +234,7 @@ export function CategoriesPageView({
       {canWriteCategories && editCat && isNew ? (
         <div className="overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-900/5 dark:bg-gray-800/50 dark:outline-white/10">
           <div className="border-b border-gray-200 px-4 py-4 sm:px-6 dark:border-white/10">
-            <h3 className="font-semibold text-gray-900 dark:text-white">{t("common.new")}</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white">{t("categories.newCategory")}</h3>
           </div>
           <div className="px-4 py-4 sm:px-6">
             <CategoryInlineForm
@@ -271,19 +269,16 @@ export function CategoriesPageView({
                   }
                 }}
                 onDelete={() => deleteCat(cat.id)}
-                onShowItems={() => onShowCategoryItems(cat.id)}
                 canReorder={canWriteCategories}
                 canEdit={canWriteCategories}
                 canDelete={canDeleteCategories}
                 pendingDelete={pendingCategoryDeleteId === cat.id}
-                canShowItems={canReadItems}
-                fmtDateTime={fmtDateTime}
                 t={t}
               >
                 {(editCat?.id === cat.id && !isNew) || expanded === cat.id ? (
                   <div>
                     {canWriteCategories && editCat?.id === cat.id && !isNew ? (
-                      <div className="border-t border-gray-100 px-4 py-4 sm:px-6 dark:border-white/10">
+                      <div className="px-4 py-4 sm:px-6">
                         <CategoryInlineForm
                           category={editCat}
                           onChange={setEditCat}
@@ -298,22 +293,23 @@ export function CategoriesPageView({
                     ) : null}
 
                     {expanded === cat.id ? (
-                      <div className="space-y-2 border-t border-gray-100 px-4 py-4 sm:px-6 dark:border-white/10">
-                        <div className="mb-2 flex items-center justify-between">
+                      <div className="border-t border-gray-100 px-4 pt-5 pb-6 sm:px-6 dark:border-white/10">
+                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                           <h4 className="text-sm/6 font-medium text-gray-900 dark:text-white">{t("categories.properties")}</h4>
                           {canWriteCategories ? (
                             <button
+                              type="button"
                               onClick={() => { setEditProp({ name: "", property_type: "text", show_in_list: false }); setPropertyAICategory(null); setIsNewProp(true); }}
-                              className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10"
-                              title={t("categories.addProperty")}
+                              className="inline-flex items-center gap-x-1.5 rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 outline-1 -outline-offset-1 outline-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:outline-gray-700 dark:hover:bg-white/20"
                             >
-                              <Plus className="h-4 w-4 text-gray-400" />
+                              <Plus aria-hidden="true" className="-ml-0.5 size-4 text-gray-400 dark:text-gray-300" />
+                              {t("categories.addProperty")}
                             </button>
                           ) : null}
                         </div>
 
                         {canWriteCategories && editProp && isNewProp ? (
-                          <div className="mb-3 border-t border-gray-100 px-4 py-4 dark:border-white/10">
+                          <div className="mb-4">
                             <PropertyInlineForm
                               property={editProp}
                               onChange={setEditProp}
@@ -326,6 +322,13 @@ export function CategoriesPageView({
                         ) : null}
 
                         {properties.length === 0 && !editProp ? <p className="text-xs text-gray-400">{t("categories.noProperties")}</p> : null}
+                        <CategoryLayoutPreview
+                          properties={properties}
+                          editable={canWriteCategories}
+                          onDragEnd={onPropDragEnd}
+                          onSetWidth={setPropertyWidth}
+                          t={t}
+                        />
                         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => { void onPropDragEnd(event); }}>
                           <SortableContext items={properties.map((p) => p.id)} strategy={verticalListSortingStrategy}>
                             {properties.map((prop) => (
@@ -333,7 +336,6 @@ export function CategoriesPageView({
                                 key={prop.id}
                                 property={prop}
                                 propertyTypeLabel={propertyTypes.find((type) => type.value === prop.property_type)?.label || prop.property_type}
-                                fmtDateTime={fmtDateTime}
                                 onEdit={() => {
                                   if (editProp?.id === prop.id && !isNewProp) {
                                     setEditProp(null);
@@ -346,6 +348,8 @@ export function CategoriesPageView({
                                 }}
                                 onDelete={() => deleteProp(prop.id)}
                                 onToggleVisibility={() => { void toggleShowInList(prop); }}
+                                // While the form of this property is open, its width is set there.
+                                onSetWidth={editProp?.id === prop.id && !isNewProp ? undefined : (width) => { void setPropertyWidth(prop, width); }}
                                 canReorder={canWriteCategories}
                                 canEdit={canWriteCategories}
                                 canDelete={canDeleteCategories}
@@ -354,7 +358,7 @@ export function CategoriesPageView({
                                 t={t}
                               >
                                 {canWriteCategories && editProp?.id === prop.id && !isNewProp ? (
-                                  <div className="border-t border-gray-100 px-3 py-4 dark:border-white/10">
+                                  <div className="pt-1 pb-3">
                                     <PropertyInlineForm
                                       property={editProp}
                                       onChange={setEditProp}
@@ -461,7 +465,7 @@ export function CategoriesPageView({
                   type="checkbox"
                   checked={aiAllowWebSearch}
                   onChange={(event) => setAiAllowWebSearch(event.target.checked)}
-                  className="accent-blue-500"
+                  className="accent-indigo-600"
                 />
                 {t("chat.allowWebSearch")}
               </label>
@@ -470,7 +474,7 @@ export function CategoriesPageView({
               type="button"
               onClick={() => { void runCategoryAI(); }}
               disabled={categoryAIBusy}
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Sparkles className="h-4 w-4" />
               {categoryAIBusy ? t("categories.aiRunning") : t("common.send")}
@@ -544,7 +548,7 @@ export function CategoriesPageView({
                   type="checkbox"
                   checked={aiAllowWebSearch}
                   onChange={(event) => setAiAllowWebSearch(event.target.checked)}
-                  className="accent-blue-500"
+                  className="accent-indigo-600"
                 />
                 {t("chat.allowWebSearch")}
               </label>
@@ -557,7 +561,7 @@ export function CategoriesPageView({
                 void runPropertyAI(category);
               }}
               disabled={propertyAIBusy}
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Sparkles className="h-4 w-4" />
               {propertyAIBusy ? t("categories.aiRunning") : t("common.send")}

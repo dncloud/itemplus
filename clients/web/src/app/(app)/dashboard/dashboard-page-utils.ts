@@ -2,8 +2,8 @@
 
 import { api, type ActiveCheckout, type InventoryWarning, type LocationWarning, type StatsOverview } from "@/lib/api";
 
-export function formatDashboardCurrency(value: number) {
-  return value.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+export function formatDashboardCurrency(value: number, locale: string = "de") {
+  return value.toLocaleString(locale === "en" ? "en-US" : "de-DE", { style: "currency", currency: "EUR" });
 }
 
 export async function fetchDashboardPageData({

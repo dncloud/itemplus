@@ -5,8 +5,10 @@ import (
 	"github.com/itemplus/backend/internal/http/middleware"
 	"math"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -106,18 +108,19 @@ func realmStats(realm string) gin.H {
 	}
 
 	catRows, _ := database.DB.Queryx(fmt.Sprintf(
-		`SELECT c.id, c.name, COUNT(i.id) AS items, COALESCE(SUM(i.purchase_price * i.quantity), 0) AS value
+		`SELECT c.id, c.name, c.color, COUNT(i.id) AS items, COALESCE(SUM(i.purchase_price * i.quantity), 0) AS value
 		FROM %s_categories c LEFT JOIN %s_items i ON i.category_id = c.id
-		GROUP BY c.id, c.name ORDER BY c.name`, realm, realm))
+		GROUP BY c.id, c.name, c.color ORDER BY c.name`, realm, realm))
 	var byCategory []gin.H
 	if catRows != nil {
 		defer catRows.Close()
 		for catRows.Next() {
 			var id, itemCount int
 			var name string
+			var color *string
 			var value float64
-			catRows.Scan(&id, &name, &itemCount, &value)
-			byCategory = append(byCategory, gin.H{"id": id, "name": name, "items": itemCount, "value": round2(value)})
+			catRows.Scan(&id, &name, &color, &itemCount, &value)
+			byCategory = append(byCategory, gin.H{"id": id, "name": name, "color": color, "items": itemCount, "value": round2(value)})
 		}
 	}
 	if byCategory == nil {
@@ -125,8 +128,22 @@ func realmStats(realm string) gin.H {
 	}
 	totalValue = round2(totalValue)
 	avgPrice = round2(avgPrice)
+	addPreviewImages(realm, recentlyAdded, topByValue, topByQuantity)
+
+	charts := realmChartStats(realm, time.Now())
+	// A find of the day suits a collection. In an inventory it would present
+	// the hundredth power cable as a discovery.
+	var spotlight gin.H
+	if realm == "collection" {
+		spotlight = realmSpotlight(realm, time.Now())
+	}
 
 	return gin.H{
+		"growth":          charts["growth"],
+		"activity":        charts["activity"],
+		"by_location":     charts["by_location"],
+		"checked_out":     charts["checked_out"],
+		"spotlight":       spotlight,
 		"items":           items,
 		"categories":      categories,
 		"locations":       locations,
@@ -328,4 +345,57 @@ func statsMaintenance(c *gin.Context) {
 		"overdue":            overdueCount,
 		"reminder_lead_days": maintenanceReminderLeadDays(),
 	})
+}
+
+var previewImageExtensions = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".svg": true, ".bmp": true,
+}
+
+// addPreviewImages gives every listed item the image the item list shows for
+// it: its first gallery attachment that is a picture. Items without one are
+// left as they are.
+func addPreviewImages(realm string, lists ...[]gin.H) {
+	var itemIDs []interface{}
+	seen := map[string]bool{}
+	for _, list := range lists {
+		for _, row := range list {
+			key := fmt.Sprint(row["id"])
+			if !seen[key] {
+				seen[key] = true
+				itemIDs = append(itemIDs, row["id"])
+			}
+		}
+	}
+	if len(itemIDs) == 0 {
+		return
+	}
+
+	type attachment struct {
+		ID       int64  `db:"id"`
+		ItemID   int64  `db:"item_id"`
+		Filename string `db:"filename"`
+	}
+	var attachments []attachment
+	query := fmt.Sprintf(
+		"SELECT id, item_id, filename FROM %s_attachments WHERE gallery = 1 AND item_id IN (%s) ORDER BY `order`, id",
+		realm, middleware.InClausePlaceholders(itemIDs))
+	if err := database.DB.Select(&attachments, query, itemIDs...); err != nil {
+		return
+	}
+
+	imageByItem := map[string]string{}
+	for _, a := range attachments {
+		key := strconv.FormatInt(a.ItemID, 10)
+		if imageByItem[key] != "" || !previewImageExtensions[strings.ToLower(filepath.Ext(a.Filename))] {
+			continue
+		}
+		imageByItem[key] = fmt.Sprintf("/api/%s/attachments/%d/content", realm, a.ID)
+	}
+	for _, list := range lists {
+		for _, row := range list {
+			if image := imageByItem[fmt.Sprint(row["id"])]; image != "" {
+				row["image_url"] = image
+			}
+		}
+	}
 }

@@ -3,6 +3,14 @@ package ai
 import "net/http"
 
 func generateAIText(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, allowWebSearch bool, imageInput *AIImageInput, responseSchema map[string]any, onRaw func(string) error) (string, string, *AIUsage, error) {
+	if isAnthropicProvider(provider) {
+		text, usage, err := generateViaAnthropic(client, baseURL, model, apiKey, instructions, input, allowWebSearch, imageInput, onRaw)
+		if err != nil {
+			return "", "", usage, err
+		}
+		return text, "anthropic.messages", usage, nil
+	}
+
 	if provider != "openai" && imageInput != nil {
 		text, usage, err := generateViaChatCompletions(client, baseURL, provider, model, apiKey, instructions, input, imageInput, responseSchema, onRaw)
 		if err == nil {

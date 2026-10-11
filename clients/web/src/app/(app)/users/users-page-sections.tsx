@@ -1,6 +1,7 @@
 "use client";
 import clsx from "clsx";
-import { Check, ChevronDown, Shield, Trash2, Wifi, KeyRound } from "lucide-react";
+import { Check, ChevronDown, Shield, Wifi, KeyRound } from "lucide-react";
+import { RowMenu, iconButtonClass, saveButtonClass } from "@/components/ui/list-controls";
 import type { User } from "@/lib/api";
 import { UserAvatar } from "@/components/ui/user-avatar";
 
@@ -80,23 +81,10 @@ export function PendingUsersSection({
               </div>
             </div>
             <div className="flex items-center gap-2 self-end sm:self-auto">
-              <button
-                onClick={() => activateUser(user.id)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-green-300 px-3 py-1.5 text-sm text-green-700 transition hover:bg-green-50 dark:border-green-700 dark:text-green-400 dark:hover:bg-green-900/20"
-              >
-                <Check className="h-4 w-4" /> {t("users.activate")}
+              <button type="button" onClick={() => activateUser(user.id)} className={clsx("inline-flex items-center gap-x-1.5", saveButtonClass)}>
+                <Check aria-hidden="true" className="-ml-0.5 size-4" /> {t("users.activate")}
               </button>
-              <button
-                onClick={() => deleteUser(user.id)}
-                disabled={pendingDeleteUserId === user.id}
-                className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:hover:bg-red-900/20"
-              >
-                {pendingDeleteUserId === user.id ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
-                ) : (
-                  <Trash2 className="h-4 w-4 text-red-400" />
-                )}
-              </button>
+              <RowMenu t={t} pending={pendingDeleteUserId === user.id} onDelete={() => deleteUser(user.id)} />
             </div>
           </div>
         ))}
@@ -141,7 +129,7 @@ export function ActiveUsersSection({
         <div className="divide-y divide-gray-100 dark:divide-white/5">
         {loading ? (
           <div className="flex justify-center py-10">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
           </div>
         ) : (
           active.map((user) => {
@@ -199,20 +187,23 @@ export function ActiveUsersSection({
 
                     {!isMe ? (
                       <div className="flex items-center gap-2 self-start xl:ml-2">
-                        <button onClick={() => setExpandedUser(isExpanded ? null : user.id)} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10">
-                          <ChevronDown className={`h-4 w-4 text-gray-400 transition ${isExpanded ? "rotate-180" : ""}`} />
-                        </button>
                         <button
-                          onClick={() => deleteUser(user.id)}
-                          disabled={pendingDeleteUserId === user.id}
-                          className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:hover:bg-red-900/20"
+                          type="button"
+                          onClick={() => setExpandedUser(isExpanded ? null : user.id)}
+                          aria-expanded={isExpanded}
+                          title={isExpanded ? t("users.hideDetails") : t("users.showDetails")}
+                          aria-label={isExpanded ? t("users.hideDetails") : t("users.showDetails")}
+                          className={iconButtonClass}
                         >
-                          {pendingDeleteUserId === user.id ? (
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
-                          ) : (
-                            <Trash2 className="h-4 w-4 text-red-400" />
-                          )}
+                          <ChevronDown className={`h-4 w-4 transition ${isExpanded ? "rotate-180" : ""}`} />
                         </button>
+                        {/* Someone who still holds loans cannot be deleted; the menu says so. */}
+                        <RowMenu
+                          t={t}
+                          pending={pendingDeleteUserId === user.id}
+                          onDelete={() => deleteUser(user.id)}
+                          blockedReason={activeCheckoutCount > 0 ? t("users.deleteBlockedLoans", { count: activeCheckoutCount }) : undefined}
+                        />
                       </div>
                     ) : null}
                   </div>
@@ -304,7 +295,7 @@ export function ActiveUsersSection({
                               {t("settings.permissions")}
                             </div>
                             <div className="flex gap-3">
-                              <button onClick={() => updateUser(user.id, { permissions: [...ALL_PERMISSIONS] })} className="text-xs text-blue-500 hover:underline">{t("users.enableAll")}</button>
+                              <button onClick={() => updateUser(user.id, { permissions: [...ALL_PERMISSIONS] })} className="text-xs text-indigo-600 hover:underline dark:text-indigo-400">{t("users.enableAll")}</button>
                               <button onClick={() => updateUser(user.id, { permissions: [] })} className="text-xs text-gray-400 hover:underline">{t("users.removeAll")}</button>
                             </div>
                           </div>

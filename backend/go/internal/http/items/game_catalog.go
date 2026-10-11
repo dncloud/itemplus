@@ -2,6 +2,7 @@ package items
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -423,8 +424,8 @@ func importGameCatalogAssets(realm string) gin.HandlerFunc {
 			return
 		}
 		rows := make([]map[string]interface{}, 0, len(body.Assets))
-		for index, asset := range body.Assets {
-			row, err := storeGameCatalogAsset(c, realm, itemID, asset, index)
+		for _, asset := range body.Assets {
+			row, err := storeGameCatalogAsset(c, realm, itemID, asset)
 			if err != nil {
 				gameCatalogError(c, err)
 				return
@@ -436,7 +437,8 @@ func importGameCatalogAssets(realm string) gin.HandlerFunc {
 		c.JSON(http.StatusCreated, gin.H{"attachments": rows})
 	}
 }
-func storeGameCatalogAsset(c *gin.Context, realm, itemID string, asset gameCatalogAsset, order int) (map[string]interface{}, error) {
+
+func storeGameCatalogAsset(c *gin.Context, realm, itemID string, asset gameCatalogAsset) (map[string]interface{}, error) {
 	if asset.MediaID < 1 || asset.ContentPath != fmt.Sprintf("/v1/itemplus/media/%d/content", asset.MediaID) {
 		return nil, fmt.Errorf("invalid catalog asset")
 	}
@@ -487,7 +489,11 @@ func storeGameCatalogAsset(c *gin.Context, realm, itemID string, asset gameCatal
 	}
 	now := database.TimestampNow()
 	table := realm + "_attachments"
-	result, err := database.DB.Exec(fmt.Sprintf("INSERT INTO %s (item_id, filename, file_path, storage_backend, attachment_type, description, gallery, size, `order`, created_at, updated_at) VALUES (?, ?, ?, 'local', 'image', ?, 1, ?, ?, ?, ?)", table), itemID, filename, path.Join(realm, itemID, filename), asset.Label, written, order, now, now)
+	// The web app sends many images in several requests; each image goes
+	// behind what the item has by then, not to the start again.
+	result, err := insertAttachmentAtEnd(table, itemID, func(order int) (sql.Result, error) {
+		return database.DB.Exec(fmt.Sprintf("INSERT INTO %s (item_id, filename, file_path, storage_backend, attachment_type, description, gallery, size, `order`, created_at, updated_at) VALUES (?, ?, ?, 'local', 'image', ?, 1, ?, ?, ?, ?)", table), itemID, filename, path.Join(realm, itemID, filename), asset.Label, written, order, now, now)
+	})
 	if err != nil {
 		_ = os.Remove(full)
 		return nil, err

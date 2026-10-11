@@ -7,65 +7,96 @@ function filterWarningsByRealm<T extends { realm?: string }>(warnings: T[], real
   return warnings.filter((warning) => warning.realm === realm);
 }
 
-export async function loadAppBadges(can: (perm: string) => boolean, realm: "archive" | "collection") {
+type Realm = "archive" | "collection";
+
+/**
+ * Key under which the badges hold how much is waiting in a realm other than
+ * the current one. It names the realm, so a count that was loaded before a
+ * realm switch never shows up on the wrong side of the switch.
+ */
+export const realmBadgeKey = (realm: "archive" | "collection") => `@realm:${realm}`;
+
+// Every badge counts what waits in the current realm, like the page behind
+// it. What waits in the other realm is added up separately, so the realm
+// switch can say that something is going on over there.
+export async function loadAppBadges(can: (perm: string) => boolean, realm: Realm) {
   const badges: Record<string, number> = {};
+  const otherRealm: Realm = realm === "archive" ? "collection" : "archive";
+  let waitingElsewhere = 0;
+  const count = <T extends { realm?: string }>(href: string, rows: T[]) => {
+    const here = filterWarningsByRealm(rows, realm).length;
+    badges[href] = (badges[href] || 0) + here;
+    waitingElsewhere += filterWarningsByRealm(rows, otherRealm).length;
+  };
+
   try {
     if (can("users.manage")) {
       const users = await api.getInactiveUsers().catch(() => []);
       if (users.length > 0) badges["/users"] = users.length;
     }
 
-    const canReadInventory = can("inventory.read");
-    const canViewInventoryWarnings = canReadInventory && can("inventory.write");
-    const canViewLocationWarnings = canReadInventory && can("inventory.write");
-    if (canReadInventory && (canViewInventoryWarnings || canViewLocationWarnings)) {
+    const canViewWarnings = can("inventory.read") && can("inventory.write");
+    if (canViewWarnings) {
       const [inventoryWarnings, locationWarnings] = await Promise.all([
-        canViewInventoryWarnings
-          ? api.getInventoryStats().then((response) => response.warnings || []).catch(() => [] as InventoryWarning[])
-          : Promise.resolve([] as InventoryWarning[]),
-        canViewLocationWarnings
-          ? api.getLocationStats().then((response) => response.warnings || []).catch(() => [] as LocationWarning[])
-          : Promise.resolve([] as LocationWarning[]),
+        api.getInventoryStats().then((response) => response.warnings || []).catch(() => [] as InventoryWarning[]),
+        api.getLocationStats().then((response) => response.warnings || []).catch(() => [] as LocationWarning[]),
       ]);
-      const warningCount =
-        filterWarningsByRealm(inventoryWarnings, realm).length +
-        filterWarningsByRealm(locationWarnings, realm).length;
-      if (warningCount > 0) badges["/inventory-movements"] = warningCount;
+      count("/inventory-movements", inventoryWarnings);
+      count("/inventory-movements", locationWarnings);
     }
 
     if (can("maintenance.read")) {
       const maintenance = await api.getMaintenanceStats().catch(() => ({ items: [] as MaintenanceReminder[] }));
-      const maintenanceCount = filterWarningsByRealm(maintenance.items || [], realm).length;
-      if (maintenanceCount > 0) badges["/maintenance"] = maintenanceCount;
+      count("/maintenance", maintenance.items || []);
     }
 
-    const overdueCheckouts = can("checkout.manage")
-      ? await api.getOverdueCheckouts().catch(() => [])
-      : await api.getMyOverdueCheckouts().catch(() => []);
-    if (overdueCheckouts.length > 0) badges["/checkouts"] = overdueCheckouts.length;
+    if (can("checkout.manage")) {
+      // A manager's loans page shows one realm: overdue loans there, plus requests and reported returns waiting for a decision.
+      const [overdue, requests, returnReports] = await Promise.all([
+        api.getOverdueCheckouts().catch(() => []),
+        api.getCheckoutRequests().catch(() => []),
+        api.getCheckoutReturnRequests().catch(() => []),
+      ]);
+      // An overdue loan whose return is already reported counts once, as a report.
+      const reported = new Set(returnReports.map((loan) => `${loan.realm}-${loan.id}`));
+      count("/checkouts", overdue.filter((loan) => !reported.has(`${loan.realm}-${loan.id}`)));
+      count("/checkouts", returnReports);
+      count("/checkouts", requests.filter((request) => request.status === "pending"));
+    } else {
+      // A borrower's page shows their own loans from both realms.
+      const overdue = await api.getMyOverdueCheckouts().catch(() => []);
+      badges["/checkouts"] = overdue.length;
+    }
   } catch {
     // keep empty badge state on background fetch failures
   }
+
+  for (const href of Object.keys(badges)) {
+    if (!badges[href]) delete badges[href];
+  }
+  if (waitingElsewhere > 0) badges[realmBadgeKey(otherRealm)] = waitingElsewhere;
   return badges;
 }
 
-export async function verifySessionOrRedirect(onUnauthorized: () => void) {
+/**
+ * Asks the server whether there is a session. "none" means signed out;
+ * "unknown" means the server gave no clear answer (unreachable, an error),
+ * which is not a reason to send someone to the sign-in page.
+ */
+export async function checkSession(): Promise<"ok" | "none" | "unknown"> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       await api.getMe();
-      return;
+      return "ok";
     } catch (error) {
       if (!(error instanceof Error) || error.message !== "Unauthorized") {
-        return;
+        return "unknown";
       }
-      if (attempt === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        continue;
-      }
-      onUnauthorized();
-      return;
+      // One more try: right after signing in the cookie can be a moment late.
+      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 250));
     }
   }
+  return "none";
 }
 
 export function connectAppWebSocket(serverURL: string) {
@@ -159,6 +190,8 @@ export function registerAppShellEvents({
   const unsub7 = wsClient.on("checkout.rejected", refreshBadges);
   const unsub8 = wsClient.on("user.activated", refreshBadges);
   const unsub9 = wsClient.on("delete.done", refreshBadges);
+  // A message means something waits or was decided: the counts in the menu changed too.
+  const unsubNotifications = wsClient.on("notifications.updated", refreshBadges);
   const unsub10 = wsClient.on("barcode.scanned", (data) => {
     if (typeof window !== "undefined" && window.location.pathname.startsWith("/inventory-checks")) {
       return;
@@ -184,6 +217,7 @@ export function registerAppShellEvents({
     unsub7();
     unsub8();
     unsub9();
+    unsubNotifications();
     unsub10();
   };
 }

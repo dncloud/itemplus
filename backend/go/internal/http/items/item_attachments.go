@@ -2,6 +2,7 @@ package items
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -52,15 +53,16 @@ func uploadAttachment(realm string) gin.HandlerFunc {
 		}
 
 		attType := c.DefaultPostForm("type", "image")
-		order := c.DefaultPostForm("order", "0")
 		description := c.PostForm("description")
 		gallery := c.DefaultPostForm("gallery", "false") == "true"
 		now := database.TimestampNow()
 
-		result, err := database.DB.Exec(
-			fmt.Sprintf("INSERT INTO %s (item_id, filename, file_path, storage_backend, attachment_type, description, gallery, size, `order`, created_at, updated_at) VALUES (?, ?, ?, 'local', ?, ?, ?, ?, ?, ?, ?)", table),
-			itemID, upload.OriginalName, upload.RelativePath, attType, description, gallery, upload.Size, order, now, now,
-		)
+		result, err := insertAttachmentAtEnd(table, itemID, func(order int) (sql.Result, error) {
+			return database.DB.Exec(
+				fmt.Sprintf("INSERT INTO %s (item_id, filename, file_path, storage_backend, attachment_type, description, gallery, size, `order`, created_at, updated_at) VALUES (?, ?, ?, 'local', ?, ?, ?, ?, ?, ?, ?)", table),
+				itemID, upload.OriginalName, upload.RelativePath, attType, description, gallery, upload.Size, order, now, now,
+			)
+		})
 		if err != nil {
 			log.Printf("DB insert error in uploadAttachment: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
@@ -101,7 +103,6 @@ func addLinkAttachment(realm string) gin.HandlerFunc {
 			URL         string `json:"url"`
 			Filename    string `json:"filename"`
 			Description string `json:"description"`
-			Order       int    `json:"order"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"detail": "Invalid body"})
@@ -128,10 +129,12 @@ func addLinkAttachment(realm string) gin.HandlerFunc {
 		var fileSize *int64
 
 		now := database.TimestampNow()
-		result, err := database.DB.Exec(
-			fmt.Sprintf("INSERT INTO %s (item_id, filename, file_path, storage_backend, attachment_type, url, description, gallery, size, `order`, created_at, updated_at) VALUES (?, ?, '', 'external_url', ?, ?, ?, 0, ?, ?, ?, ?)", table),
-			itemID, filename, attType, body.URL, body.Description, fileSize, body.Order, now, now,
-		)
+		result, err := insertAttachmentAtEnd(table, itemID, func(order int) (sql.Result, error) {
+			return database.DB.Exec(
+				fmt.Sprintf("INSERT INTO %s (item_id, filename, file_path, storage_backend, attachment_type, url, description, gallery, size, `order`, created_at, updated_at) VALUES (?, ?, '', 'external_url', ?, ?, ?, 0, ?, ?, ?, ?)", table),
+				itemID, filename, attType, body.URL, body.Description, fileSize, order, now, now,
+			)
+		})
 		if err != nil {
 			log.Printf("DB insert error in addLinkAttachment: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
@@ -170,7 +173,6 @@ func addExternalSFTPAttachment(realm string) gin.HandlerFunc {
 			ExternalPath     string `json:"external_path"`
 			Filename         string `json:"filename"`
 			Description      string `json:"description"`
-			Order            int    `json:"order"`
 			Gallery          bool   `json:"gallery"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
@@ -206,13 +208,15 @@ func addExternalSFTPAttachment(realm string) gin.HandlerFunc {
 		attType := detectLinkType(filename, "")
 		now := database.TimestampNow()
 		storageBackend := "external_source"
-		result, err := database.DB.Exec(
-			fmt.Sprintf(`INSERT INTO %s (
-				item_id, filename, file_path, storage_backend, external_source_id, external_path, attachment_type,
-				url, description, gallery, size, `+"`order`"+`, created_at, updated_at
-			) VALUES (?, ?, '', ?, ?, ?, ?, '', ?, ?, NULL, ?, ?, ?)`, table),
-			itemID, filename, storageBackend, body.ExternalSourceID, externalPath, attType, body.Description, body.Gallery, body.Order, now, now,
-		)
+		result, err := insertAttachmentAtEnd(table, itemID, func(order int) (sql.Result, error) {
+			return database.DB.Exec(
+				fmt.Sprintf(`INSERT INTO %s (
+					item_id, filename, file_path, storage_backend, external_source_id, external_path, attachment_type,
+					url, description, gallery, size, `+"`order`"+`, created_at, updated_at
+				) VALUES (?, ?, '', ?, ?, ?, ?, '', ?, ?, NULL, ?, ?, ?)`, table),
+				itemID, filename, storageBackend, body.ExternalSourceID, externalPath, attType, body.Description, body.Gallery, order, now, now,
+			)
+		})
 		if err != nil {
 			log.Printf("DB insert error in addExternalSFTPAttachment: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
@@ -245,7 +249,27 @@ func updateAttachment(realm string) gin.HandlerFunc {
 			return
 		}
 
-		allowed := map[string]bool{"description": true, "order": true, "attachment_type": true, "url": true, "gallery": true}
+		// A position is not simply stored: the attachment is moved there and
+		// the others make room, so no two ever stand at the same place.
+		if raw, ok := body["order"]; ok {
+			position, isNumber := raw.(float64)
+			if !isNumber {
+				c.JSON(http.StatusBadRequest, gin.H{"detail": "order must be a number"})
+				return
+			}
+			found, err := moveAttachment(table, attID, int(position))
+			if err != nil {
+				log.Printf("DB error in updateAttachment while moving: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"detail": "Internal server error"})
+				return
+			}
+			if !found {
+				c.JSON(http.StatusNotFound, gin.H{"detail": "Not found"})
+				return
+			}
+		}
+
+		allowed := map[string]bool{"description": true, "attachment_type": true, "url": true, "gallery": true}
 		sets := ""
 		var vals []interface{}
 		for k, v := range body {
@@ -292,7 +316,6 @@ func updateAttachment(realm string) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, gin.H{"detail": "Not found"})
 			return
 		}
-
 		row, err := loadAttachmentRow(realm, table, attID)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"detail": "Not found"})

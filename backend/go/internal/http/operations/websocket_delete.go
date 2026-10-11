@@ -93,6 +93,12 @@ func handleDeleteRequest(data map[string]interface{}, userID, sessionID int) {
 		sendDeleteInUse(userID, sessionID, entityID, entityType, usage)
 		return
 	}
+	if entityType == "item" {
+		if active, err := itemscore.ItemActiveCheckouts(realm, entityID); err == nil && active > 0 {
+			sendItemCheckedOut(userID, sessionID, entityID, active)
+			return
+		}
+	}
 
 	payload := buildDeletePayload(entityType, entityName, realm, entityID)
 	if !ws.M.HasIOSDevices(userID) {
@@ -170,6 +176,11 @@ func permissionsForEntityType(entityType, action string) []string {
 
 func doDeleteItem(userID, targetSession int, realm string, itemID int) {
 	found, err := itemscore.DeleteItem(realm, itemID)
+	var checkedOut *itemscore.CheckedOutError
+	if errors.As(err, &checkedOut) {
+		sendItemCheckedOut(userID, targetSession, itemID, checkedOut.Active)
+		return
+	}
 	if err != nil || !found {
 		if err != nil {
 			log.Printf("WS item delete error: %v", err)
@@ -267,6 +278,18 @@ func sendDeleteInUse(userID, targetSession, entityID int, entityType string, usa
 		"reason":          entityType + "_in_use",
 		"in_use_items":    usage.Items,
 		"in_use_children": usage.Children,
+	})
+}
+
+// sendItemCheckedOut tells the requesting browser that the item stays because
+// it is lent out.
+func sendItemCheckedOut(userID, targetSession, itemID, active int) {
+	sendToTargetOrBrowsers(userID, targetSession, "delete.rejected", map[string]interface{}{
+		"entity_id":        itemID,
+		"item_id":          itemID,
+		"entity_type":      "item",
+		"reason":           "item_in_use",
+		"in_use_checkouts": active,
 	})
 }
 

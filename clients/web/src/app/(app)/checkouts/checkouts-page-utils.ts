@@ -5,10 +5,18 @@ import { buildPaginationPages } from "@/app/(app)/items/items-page-navigation";
 
 export type CheckoutListEntry = (CheckoutRequest & { entryType: "request" }) | (CheckoutRequest & { entryType: "checkout" });
 
-export async function fetchCheckoutsPageData() {
+// The server already narrows both lists to the caller's own rows unless they
+// manage checkouts. A manager works on the current realm; a borrower gets
+// what they hold in both realms at once.
+export async function fetchCheckoutsPageData(bothRealms = false) {
   const [requests, activeCheckouts] = await Promise.all([
     api.getCheckoutRequests(),
-    api.getActiveCheckouts().catch(() => [] as ActiveCheckout[]),
+    bothRealms
+      ? Promise.all([
+          api.getActiveCheckoutsOf("archive").catch(() => [] as ActiveCheckout[]),
+          api.getActiveCheckoutsOf("collection").catch(() => [] as ActiveCheckout[]),
+        ]).then((lists) => lists.flat())
+      : api.getActiveCheckouts().catch(() => [] as ActiveCheckout[]),
   ]);
 
   const normalizedRequests: CheckoutListEntry[] = requests.map((request) => ({
@@ -38,6 +46,7 @@ export async function fetchCheckoutsPageData() {
     overdue_days: checkout.overdue_days,
     user_has_email: checkout.user_has_email,
     last_reminder_sent_at: checkout.last_reminder_sent_at,
+    return_requested_at: checkout.return_requested_at,
     reminder_cooldown_active: checkout.reminder_cooldown_active,
     next_reminder_at: checkout.next_reminder_at,
     entryType: "checkout",
@@ -53,13 +62,13 @@ export async function fetchCheckoutsPageData() {
 export function filterCheckoutRequests(
   requests: CheckoutListEntry[],
   filter: string,
-  realm: string,
+  realm: string | null,
   itemID?: number,
 ) {
   const filtered = filter === "all"
     ? requests.filter((request) => request.status === "active" || request.status === "pending")
     : requests.filter((request) => request.status === filter);
-  return filtered.filter((request) => request.realm === realm && (!itemID || request.item_id === itemID));
+  return filtered.filter((request) => (!realm || request.realm === realm) && (!itemID || request.item_id === itemID));
 }
 
 export function buildCheckoutsPageUrl(opts: { page?: number; filter?: string; realm?: "archive" | "collection"; itemID?: number }) {

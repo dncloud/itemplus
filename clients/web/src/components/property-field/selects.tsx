@@ -123,7 +123,7 @@ export function SelectDropdown({
           <button
             type="button"
             onClick={applyCustomValue}
-            className="rounded-lg bg-blue-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-600"
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400"
           >
             +
           </button>
@@ -261,7 +261,7 @@ export function MultiSelectDropdown({
           <button
             type="button"
             onClick={applyCustomValue}
-            className="rounded-lg bg-blue-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-600"
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400"
           >
             +
           </button>

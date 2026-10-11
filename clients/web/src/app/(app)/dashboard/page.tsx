@@ -1,18 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import clsx from "clsx";
 import Link from "next/link";
-import { type StatsOverview } from "@/lib/api";
+import { api, type StatsOverview } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import {
-  Archive,
+  ArrowLeftRight,
   Banknote,
-  MapPin,
-  LayoutGrid,
-  Palette,
+  Box,
+  Layers,
 } from "lucide-react";
 import {
+  ActivityPanel,
+  CategoryDonutPanel,
+  CollectionProgressPanel,
+  GrowthPanel,
+  LocationBarsPanel,
+} from "./dashboard-charts";
+import { SpotlightCard } from "./dashboard-spotlight";
+import {
+  CategoryValuePanel,
   RecentlyAddedPanel,
   TopItemsPanel,
 } from "./dashboard-sections";
@@ -23,13 +30,16 @@ import {
 
 const enableDashboardPrefetch = process.env.NODE_ENV === "production";
 
+type IconType = React.ComponentType<{ className?: string }>;
+
 export default function DashboardPage() {
-  const { realm, fmtDate, t, can } = useApp();
+  const { realm, serverURL, locale, fmtDate, t, can } = useApp();
   const [stats, setStats] = useState<StatsOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [topSort, setTopSort] = useState<"value" | "quantity">("value");
   const canReadItems = can("items.read");
-  const canReadCategories = can("categories.read");
+  // Only filled when a game catalog is connected and offers the figures.
+  const [progress, setProgress] = useState<Awaited<ReturnType<typeof api.getCollectionProgress>>["profiles"]>([]);
   const canReadLocations = can("locations.read");
   const canManageCheckout = can("checkout.manage");
 
@@ -55,151 +65,145 @@ export default function DashboardPage() {
     };
   }, [realm, canManageCheckout]);
 
+  useEffect(() => {
+    if (realm !== "collection" || !canReadItems) return;
+    let cancelled = false;
+    api.getCollectionProgress()
+      .then((result) => {
+        if (!cancelled) setProgress(result.available ? result.profiles : []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [realm, canReadItems]);
+
   if (loading) return <Loading />;
   if (!stats) return <p className="text-gray-500">{t("dashboard.noData")}</p>;
 
   const current = stats[realm];
   const topItems = topSort === "value" ? current.top_by_value : current.top_by_quantity;
-
+  const formatCurrency = (value: number) => formatDashboardCurrency(value, locale);
+  const viewAll = t("dashboard.viewAll");
+  const hasGrowth = (current.growth?.length ?? 0) >= 2;
   return (
-    <div className="space-y-4 lg:space-y-8">
-      <div>
-        <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          <SimpleStat
-            title="Realm"
-            value={realm === "archive" ? t("realm.archive") : t("realm.collection")}
-            icon={Archive}
-            accent="gray"
-          />
-          <SimpleStat
-            title={t("dashboard.totalValue")}
-            value={formatDashboardCurrency(current.total_value)}
-            detail={`Ø ${formatDashboardCurrency(current.avg_price)}`}
-            icon={Banknote}
-            accent="indigo"
-          />
-          <SimpleStat
-            title={t("dashboard.items")}
-            value={current.items}
-            detail={canReadItems ? "Alle anzeigen" : undefined}
-            icon={Archive}
-            accent="blue"
-            href={canReadItems ? "/items" : undefined}
-          />
-          <SimpleStat
-            title={t("dashboard.categories")}
-            value={current.categories}
-            detail={canReadCategories ? "Alle anzeigen" : undefined}
-            icon={LayoutGrid}
-            accent="emerald"
-            href={canReadCategories ? "/categories" : undefined}
-          />
-          <SimpleStat
-            title={t("dashboard.locations")}
-            value={current.locations}
-            detail={canReadLocations ? "Alle anzeigen" : undefined}
-            icon={MapPin}
-            accent="gray"
-            href={canReadLocations ? "/locations" : undefined}
-          />
-          <SimpleStat
-            title={t("dashboard.properties")}
-            value={current.properties}
-            detail={canReadCategories ? "Alle anzeigen" : undefined}
-            icon={Palette}
-            accent="purple"
-            href={canReadCategories ? "/categories" : undefined}
-          />
-        </dl>
+    <div className="space-y-8">
+      <div className="text-center sm:text-left">
+        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{realm === "archive" ? t("realm.archive") : t("realm.collection")}</p>
+        <h2 className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{t("dashboard.title")}</h2>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 lg:gap-8">
-        <div className="space-y-4 lg:space-y-8">
-          <RecentlyAddedPanel items={current.recently_added ?? []} canOpenItems={canReadItems} fmtDate={fmtDate} t={t} />
-        </div>
+      {realm === "collection" && current.spotlight ? (
+        <SpotlightCard
+          spotlight={current.spotlight}
+          canOpenItems={canReadItems}
+          serverURL={serverURL}
+          formatCurrency={formatCurrency}
+          fmtDate={fmtDate}
+          t={t}
+        />
+      ) : null}
 
-        <div className="space-y-4 lg:space-y-8">
-          <TopItemsPanel
-            items={topItems ?? []}
-            topSort={topSort}
-            onSelectSort={setTopSort}
-            formatCurrency={formatDashboardCurrency}
-            canOpenItems={canReadItems}
-            t={t}
+      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          title={t("dashboard.items")}
+          value={current.items}
+          icon={Box}
+          href={canReadItems ? "/items" : undefined}
+          footer={canReadItems ? viewAll : undefined}
+        />
+        <StatCard
+          title={t("dashboard.totalValue")}
+          value={formatCurrency(current.total_value)}
+          icon={Banknote}
+          footer={t("dashboard.averagePrice", { value: formatCurrency(current.avg_price) })}
+        />
+        <StatCard title={t("dashboard.totalQuantity")} value={current.total_quantity.toLocaleString(locale === "en" ? "en-US" : "de-DE")} icon={Layers} />
+        {current.checked_out !== undefined ? (
+          <StatCard
+            title={t("dashboard.checkedOut")}
+            value={current.checked_out}
+            icon={ArrowLeftRight}
+            href={canManageCheckout ? "/checkouts" : undefined}
+            footer={canManageCheckout ? viewAll : undefined}
           />
-        </div>
+        ) : null}
+      </dl>
+
+      {realm === "collection" ? <CollectionProgressPanel profiles={progress} canOpenItems={canReadItems} locale={locale} t={t} /> : null}
+
+      <div className={hasGrowth ? "grid grid-cols-1 gap-8 lg:grid-cols-3" : "grid grid-cols-1 gap-8"}>
+        {hasGrowth ? (
+          <div className="h-full lg:col-span-2">
+            <GrowthPanel growth={current.growth ?? []} locale={locale} formatCurrency={formatCurrency} t={t} />
+          </div>
+        ) : null}
+        <CategoryDonutPanel categories={current.by_category ?? []} totalItems={current.items} canOpenItems={canReadItems} t={t} />
+      </div>
+
+      <ActivityPanel activity={current.activity ?? []} locale={locale} t={t} />
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <CategoryValuePanel categories={current.by_category ?? []} formatCurrency={formatCurrency} canOpenItems={canReadItems} t={t} />
+        <LocationBarsPanel locations={current.by_location ?? []} canOpenItems={canReadItems && canReadLocations} t={t} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <RecentlyAddedPanel items={(current.recently_added ?? []).slice(0, 5)} canOpenItems={canReadItems} serverURL={serverURL} fmtDate={fmtDate} t={t} />
+        <TopItemsPanel
+          items={topItems ?? []}
+          topSort={topSort}
+          onSelectSort={setTopSort}
+          formatCurrency={formatCurrency}
+          canOpenItems={canReadItems}
+          serverURL={serverURL}
+          t={t}
+        />
       </div>
     </div>
   );
 }
 
-function SimpleStat({
+function StatCard({
   title,
   value,
-  detail,
   icon: Icon,
   href,
-  accent = "indigo",
+  footer,
 }: {
   title: string;
   value: string | number;
-  detail?: string;
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  icon: IconType;
   href?: string;
-  accent?: "indigo" | "blue" | "emerald" | "gray" | "purple";
+  footer?: string;
 }) {
-  const accentMap: Record<string, { tile: string; value: string }> = {
-    indigo: {
-      tile: "bg-indigo-500/85",
-      value: "text-gray-900 dark:text-white",
-    },
-    blue: {
-      tile: "bg-blue-500/85",
-      value: "text-gray-900 dark:text-white",
-    },
-    emerald: {
-      tile: "bg-emerald-500/85",
-      value: "text-gray-900 dark:text-white",
-    },
-    gray: {
-      tile: "bg-gray-600",
-      value: "text-gray-900 dark:text-white",
-    },
-    purple: {
-      tile: "bg-purple-500/85",
-      value: "text-gray-900 dark:text-white",
-    },
-  };
-  const cardBody = (
-    <>
-      <dt className={clsx("flex w-16 shrink-0 items-center justify-center rounded-l-md text-white", accentMap[accent].tile)}>
-        <Icon className="size-5" />
+  return (
+    <div className="relative overflow-hidden rounded-lg bg-white px-4 pt-5 pb-12 shadow-sm sm:px-6 sm:pt-6 dark:bg-gray-800/75 dark:shadow-none dark:inset-ring dark:inset-ring-white/10">
+      <dt>
+        <div className="absolute rounded-md bg-indigo-500 p-3">
+          <Icon className="size-6 text-white" />
+        </div>
+        <p className="ml-16 truncate text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
       </dt>
-      <dd className="flex min-w-0 flex-1 items-center justify-between truncate rounded-r-md border-y border-r border-gray-200 bg-white/80 dark:border-white/10 dark:bg-gray-800/50">
-        <div className="min-w-0 flex-1 truncate px-4 py-2 text-sm">
-          <div className="truncate text-sm font-medium text-gray-900 dark:text-white">{title}</div>
-          <div className={clsx("mt-0.5 truncate text-base font-semibold", accentMap[accent].value)}>{value}</div>
-          {detail ? (
-            href ? (
-              <div className="mt-0.5 text-xs text-indigo-500 dark:text-indigo-400">{detail}</div>
+      <dd className="ml-16 flex items-baseline pb-6 sm:pb-7">
+        <p className="truncate text-2xl font-semibold text-gray-900 dark:text-white">{value}</p>
+        <div className="absolute inset-x-0 bottom-0 bg-gray-50 px-4 py-4 sm:px-6 dark:bg-gray-700/20">
+          <div className="truncate text-sm">
+            {footer && href ? (
+              <Link
+                prefetch={enableDashboardPrefetch}
+                href={href}
+                className="font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300"
+              >
+                {footer}
+                <span className="sr-only"> {title}</span>
+              </Link>
             ) : (
-              <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{detail}</div>
-            )
-          ) : null}
+              <span className="text-gray-500 dark:text-gray-400">{footer || " "}</span>
+            )}
+          </div>
         </div>
       </dd>
-    </>
-  );
-
-  return (
-    <div className="col-span-1 flex rounded-md">
-      {href ? (
-        <Link prefetch={enableDashboardPrefetch} href={href} className="flex w-full rounded-md">
-          {cardBody}
-        </Link>
-      ) : (
-        cardBody
-      )}
     </div>
   );
 }
@@ -207,7 +211,7 @@ function SimpleStat({
 function Loading() {
   return (
     <div className="flex items-center justify-center py-20">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
     </div>
   );
 }

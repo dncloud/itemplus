@@ -2,7 +2,7 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, X } from "lucide-react";
+import { Menu as DragLines, X } from "lucide-react";
 
 export function SortableChoice({
   id,
@@ -21,8 +21,8 @@ export function SortableChoice({
   const style = { transform: CSS.Transform.toString(transform), transition };
   return (
     <div ref={setNodeRef} style={style} className="flex items-center gap-2 rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-1.5">
-      <button type="button" {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
-        <GripVertical className="h-3.5 w-3.5 text-gray-400" />
+      <button type="button" {...attributes} {...listeners} className="cursor-grab text-gray-300 transition hover:text-gray-600 active:cursor-grabbing dark:text-gray-600 dark:hover:text-gray-300">
+        <DragLines className="h-4 w-4" />
       </button>
       <input
         value={value}

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { LabelTemplate, LabelTemplateMeta, PrinterStatus } from "@/lib/api";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Plus, Server, Smartphone, Tag } from "lucide-react";
 import type { LabelTemplateDraft } from "@/components/settings/drafts";
 import { ChoiceTile, ToggleRow } from "@/components/settings/ui";
 
@@ -113,12 +113,14 @@ export function SettingsPrinterSection({
             <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
               <ChoiceTile
                 active={printMode === "server"}
+                icon={Server}
                 onClick={() => setPrintMode("server")}
                 title={t("settings.printModeServer")}
                 description={t("settings.printModeServerHint")}
               />
               <ChoiceTile
                 active={printMode === "ios"}
+                icon={Smartphone}
                 onClick={() => setPrintMode("ios")}
                 title={t("settings.printModeIOS")}
                 description={t("settings.printModeIOSHint")}
@@ -171,36 +173,29 @@ export function SettingsPrinterSection({
             <p className="mt-1 text-sm/6 text-gray-500 dark:text-gray-400">{t("settings.labelTemplatesHint")}</p>
           </div>
           {canManageTemplates ? (
-            <button onClick={createNewTemplate} className={secondaryButtonClass}>
+            <button type="button" onClick={createNewTemplate} className={`inline-flex items-center gap-x-1.5 ${secondaryButtonClass}`}>
+              <Plus aria-hidden="true" className="-ml-0.5 size-4" />
               {t("settings.newTemplate")}
             </button>
           ) : null}
         </div>
 
         <div className="space-y-4">
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {templates.length === 0 ? (
               <div className="rounded-lg border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500 dark:border-gray-700">
                 {t("settings.noTemplates")}
               </div>
             ) : (
               templates.map((tpl) => (
-                <button
+                <ChoiceTile
                   key={tpl.id}
-                  onClick={() => {
-                    setSelectedTemplateId(tpl.id);
-                  }}
-                  className={`w-full rounded-lg border p-4 text-left transition ${selectedTemplateId === tpl.id ? "border-blue-400 bg-blue-50 ring-1 ring-blue-200 dark:border-blue-600 dark:bg-blue-900/20 dark:ring-blue-900" : "border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600"}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{tpl.name}</div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      {tpl.is_default ? <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{t("settings.defaultTemplate")}</span> : null}
-                    </div>
-                  </div>
-                </button>
+                  active={selectedTemplateId === tpl.id}
+                  onClick={() => setSelectedTemplateId(tpl.id)}
+                  icon={Tag}
+                  title={tpl.name}
+                  badge={tpl.is_default ? t("settings.defaultTemplate") : undefined}
+                />
               ))
             )}
           </div>

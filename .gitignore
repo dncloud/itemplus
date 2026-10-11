@@ -55,3 +55,6 @@ DerivedData/
 _site/
 .gocache/
 clients/ios/build/
+
+# Licensed Tailwind Plus export, reference only. Never commit or publish.
+/tailwind/

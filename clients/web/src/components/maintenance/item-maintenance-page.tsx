@@ -110,7 +110,7 @@ export function ItemMaintenancePageContent({ itemId }: { itemId: number }) {
         <ItemDetailNotification notification={notification} clearNotification={() => setNotification(null)} />
       ) : null}
 
-      <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:border-b sm:border-gray-200 sm:text-left lg:mb-8 dark:border-white/10">
+      <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:text-left lg:mb-8">
         <div className="space-y-1 py-3">
           <nav className="text-sm font-medium text-gray-500 dark:text-gray-400">
             <ol className="flex items-center justify-center sm:justify-start">

@@ -407,7 +407,7 @@ func resolveAIConfig(settings AISettings, timeout time.Duration) (*resolvedAICon
 	if provider == "" {
 		provider = "openai"
 	}
-	if provider != "openai" && provider != "ollama" {
+	if provider != "openai" && provider != "ollama" && provider != anthropicProvider {
 		return nil, fmt.Errorf("Unsupported AI provider: %s", settings.Provider)
 	}
 	if !settings.Enabled {
@@ -424,9 +424,12 @@ func resolveAIConfig(settings AISettings, timeout time.Duration) (*resolvedAICon
 
 	baseURL := strings.TrimRight(strings.TrimSpace(settings.BaseURL), "/")
 	if baseURL == "" {
-		if provider == "ollama" {
+		switch provider {
+		case "ollama":
 			baseURL = "http://localhost:11434/v1"
-		} else {
+		case anthropicProvider:
+			baseURL = anthropicDefaultBaseURL
+		default:
 			baseURL = "https://api.openai.com/v1"
 		}
 	}
@@ -447,7 +450,7 @@ func generateTimeoutForProvider(provider string) time.Duration {
 }
 
 func aiSettingsSupportsVision(settings AISettings) bool {
-	if isOpenAIProvider(settings.Provider) {
+	if isOpenAIProvider(settings.Provider) || isAnthropicProvider(settings.Provider) {
 		return true
 	}
 	return settings.SupportsVision

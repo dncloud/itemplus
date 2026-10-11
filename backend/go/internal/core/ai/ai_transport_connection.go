@@ -18,6 +18,10 @@ func TestAIConnection(settings AISettings) (*AIConnectionTestResult, error) {
 		return nil, err
 	}
 
+	if isAnthropicProvider(cfg.Provider) {
+		return testAnthropicConnection(cfg.Client, cfg.BaseURL, cfg.Model, settings.APIKey)
+	}
+
 	result, statusCode, err := testResponsesAPI(cfg.Client, cfg.BaseURL, cfg.Provider, cfg.Model, settings.APIKey)
 	if err == nil {
 		return result, nil
@@ -30,13 +34,22 @@ func TestAIConnection(settings AISettings) (*AIConnectionTestResult, error) {
 	return nil, err
 }
 
+// ListAIModels asks the provider of a profile which models its key can use.
+// Ollama has no such list here; its model names are typed in.
+func ListAIModels(settings AISettings) ([]AIModelOption, error) {
+	if isAnthropicProvider(settings.Provider) {
+		return listAnthropicModels(settings)
+	}
+	return ListOpenAIModels(settings)
+}
+
 func ListOpenAIModels(settings AISettings) ([]AIModelOption, error) {
 	provider := strings.ToLower(strings.TrimSpace(settings.Provider))
 	if provider == "" {
 		provider = "openai"
 	}
 	if provider != "openai" {
-		return nil, fmt.Errorf("Model loading is only supported for OpenAI profiles")
+		return nil, fmt.Errorf("Model loading is only supported for OpenAI and Claude profiles")
 	}
 
 	apiKey := strings.TrimSpace(settings.APIKey)

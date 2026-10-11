@@ -69,7 +69,7 @@ export default function MagicLinkVerifyPage() {
           {status === "verifying" && (
             <div className="space-y-3">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gray-900/80 ring-1 ring-white/10">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
               </div>
               <p suppressHydrationWarning className="text-sm text-gray-400">{t("auth.verifying")}</p>
             </div>

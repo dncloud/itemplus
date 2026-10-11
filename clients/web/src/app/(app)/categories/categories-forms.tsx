@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { ArrowDownWideNarrow, Sparkles } from "lucide-react";
-import ColorPreviewBadge from "@/components/ui/color-preview-badge";
+import { ArrowDownWideNarrow, Plus } from "lucide-react";
+import { ColorField } from "@/components/ui/color-field";
+import { FormFooter, formCardClass } from "@/components/ui/list-controls";
 import SelectPicker from "@/components/ui/select-picker";
 import type { Category, Property } from "@/lib/api";
 import { isMasterDataRoleVisible } from "@/lib/category-master-data";
@@ -24,11 +25,33 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
   );
 }
 
+// A switch with its label and one line that says what it does.
+function SwitchRow({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <span className="min-w-0">
+        <span className="block text-sm/6 font-medium text-gray-900 dark:text-white">{label}</span>
+        {hint ? <span className="block text-xs text-gray-500 dark:text-gray-400">{hint}</span> : null}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={onChange}
+        className="group relative inline-flex w-11 shrink-0 rounded-full bg-gray-200 p-0.5 inset-ring inset-ring-gray-900/5 outline-offset-2 outline-indigo-600 transition-colors duration-200 ease-in-out focus-visible:outline-2 aria-checked:bg-indigo-600 dark:bg-white/5 dark:inset-ring-white/10 dark:outline-indigo-500 dark:aria-checked:bg-indigo-500"
+      >
+        <span className="size-5 rounded-full bg-white shadow-xs ring-1 ring-gray-900/5 transition-transform duration-200 ease-in-out group-aria-checked:translate-x-5" />
+      </button>
+    </div>
+  );
+}
+
 function RoleVisibilityToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
   return (
     <button type="button" onClick={onChange} className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">
       <span>{label}</span>
-      <span className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition ${checked ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}><span className={`inline-block h-3.5 w-3.5 translate-y-[3px] rounded-full bg-white transition ${checked ? "translate-x-[18px]" : "translate-x-[3px]"}`} /></span>
+      <span className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition ${checked ? "bg-indigo-600 dark:bg-indigo-500" : "bg-gray-300 dark:bg-gray-600"}`}><span className={`inline-block h-3.5 w-3.5 translate-y-[3px] rounded-full bg-white transition ${checked ? "translate-x-[18px]" : "translate-x-[3px]"}`} /></span>
     </button>
   );
 }
@@ -141,27 +164,17 @@ function ChoicesEditor({
           placeholder={t("categories.addChoice")}
           className={`flex-1 ${categoryInputClass}`}
         />
-        <button type="button" onClick={add} className="rounded-lg bg-blue-500 text-white px-3 py-1.5 text-sm font-medium hover:bg-blue-600">+</button>
+        <button type="button" onClick={add} title={t("categories.addChoice")} aria-label={t("categories.addChoice")} className="inline-flex h-[38px] w-[38px] items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"><Plus className="h-5 w-5" /></button>
         <button type="button" onClick={sortByName} disabled={choices.length < 2} title={t("categories.sortChoicesByName")} aria-label={t("categories.sortChoicesByName")} className="inline-flex h-[38px] w-[38px] items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"><ArrowDownWideNarrow className="h-5 w-5" /></button>
         <button type="button" onClick={sortByOriginalOrder} disabled={choices.length < 2} title={t("categories.sortChoicesById")} aria-label={t("categories.sortChoicesById")} className="inline-flex h-[38px] min-w-[38px] items-center justify-center rounded-lg border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10">ID</button>
       </div>
-      <div className="mt-4 space-y-3">
-        <label className="flex items-center gap-3 cursor-pointer text-sm/6 font-medium text-gray-900 dark:text-white">
-          <span>{t("categories.allowCustomChoice")}</span>
-          <button type="button" onClick={() => updateOptions({ allowCustom: !optionConfig.allowCustom })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${optionConfig.allowCustom ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}>
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${optionConfig.allowCustom ? "translate-x-6" : "translate-x-1"}`} />
-          </button>
-        </label>
-        {optionConfig.allowCustom ? <Field label={t("categories.customChoiceLabel")} value={optionConfig.customLabel} onChange={(value) => updateOptions({ customLabel: value })} /> : null}
+      <div className="mt-3 divide-y divide-gray-200 dark:divide-white/10">
+        <SwitchRow label={t("categories.allowCustomChoice")} checked={optionConfig.allowCustom} onChange={() => updateOptions({ allowCustom: !optionConfig.allowCustom })} />
+        {optionConfig.allowCustom ? <div className="py-3"><Field label={t("categories.customChoiceLabel")} value={optionConfig.customLabel} onChange={(value) => updateOptions({ customLabel: value })} /></div> : null}
         {property.property_type === "select" ? (
           <>
-            <label className="flex items-center gap-3 cursor-pointer text-sm/6 font-medium text-gray-900 dark:text-white">
-              <span>{t("categories.selectCount")}</span>
-              <button type="button" onClick={() => updateOptions({ withCount: !optionConfig.withCount })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${optionConfig.withCount ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}>
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${optionConfig.withCount ? "translate-x-6" : "translate-x-1"}`} />
-              </button>
-            </label>
-            {optionConfig.withCount ? <Field label={t("categories.selectCountLabel")} value={optionConfig.countLabel} onChange={(value) => updateOptions({ countLabel: value })} placeholder={t("categories.selectCountPlaceholder")} /> : null}
+            <SwitchRow label={t("categories.selectCount")} checked={optionConfig.withCount} onChange={() => updateOptions({ withCount: !optionConfig.withCount })} />
+            {optionConfig.withCount ? <div className="py-3"><Field label={t("categories.selectCountLabel")} value={optionConfig.countLabel} onChange={(value) => updateOptions({ countLabel: value })} placeholder={t("categories.selectCountPlaceholder")} /></div> : null}
           </>
         ) : null}
       </div>
@@ -189,20 +202,10 @@ export function CategoryInlineForm({
   t: (k: string) => string;
 }) {
   return (
-    <div className="space-y-4">
+    <div className={formCardClass}>
+     <div className="space-y-4">
       <Field label={t("vendors.name")} value={category.name || ""} onChange={(v) => onChange({ ...category, name: v })} />
-      <div>
-        <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("common.color")}</label>
-        <div className="flex items-center gap-2">
-          <input type="color" value={category.color || "#6b7280"} onChange={(e) => onChange({ ...category, color: e.target.value })} className="h-8 w-10 rounded border border-gray-300 dark:border-gray-700 cursor-pointer" />
-          <ColorPreviewBadge color={category.color} label={t("common.preview")} />
-          {category.color ? (
-            <button type="button" onClick={() => onChange({ ...category, color: undefined })} className="text-xs text-gray-400 hover:text-red-500">
-              {t("common.remove")}
-            </button>
-          ) : null}
-        </div>
-      </div>
+      <ColorField value={category.color} onChange={(color) => onChange({ ...category, color })} previewLabel={category.name?.trim() || t("common.preview")} t={t} />
       <div>
         <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("categories.masterDataRoles")}</label>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -213,23 +216,13 @@ export function CategoryInlineForm({
           <RoleVisibilityToggle label={t("items.publisher")} checked={isMasterDataRoleVisible(category as Category, "publisher")} onChange={() => onChange({ ...category, show_publisher: !isMasterDataRoleVisible(category as Category, "publisher") })} />
         </div>
       </div>
-      <div className="flex justify-end gap-2 pt-2">
-        {showAIButton && onRunAI ? (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onRunAI}
-              disabled={aiBusy}
-              className="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 p-2 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
-              title={aiBusy ? t("categories.aiRunning") : t("categories.aiSuggestProperties")}
-            >
-              <Sparkles className="h-4 w-4" />
-            </button>
-          </div>
-        ) : null}
-        <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700">{t("common.cancel")}</button>
-        <button onClick={onSave} className="px-4 py-2 text-sm rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600">{t("common.save")}</button>
-      </div>
+     </div>
+      <FormFooter
+        onCancel={onCancel}
+        onSave={onSave}
+        ai={showAIButton && onRunAI ? { busy: aiBusy, label: t("categories.aiSuggestProperties"), busyLabel: t("categories.aiRunning"), onRun: onRunAI } : undefined}
+        t={t}
+      />
     </div>
   );
 }
@@ -255,75 +248,75 @@ export function PropertyInlineForm({
   onRunAI?: () => void;
   t: (k: string) => string;
 }) {
+  const hasUnit = !!property.property_type && TYPES_WITH_UNIT.has(property.property_type);
+  const width = property.display_width || "third";
+
   return (
-    <div className="space-y-4">
-      <Field label={t("vendors.name")} value={property.name || ""} onChange={(v) => onChange({ ...property, name: v })} />
-      <SelectPicker
-        label={t("categories.propertyType")}
-        value={property.property_type || "text"}
-        onChange={(v) => onChange({ ...property, property_type: v as string })}
-        options={propertyTypes.map((pt) => ({ id: pt.value, name: pt.label }))}
-        placeholder={t("categories.types.text")}
-        searchable={false}
-      />
-      {property.property_type && TYPES_WITH_UNIT.has(property.property_type) ? (
-        <Field label={t("categories.unit")} value={property.unit || ""} onChange={(v) => onChange({ ...property, unit: v || undefined })} placeholder={t("categories.unitPlaceholder")} />
-      ) : null}
-      {property.property_type && TYPES_WITH_CHOICES.has(property.property_type) ? <ChoicesEditor property={property} onChange={onChange} t={t} /> : null}
-      <div className="flex flex-wrap gap-6">
-        <label className="flex items-center gap-3 cursor-pointer text-sm/6 font-medium text-gray-900 dark:text-white">
-          <span>{t("categories.requiredField")}</span>
-          <button type="button" onClick={() => onChange({ ...property, required: !property.required })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${property.required ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}>
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${property.required ? "translate-x-6" : "translate-x-1"}`} />
-          </button>
-        </label>
-        <label className="flex items-center gap-3 cursor-pointer text-sm/6 font-medium text-gray-900 dark:text-white">
-          <span>{t("categories.showInList")}</span>
-          <button type="button" onClick={() => onChange({ ...property, show_in_list: !property.show_in_list })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${property.show_in_list ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}>
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${property.show_in_list ? "translate-x-6" : "translate-x-1"}`} />
-          </button>
-        </label>
-      </div>
-      <div>
-        <label className="mb-2 block text-sm/6 font-medium text-gray-900 dark:text-white">{t("categories.displayWidth")}</label>
-        <div className="flex rounded-lg bg-white p-0.5 outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-white/5 dark:outline-white/10">
-          {([
-            { value: "third", label: t("categories.width.third") },
-            { value: "half", label: t("categories.width.half") },
-            { value: "full", label: t("categories.width.full") },
-          ] as const).map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => onChange({ ...property, display_width: opt.value })}
-              className={`flex-1 rounded-md px-3 py-1.5 text-sm/6 font-medium transition ${
-                (property.display_width || "third") === opt.value
-                  ? "bg-gray-50 text-gray-900 shadow-xs dark:bg-white/10 dark:text-white dark:shadow-none"
-                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+    <div className={formCardClass}>
+      <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-6">
+        <div className="sm:col-span-3">
+          <Field label={t("vendors.name")} value={property.name || ""} onChange={(v) => onChange({ ...property, name: v })} />
         </div>
-      </div>
-      <div className="flex justify-end gap-2 pt-2">
-        {showAIButton && onRunAI ? (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onRunAI}
-              disabled={aiBusy}
-              className="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 p-2 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
-              title={aiBusy ? t("categories.aiRunning") : t("categories.aiImproveProperty")}
-            >
-              <Sparkles className="h-4 w-4" />
-            </button>
+        <div className={hasUnit ? "sm:col-span-2" : "sm:col-span-3"}>
+          <SelectPicker
+            label={t("categories.propertyType")}
+            value={property.property_type || "text"}
+            onChange={(v) => onChange({ ...property, property_type: v as string })}
+            options={propertyTypes.map((pt) => ({ id: pt.value, name: pt.label }))}
+            placeholder={t("categories.types.text")}
+            searchable={false}
+          />
+        </div>
+        {hasUnit ? (
+          <div className="sm:col-span-1">
+            <Field label={t("categories.unit")} value={property.unit || ""} onChange={(v) => onChange({ ...property, unit: v || undefined })} placeholder={t("categories.unitPlaceholder")} />
           </div>
         ) : null}
-        <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700">{t("common.cancel")}</button>
-        <button onClick={onSave} className="px-4 py-2 text-sm rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600">{t("common.save")}</button>
+
+        {property.property_type && TYPES_WITH_CHOICES.has(property.property_type) ? (
+          <div className="sm:col-span-6">
+            <ChoicesEditor property={property} onChange={onChange} t={t} />
+          </div>
+        ) : null}
+
+        <div className="sm:col-span-6">
+          <span className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("categories.displayWidth")}</span>
+          <span className="block text-xs text-gray-500 dark:text-gray-400">{t("categories.displayWidthHint")}</span>
+          {/* The three widths drawn to scale on the six-column grid of the item page. */}
+          <div role="radiogroup" aria-label={t("categories.displayWidth")} className="mt-2 grid grid-cols-3 gap-2">
+            {([
+              { value: "third", span: "w-1/3" },
+              { value: "half", span: "w-1/2" },
+              { value: "full", span: "w-full" },
+            ] as const).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={width === opt.value}
+                onClick={() => onChange({ ...property, display_width: opt.value })}
+                className="group rounded-md bg-white p-2.5 text-left outline-1 -outline-offset-1 outline-gray-300 hover:bg-gray-50 aria-checked:outline-2 aria-checked:-outline-offset-2 aria-checked:outline-indigo-600 dark:bg-white/5 dark:outline-white/10 dark:hover:bg-white/10 dark:aria-checked:outline-indigo-500"
+              >
+                <span className="block h-1.5 rounded-full bg-gray-100 dark:bg-white/5">
+                  <span className={`block h-1.5 rounded-full bg-gray-300 group-aria-checked:bg-indigo-600 dark:bg-white/20 dark:group-aria-checked:bg-indigo-500 ${opt.span}`} />
+                </span>
+                <span className="mt-2 block text-sm font-medium text-gray-900 dark:text-white">{t(`categories.width.${opt.value}`)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="divide-y divide-gray-200 border-t border-gray-200 sm:col-span-6 dark:divide-white/10 dark:border-white/10">
+          <SwitchRow label={t("categories.requiredField")} hint={t("categories.requiredFieldHint")} checked={!!property.required} onChange={() => onChange({ ...property, required: !property.required })} />
+          <SwitchRow label={t("categories.showInList")} hint={t("categories.showInListHint")} checked={!!property.show_in_list} onChange={() => onChange({ ...property, show_in_list: !property.show_in_list })} />
+        </div>
       </div>
+      <FormFooter
+        onCancel={onCancel}
+        onSave={onSave}
+        ai={showAIButton && onRunAI ? { busy: aiBusy, label: t("categories.aiImproveProperty"), busyLabel: t("categories.aiRunning"), onRun: onRunAI } : undefined}
+        t={t}
+      />
     </div>
   );
 }

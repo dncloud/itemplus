@@ -37,7 +37,6 @@ export function ItemCreateHeader({
   t,
   realm,
   pageTitle,
-  cancelHref,
   barcodeCapturePending,
   requestBarcodeCapture,
   aiAssistBusy,
@@ -48,7 +47,6 @@ export function ItemCreateHeader({
   t: TranslateFn;
   realm: "archive" | "collection";
   pageTitle: string;
-  cancelHref: string;
   barcodeCapturePending: boolean;
   requestBarcodeCapture: () => void;
   aiAssistBusy: boolean;
@@ -57,7 +55,7 @@ export function ItemCreateHeader({
   aiPanelOpen: boolean;
 }) {
   return (
-    <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:border-b sm:border-gray-200 sm:text-left lg:mb-8 dark:border-white/10">
+    <div className="mb-4 text-center sm:flex sm:items-center sm:justify-between sm:text-left lg:mb-8">
       <div className="space-y-1 py-3">
         <nav className="text-sm font-medium text-gray-500 dark:text-gray-400">
           <ol className="flex items-center justify-center sm:justify-start">
@@ -116,12 +114,6 @@ export function ItemCreateHeader({
         >
           <Sparkles className={clsx("h-4 w-4", aiAssistBusy ? "animate-pulse" : "")} />
         </button>
-        <Link
-          href={cancelHref}
-          className="inline-flex items-center justify-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs inset-ring inset-ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:inset-ring-white/5 dark:hover:bg-white/20"
-        >
-          {t("common.cancel")}
-        </Link>
       </div>
     </div>
   );
@@ -384,7 +376,7 @@ export function ItemCreateAIPanel({
                   type="checkbox"
                   checked={allowWebSearch}
                   onChange={(event) => onAllowWebSearchChange(event.target.checked)}
-                  className="accent-blue-500"
+                  className="accent-indigo-600"
                 />
                 {t("chat.allowWebSearch")}
               </label>
@@ -404,7 +396,7 @@ export function ItemCreateAIPanel({
               type="button"
               onClick={handleSend}
               disabled={aiAssistBusy}
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Sparkles className="h-4 w-4" />
               {aiAssistBusy ? t("items.aiAssistRunning") : t("common.send")}

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import type { Category, Item, Location } from "@/lib/api";
 import { MarkdownEditor } from "@/components/ui/markdown";
 import { Field, ModalSection, SuggestionRow, TWPSelect } from "@/components/item-create/ui";
@@ -34,6 +35,7 @@ export function ItemCreateBasicsSection({
 }) {
   return (
     <ModalSection
+      id="item-basics"
       title={t("items.modalBasicsTitle")}
       description={t("items.modalBasicsDescription")}
       noTopBorder
@@ -78,7 +80,7 @@ export function ItemCreateBasicsSection({
         <div className={`grid grid-cols-1 gap-4 ${catalogPlatformPicker ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
           <div>
             <TWPSelect
-              label={t("items.category")}
+              label={`${t("items.category")} *`}
               value={editItem.category_id}
               onChange={(v) => {
                 setEditItem({ ...editItem, category_id: v });
@@ -86,6 +88,14 @@ export function ItemCreateBasicsSection({
               }}
               options={categories.map((c) => ({ id: c.id, name: c.name }))}
             />
+            {categories.length === 0 ? (
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                {t("items.noCategoriesYet")}{" "}
+                <Link href="/categories" className="font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
+                  {t("items.createCategoryFirst")}
+                </Link>
+              </p>
+            ) : null}
             {typeof aiSuggestedItem.category_id === "number" &&
             suggestedCategoryName &&
             !valuesEqual(editItem.category_id, aiSuggestedItem.category_id) ? (

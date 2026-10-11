@@ -45,6 +45,7 @@ import {
 import { AIChatEntry, AIChatSuggestion, buildConversationContext, createChatId, loadTempImagePreview } from "@/components/item-create/ai-chat";
 import { ItemCreatePageContent } from "@/components/item-create/page-content";
 import { ItemCreateErrorView, ItemCreateLoadingView } from "@/components/item-create/view";
+import { aiProviderLabel } from "@/lib/ai-providers";
 
 type ItemCreatePageProps = {
   mode?: "create" | "edit";
@@ -80,6 +81,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   const [activeAIProfile, setActiveAIProfile] = useState<AIProfile | null>(null);
   const [aiAllowWebSearch, setAiAllowWebSearch] = useState(true);
   const [barcodeCapturePending, setBarcodeCapturePending] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [photoLookupPending, setPhotoLookupPending] = useState(false);
   const [lastBarcodeLookupCode, setLastBarcodeLookupCode] = useState<string | null>(null);
   const consumedInitialBarcodeRef = useRef(false);
@@ -104,7 +106,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
   const aiUserName = currentUserLabel || t("items.aiUserFallback");
   const modelBadge = useMemo(() => {
     if (!activeAIProfile) return null;
-    return `${activeAIProfile.provider === "ollama" ? "Ollama" : "OpenAI"} · ${activeAIProfile.model}`;
+    return `${aiProviderLabel(activeAIProfile.provider)} · ${activeAIProfile.model}`;
   }, [activeAIProfile]);
 
   useEffect(() => {
@@ -388,6 +390,12 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
 
   const save = async () => {
     if (!editItem?.name) return;
+    // Every item belongs to a category; the server insists on it as well.
+    if (!editItem.category_id) {
+      setSaveError(t("items.categoryRequired"));
+      return;
+    }
+    setSaveError("");
     try {
       const savedItemId = await persistItemWithUploads({
         isEditMode,
@@ -404,7 +412,10 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
       }
 
       router.push(`/items/${savedItemId}`);
-    } catch {}
+    } catch (error) {
+      const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
+      setSaveError(code === "category_required" ? t("items.categoryRequired") : t("items.saveFailed"));
+    }
   };
 
   const requestBarcodeCapture = () => {
@@ -582,7 +593,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
     return () => setAiAssistantPanelController(null);
   }, [setAiAssistantPanelController]);
 
-  const pageTitle = isEditMode && editItem.name?.trim() ? `${t("common.edit")} - ${editItem.name.trim()}` : isEditMode ? t("common.edit") : t("items.new");
+  const pageTitle = isEditMode && editItem.name?.trim() ? t("items.editTitle", { name: editItem.name.trim() }) : isEditMode ? t("common.edit") : t("items.new");
   const cancelHref = isEditMode && itemId ? `/items/${itemId}` : "/items";
 
   if (!itemLoaded) {
@@ -663,6 +674,7 @@ export default function ItemCreatePage({ mode = "create", itemId }: ItemCreatePa
       onGameCatalogPropertiesCreated={onGameCatalogPropertiesCreated}
       applyGameCatalogGame={applyGameCatalogGame}
       save={save}
+      saveError={saveError}
     />
   );
 }

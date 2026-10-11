@@ -5,11 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { api, type Category, type CheckoutRequest, type Item, type Location, type Property } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { wsClient } from "@/lib/ws";
-import { ConfirmDelete, useDeleteFlow } from "@/components/ui/confirm-delete";
+import { ConfirmDelete, inUseMessage, readInUseInfo, useDeleteFlow, type InUseInfo } from "@/components/ui/confirm-delete";
 import { fetchItemsReferenceData, fetchPendingRequestsByItem } from "@/app/(app)/items/items-page-data";
 import { buildItemsPageUrl } from "@/app/(app)/items/items-page-navigation";
 import { ItemsPageHeader, ItemsPageToolbar } from "@/app/(app)/items/items-page-sections";
-import { ItemsGrid, ItemsNotification, ItemsPagination } from "@/app/(app)/items/items-page-view";
+import { ItemsGrid, ItemsNotification, ItemsPagination, ItemsTable } from "@/app/(app)/items/items-page-view";
 
 export default function ItemsPage({ pageOverride }: { pageOverride?: number } = {}) {
   const router = useRouter();
@@ -19,7 +19,6 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
     serverURL,
     can,
     locale,
-    isDark,
     iosBridgeStatus,
     printerBridgeStatus,
     printItemQR,
@@ -35,6 +34,8 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
     showItemTotal,
     showItemProperties,
     showItemActivity,
+    itemListView,
+    setItemListView,
     itemStockWarningPercent,
     itemStockCriticalPercent,
     itemsPerPage,
@@ -182,8 +183,14 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
     return () => window.clearTimeout(timeout);
   }, [notification]);
 
+  // An item that is lent out stays until it has been returned.
+  const reportInUse = useCallback((info: InUseInfo) => {
+    setNotification({ title: t("items.deleteRefused"), message: inUseMessage(t, info), tone: "error" });
+  }, [t]);
+
   const deleteFlow = useDeleteFlow({
     realm,
+    onInUse: reportInUse,
     onDeleted: useCallback((entityId: number) => {
       setItems((prev) => prev.filter((item) => item.id !== entityId));
       setTotal((prev) => prev - 1);
@@ -220,6 +227,9 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
   const locColor = (id?: number) => locations.find((location) => location.id === id)?.color;
   const listProps = allProperties.filter((property) => property.show_in_list);
 
+  // Cards or table, as chosen for this realm.
+  const ItemsListView = itemListView === "table" ? ItemsTable : ItemsGrid;
+
   return (
     <div className="space-y-6">
       <ItemsPageHeader
@@ -251,6 +261,8 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
         filterCategory={filterCategory}
         filterLocation={filterLocation}
         filterStatus={filterStatus}
+        view={itemListView}
+        setView={setItemListView}
         sortField={sortField}
         sortOrder={sortOrder}
         setSort={setSort}
@@ -283,15 +295,14 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
 
       {loading ? (
         <div className="flex justify-center py-20">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
         </div>
       ) : (
         <>
-          <ItemsGrid
+          <ItemsListView
             items={items}
             pendingRequestsByItem={pendingRequestsByItem}
             serverURL={serverURL}
-            isDark={isDark}
             locale={locale}
             t={t}
             showItemImages={showItemImages}
@@ -317,12 +328,14 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
             locColor={locColor}
             canReadInventory={can("inventory.read")}
             canManageCheckouts={can("checkout.manage")}
+            canReadMaintenance={can("maintenance.read")}
             canDelete={can("items.delete")}
             canPrint={can("print") && showPrintFeatures && printerBridgeStatus === "connected"}
             pendingDelete={pendingDelete}
             onOpenItem={(itemId) => router.push(`/items/${itemId}`)}
             onOpenInventory={(item) => router.push(`/inventory-movements?realm=${realm}&item_id=${item.id}`)}
             onOpenCheckouts={(item) => router.push(`/checkouts?realm=${realm}&item_id=${item.id}`)}
+            onOpenMaintenance={(item) => router.push(`/maintenance/item/${item.id}`)}
             onFilter={setFilter}
             onPrint={async (item) => { try { await printItemQR(item.id); } catch {} }}
             onRemove={(itemId) => {
@@ -343,8 +356,10 @@ export default function ItemsPage({ pageOverride }: { pageOverride?: number } = 
           onConfirm={async () => {
             try {
               await api.deleteItem(deleteFlow.confirm!.id);
-            } catch {
+            } catch (error) {
               // keep dialog flow stable even if the request fails
+              const inUse = readInUseInfo(error);
+              if (inUse) reportInUse(inUse);
             }
             deleteFlow.cancelConfirm();
             loadItems();

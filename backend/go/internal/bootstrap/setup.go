@@ -4,41 +4,93 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
-	huh "charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/itemplus/backend/internal/config"
 	"github.com/itemplus/backend/internal/database"
 	"github.com/jmoiron/sqlx"
 )
 
+// What the user chose in the setup. Technical values such as the CORS list
+// or the address to listen on are derived from these choices; only the
+// advanced page shows them directly.
 type setupDraft struct {
-	AppDomain            string
-	MagicLinkBaseURL     string
-	AutoActivated        bool
-	IOSReviewPermissions bool
-	CORSOrigins          string
-	TrustedProxies       string
-	DatabaseURL          string
-	UploadDir            string
-	LogDir               string
-	PrinterHost          string
-	PrinterPort          string
-	SMTPHost             string
-	SMTPPort             string
-	SMTPUser             string
-	SMTPPassword         string
-	SMTPFromEmail        string
-	SMTPFromName         string
-	SMTPUseTLS           bool
-	EmailLocale          string
+	Language string // "de" or "en"
+	Usage    string // usageLocal, usageLAN or usageDomain
+
+	AppDomain string
+
+	Database    string // dbSQLite, dbMySQL or dbKeep
+	MySQLHost   string
+	MySQLPort   string
+	MySQLName   string
+	MySQLUser   string
+	MySQLPass   string
+	currentDB   string
+	sqliteURL   string
+	DatabaseURL string
+
+	Mail          string // mailNow, mailLater or mailKeep
+	SMTPHost      string
+	SMTPSecurity  string // smtpSSL or smtpStartTLS
+	SMTPUser      string
+	SMTPPassword  string
+	SMTPFromEmail string
+	SMTPFromName  string
+	currentSMTP   config.SetupValues
+
+	AutoActivated bool
+	HasPrinter    bool
+	PrinterHost   string
+	PrinterPort   string
+	UpdateCheck   string
+
+	Advanced             bool
 	Host                 string
 	Port                 string
+	UploadDir            string
+	LogDir               string
+	TrustedProxies       string
+	CORSOrigins          string
+	IOSReviewPermissions bool
+
+	MagicLinkBaseURL string
+
+	AdminName  string
+	AdminEmail string
 }
+
+const (
+	usageLocal  = "local"
+	usageLAN    = "lan"
+	usageDomain = "domain"
+
+	dbSQLite = "sqlite"
+	dbMySQL  = "mysql"
+	dbKeep   = "keep"
+
+	mailNow   = "now"
+	mailLater = "later"
+	mailKeep  = "keep"
+
+	smtpSSL      = "ssl"
+	smtpStartTLS = "starttls"
+
+	defaultSQLiteURL = "sqlite+aiosqlite:///./data/itemplus.db"
+)
+
+var (
+	errSetupCancelled = errors.New("setup cancelled")
+	errSetupRestart   = errors.New("setup restarted")
+)
 
 func trim(value string) string {
 	return strings.TrimSpace(value)
@@ -48,242 +100,140 @@ func normalizeEmail(value string) string {
 	return strings.ToLower(trim(value))
 }
 
-func RunInitialSetup() error {
-	if !isInteractiveTerminal() {
-		return fmt.Errorf("item+ needs an interactive terminal for the first start setup. Run it locally in a terminal once, or prepare itemplus.conf before starting")
+// cleanDomain reduces what someone typed as a domain to the bare host name.
+func cleanDomain(value string) string {
+	value = trim(value)
+	value = strings.TrimPrefix(strings.TrimPrefix(value, "https://"), "http://")
+	if cut := strings.IndexAny(value, "/?#"); cut >= 0 {
+		value = value[:cut]
 	}
+	return strings.ToLower(strings.TrimSuffix(value, "."))
+}
 
-	current := config.CurrentSetupValues()
-	draft := setupDraft{
-		AppDomain:            current.AppDomain,
-		MagicLinkBaseURL:     current.MagicLinkBaseURL,
+func isLoopbackHost(host string) bool {
+	host = trim(host)
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// newSetupDraft starts from what itemplus.conf says now, so running the
+// setup again offers the current state instead of forgetting it.
+func newSetupDraft(current config.SetupValues) *setupDraft {
+	draft := &setupDraft{
+		Language:             defaultSetupLang(),
+		AppDomain:            cleanDomain(current.AppDomain),
+		MySQLHost:            "localhost",
+		MySQLPort:            "3306",
+		MySQLName:            "itemplus",
+		currentDB:            trim(current.DatabaseURL),
+		sqliteURL:            defaultSQLiteURL,
+		Database:             dbSQLite,
+		Mail:                 mailLater,
+		SMTPSecurity:         smtpSSL,
+		SMTPFromName:         defaultString(current.SMTPFromName, "item+"),
+		currentSMTP:          current,
 		AutoActivated:        current.AutoActivated,
-		IOSReviewPermissions: current.IOSReviewPermissions,
-		CORSOrigins:          current.CORSOrigins,
-		TrustedProxies:       current.TrustedProxies,
-		DatabaseURL:          current.DatabaseURL,
-		UploadDir:            current.UploadDir,
-		LogDir:               current.LogDir,
 		PrinterHost:          current.PrinterHost,
 		PrinterPort:          strconv.Itoa(defaultInt(current.PrinterPort, 9100)),
-		SMTPHost:             current.SMTPHost,
-		SMTPPort:             strconv.Itoa(defaultInt(current.SMTPPort, 465)),
-		SMTPUser:             current.SMTPUser,
-		SMTPPassword:         current.SMTPPassword,
-		SMTPFromEmail:        current.SMTPFromEmail,
-		SMTPFromName:         defaultString(current.SMTPFromName, "item+"),
-		SMTPUseTLS:           current.SMTPUseTLS,
-		EmailLocale:          defaultString(current.EmailLocale, "en"),
+		HasPrinter:           trim(current.PrinterHost) != "",
+		UpdateCheck:          config.ParseUpdateCheck(current.UpdateCheck),
 		Host:                 defaultString(current.Host, "0.0.0.0"),
 		Port:                 strconv.Itoa(defaultInt(current.Port, config.DefaultPort)),
+		UploadDir:            current.UploadDir,
+		LogDir:               current.LogDir,
+		TrustedProxies:       current.TrustedProxies,
+		CORSOrigins:          defaultString(trim(current.CORSOrigins), `["*"]`),
+		IOSReviewPermissions: current.IOSReviewPermissions,
 	}
-	if strings.TrimSpace(draft.CORSOrigins) == "" {
-		draft.CORSOrigins = `["*"]`
+	switch {
+	case draft.AppDomain != "":
+		draft.Usage = usageDomain
+	case isLoopbackHost(draft.Host):
+		draft.Usage = usageLocal
+	default:
+		draft.Usage = usageLAN
 	}
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewNote().
-				Title("Welcome to item+").
-				Description("This is the initial setup for your item+ server.\n\nWe'll go through the most important basics once, save them directly into your configuration, and create the first admin account if the selected database is still empty.\n\nIf you do not use the iOS app, regular sign-in usually happens via e-mail magic links. SMTP is therefore strongly recommended, but after this setup item+ will also show you one direct sign-in link in the console so you can get started right away.\n\nAfter that, item+ will continue starting normally."),
-		),
-		huh.NewGroup(
-			huh.NewInput().
-				Title("App domain").
-				Description("Used for links in the web app. Enter only the domain, without http:// or https://. Leave empty if you only start locally for now.").
-				Value(&draft.AppDomain),
-			huh.NewInput().
-				Title("Magic link base URL").
-				Description("Must include http:// or https://, for example https://itemplus.example.com. Leave empty to derive it automatically from the app domain.").
-				Value(&draft.MagicLinkBaseURL),
-			huh.NewConfirm().
-				Title("Automatically activate new users?").
-				Description("When enabled, new Apple and magic-link users can sign in immediately. Permissions still decide what they may actually do.").
-				Value(&draft.AutoActivated),
-			huh.NewConfirm().
-				Title("Grant all permissions to new review users?").
-				Description("Development/App Review only. New non-admin accounts receive all regular app permissions automatically. Leave disabled for normal production setups.").
-				Value(&draft.IOSReviewPermissions),
-			huh.NewInput().
-				Title("CORS origins").
-				Description(`JSON array, for example ["https://itemplus.example.com"] or ["*"] for local development.`).
-				Value(&draft.CORSOrigins).
-				Validate(validateJSONList),
-			huh.NewInput().
-				Title("Trusted proxies").
-				Description("Optional comma-separated list for nginx, Caddy, Traefik, or other reverse proxies you control. Examples: 127.0.0.1,::1 or 10.0.0.0/8,192.168.0.0/16").
-				Value(&draft.TrustedProxies),
-			huh.NewInput().
-				Title("Bind host").
-				Description("Default is 0.0.0.0 so item+ can listen on all interfaces.").
-				Value(&draft.Host).
-				Validate(validateRequired),
-			huh.NewInput().
-				Title("Port").
-				Description(fmt.Sprintf("Default is %d.", config.DefaultPort)).
-				Value(&draft.Port).
-				Validate(validatePort),
-		),
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Database URL").
-				Description("SQLite works well as the default for single-machine installs.").
-				Value(&draft.DatabaseURL).
-				Validate(validateRequired),
-			huh.NewInput().
-				Title("Upload directory").
-				Description("Attachments are stored here.").
-				Value(&draft.UploadDir).
-				Validate(validateRequired),
-			huh.NewInput().
-				Title("Log directory").
-				Description("Log files are written here.").
-				Value(&draft.LogDir).
-				Validate(validateRequired),
-		),
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Printer host").
-				Description("Optional. The printer should usually be in the same network as the server.").
-				Value(&draft.PrinterHost),
-			huh.NewInput().
-				Title("Printer port").
-				Description("Optional. TSC printers usually use 9100.").
-				Value(&draft.PrinterPort).
-				Validate(validateOptionalPort),
-		),
-		huh.NewGroup(
-			huh.NewInput().
-				Title("SMTP host").
-				Description("Recommended for regular magic-link e-mails, especially if you do not use the iOS app.").
-				Value(&draft.SMTPHost),
-			huh.NewInput().
-				Title("SMTP port").
-				Description("Optional. Common values are 465 or 587.").
-				Value(&draft.SMTPPort).
-				Validate(validateOptionalPort),
-			huh.NewInput().
-				Title("SMTP user").
-				Value(&draft.SMTPUser),
-			huh.NewInput().
-				Title("SMTP password").
-				Value(&draft.SMTPPassword),
-			huh.NewInput().
-				Title("SMTP from e-mail").
-				Description("Required for sending magic-link sign-in e-mails.").
-				Value(&draft.SMTPFromEmail),
-			huh.NewInput().
-				Title("SMTP from name").
-				Value(&draft.SMTPFromName),
-			huh.NewConfirm().
-				Title("Use TLS instead of SSL?").
-				Value(&draft.SMTPUseTLS),
-			huh.NewInput().
-				Title("E-mail language").
-				Description("Used for magic links, registration, and reminder e-mails. Supported values: en or de.").
-				Value(&draft.EmailLocale).
-				Validate(func(value string) error {
-					value = strings.ToLower(strings.TrimSpace(value))
-					if value == "en" || value == "de" {
-						return nil
-					}
-					return fmt.Errorf("please enter en or de")
-				}),
-		),
-	).WithShowHelp(false).WithTheme(huh.ThemeFunc(huh.ThemeCharm))
-
-	if err := form.Run(); err != nil {
-		return err
+	if strings.HasPrefix(draft.currentDB, "sqlite") {
+		draft.sqliteURL = draft.currentDB
+	} else if draft.currentDB != "" {
+		draft.Database = dbKeep
 	}
-
-	values, err := draft.toSetupValues()
-	if err != nil {
-		return err
+	if trim(current.SMTPHost) != "" && trim(current.SMTPFromEmail) != "" {
+		draft.Mail = mailKeep
 	}
-
-	db, firstUserRequired, err := openSetupDatabase(values)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	adminName := ""
-	adminEmail := ""
-	if firstUserRequired {
-		adminName, adminEmail, err = promptSetupAdmin()
-		if err != nil {
-			return err
-		}
-		values.AdminDisplayName = adminName
-		values.AdminEmail = adminEmail
-	}
-
-	if err := config.SaveSetupValues(values, false); err != nil {
-		return fmt.Errorf("could not save the configuration: %w", err)
-	}
-
-	if firstUserRequired {
-		if err := createSetupAdmin(db, values.DatabaseURL, adminName, adminEmail); err != nil {
-			return fmt.Errorf("configuration was saved, but the first admin could not be created: %w", err)
-		}
-	}
-
-	if err := config.SaveSetupValues(values, true); err != nil {
-		return fmt.Errorf("configuration was saved, but setup could not be finalized: %w", err)
-	}
-
-	printSetupCompletion(values, db, firstUserRequired, adminName, adminEmail)
-
-	return nil
+	return draft
 }
 
-func promptSetupAdmin() (string, string, error) {
-	name := ""
-	email := ""
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewNote().
-				Title("First admin account").
-				Description("No users were found in the selected database yet.\n\nLet's create the first admin account now."),
-			huh.NewInput().
-				Title("Display name").
-				Description("This is shown throughout the app.").
-				Value(&name).
-				Validate(validateRequired),
-			huh.NewInput().
-				Title("E-mail address").
-				Description("Used for magic-link login and the initial admin identity.").
-				Value(&email).
-				Validate(validateEmail),
-		),
-	).WithShowHelp(false).WithTheme(huh.ThemeFunc(huh.ThemeCharm))
-
-	if err := form.Run(); err != nil {
-		return "", "", err
+func (d *setupDraft) lang() setupLang {
+	if d.Language == "de" {
+		return langDE
 	}
-
-	return trim(name), normalizeEmail(email), nil
+	return langEN
 }
 
-func (d setupDraft) toSetupValues() (config.SetupValues, error) {
+// applyUsage turns the answer "how do you want to reach item+" into the
+// technical settings that follow from it.
+func (d *setupDraft) applyUsage() {
+	switch d.Usage {
+	case usageLocal:
+		d.AppDomain = ""
+		d.MagicLinkBaseURL = ""
+		d.Host = "127.0.0.1"
+	case usageLAN:
+		d.AppDomain = ""
+		d.MagicLinkBaseURL = ""
+		if isLoopbackHost(d.Host) {
+			d.Host = "0.0.0.0"
+		}
+	case usageDomain:
+		d.AppDomain = cleanDomain(d.AppDomain)
+		d.MagicLinkBaseURL = "https://" + d.AppDomain
+		// The proxy runs on this machine in the usual set-up and passes requests on.
+		d.CORSOrigins = fmt.Sprintf(`["https://%s"]`, d.AppDomain)
+		if trim(d.TrustedProxies) == "" {
+			d.TrustedProxies = "127.0.0.1,::1"
+		}
+	}
+}
+
+func (d *setupDraft) mysqlURL() string {
+	address := url.URL{
+		Scheme: "mysql+aiomysql",
+		User:   url.UserPassword(trim(d.MySQLUser), d.MySQLPass),
+		Host:   net.JoinHostPort(trim(d.MySQLHost), defaultString(trim(d.MySQLPort), "3306")),
+		Path:   "/" + trim(d.MySQLName),
+	}
+	return address.String()
+}
+
+func (d *setupDraft) resolveDatabaseURL() {
+	switch d.Database {
+	case dbMySQL:
+		d.DatabaseURL = d.mysqlURL()
+	case dbKeep:
+		d.DatabaseURL = d.currentDB
+	default:
+		d.DatabaseURL = d.sqliteURL
+	}
+}
+
+func (d *setupDraft) toSetupValues() (config.SetupValues, error) {
 	printerPort, err := parseOptionalInt(d.PrinterPort, 9100)
 	if err != nil {
 		return config.SetupValues{}, fmt.Errorf("invalid printer port")
-	}
-	smtpPort, err := parseOptionalInt(d.SMTPPort, 465)
-	if err != nil {
-		return config.SetupValues{}, fmt.Errorf("invalid SMTP port")
 	}
 	port, err := parseRequiredInt(d.Port)
 	if err != nil {
 		return config.SetupValues{}, fmt.Errorf("invalid server port")
 	}
-	if !json.Valid([]byte(strings.TrimSpace(d.CORSOrigins))) {
+	if !json.Valid([]byte(trim(d.CORSOrigins))) {
 		return config.SetupValues{}, fmt.Errorf("CORS origins must be valid JSON, for example [\"https://example.com\"]")
 	}
 
-	return config.SetupValues{
+	values := config.SetupValues{
 		AppDomain:            trim(d.AppDomain),
 		MagicLinkBaseURL:     trim(d.MagicLinkBaseURL),
 		AutoActivated:        d.AutoActivated,
@@ -293,19 +243,424 @@ func (d setupDraft) toSetupValues() (config.SetupValues, error) {
 		DatabaseURL:          trim(d.DatabaseURL),
 		UploadDir:            trim(d.UploadDir),
 		LogDir:               trim(d.LogDir),
-		PrinterHost:          trim(d.PrinterHost),
 		PrinterPort:          printerPort,
-		SMTPHost:             trim(d.SMTPHost),
-		SMTPPort:             smtpPort,
-		SMTPUser:             trim(d.SMTPUser),
-		SMTPPassword:         d.SMTPPassword,
-		SMTPFromEmail:        trim(d.SMTPFromEmail),
-		SMTPFromName:         trim(d.SMTPFromName),
-		SMTPUseTLS:           d.SMTPUseTLS,
-		EmailLocale:          trim(d.EmailLocale),
+		UpdateCheck:          config.ParseUpdateCheck(d.UpdateCheck),
+		EmailLocale:          d.Language,
 		Host:                 trim(d.Host),
 		Port:                 port,
-	}, nil
+	}
+	if d.HasPrinter {
+		values.PrinterHost = trim(d.PrinterHost)
+	}
+
+	switch d.Mail {
+	case mailNow:
+		values.SMTPHost = trim(d.SMTPHost)
+		values.SMTPUser = trim(d.SMTPUser)
+		values.SMTPPassword = d.SMTPPassword
+		values.SMTPFromEmail = trim(d.SMTPFromEmail)
+		values.SMTPFromName = defaultString(trim(d.SMTPFromName), "item+")
+		// SMTP_USE_TLS means STARTTLS on port 587; without it item+ speaks SSL/TLS on 465.
+		values.SMTPUseTLS = d.SMTPSecurity == smtpStartTLS
+		values.SMTPPort = 465
+		if values.SMTPUseTLS {
+			values.SMTPPort = 587
+		}
+	case mailKeep:
+		values.SMTPHost = d.currentSMTP.SMTPHost
+		values.SMTPPort = d.currentSMTP.SMTPPort
+		values.SMTPUser = d.currentSMTP.SMTPUser
+		values.SMTPPassword = d.currentSMTP.SMTPPassword
+		values.SMTPFromEmail = d.currentSMTP.SMTPFromEmail
+		values.SMTPFromName = d.currentSMTP.SMTPFromName
+		values.SMTPUseTLS = d.currentSMTP.SMTPUseTLS
+	default:
+		values.SMTPPort = 465
+		values.SMTPFromName = "item+"
+	}
+	return values, nil
+}
+
+// RunInitialSetup leads through the first start: a few questions in plain
+// words, a summary, and only then the configuration is written. It asks what
+// someone wants to do (use it at home, put it under a domain) and works out
+// the technical settings from that; those are only shown on request.
+func RunInitialSetup() error {
+	if !isInteractiveTerminal() {
+		return fmt.Errorf("item+ needs an interactive terminal for the first start setup. Run it locally in a terminal once, or prepare itemplus.conf before starting")
+	}
+
+	draft := newSetupDraft(config.CurrentSetupValues())
+	values, db, firstUserRequired, adminName, adminEmail, err := askSetupQuestions(draft)
+	if errors.Is(err, errSetupCancelled) {
+		return errors.New(draft.lang().tx("abort"))
+	}
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if err := config.SaveSetupValues(values, false); err != nil {
+		return fmt.Errorf("could not save the configuration: %w", err)
+	}
+	if firstUserRequired {
+		if err := createSetupAdmin(db, values.DatabaseURL, adminName, adminEmail); err != nil {
+			return fmt.Errorf("configuration was saved, but the first admin could not be created: %w", err)
+		}
+	}
+	if err := config.SaveSetupValues(values, true); err != nil {
+		return fmt.Errorf("configuration was saved, but setup could not be finalized: %w", err)
+	}
+
+	printSetupCompletion(draft.lang(), values, db, firstUserRequired, adminName, adminEmail)
+	return nil
+}
+
+func askSetupQuestions(d *setupDraft) (config.SetupValues, *sqlx.DB, bool, string, string, error) {
+	// The language comes first and on its own, so everything after it can be in it.
+	a := &asker{}
+	if err := a.selectOne("Sprache / Language", "", &d.Language, choice{"Deutsch", "de"}, choice{"English", "en"}); err != nil {
+		return config.SetupValues{}, nil, false, "", "", err
+	}
+	a.l, a.languageKnown = d.lang(), true
+	printHeading("", a.l.tx("welcome.title"), a.l.tx("welcome.text"))
+
+	// Starting over keeps the answers given so far as the suggestions.
+	derived := [3]string{d.Host, d.CORSOrigins, d.TrustedProxies}
+	for {
+		d.Host, d.CORSOrigins, d.TrustedProxies = derived[0], derived[1], derived[2]
+		values, db, firstUserRequired, err := askSetupRound(a, d)
+		if errors.Is(err, errSetupRestart) {
+			continue
+		}
+		if err != nil {
+			return config.SetupValues{}, nil, false, "", "", err
+		}
+		return values, db, firstUserRequired, d.AdminName, d.AdminEmail, nil
+	}
+}
+
+// askSetupRound asks everything once, from how item+ is reached to the
+// summary. It returns errSetupRestart when the user wants to change answers.
+func askSetupRound(a *asker, d *setupDraft) (config.SetupValues, *sqlx.DB, bool, error) {
+	l := a.l
+	fail := func(err error) (config.SetupValues, *sqlx.DB, bool, error) {
+		return config.SetupValues{}, nil, false, err
+	}
+	required := func(value string) error {
+		if trim(value) == "" {
+			return errors.New(l.tx("needed"))
+		}
+		return nil
+	}
+	email := func(value string) error {
+		if validateEmail(value) != nil {
+			return errors.New(l.tx("email"))
+		}
+		return nil
+	}
+	port := func(value string) error {
+		if validatePort(value) != nil {
+			return errors.New(l.tx("port"))
+		}
+		return nil
+	}
+	domain := func(value string) error {
+		name := cleanDomain(value)
+		if name == "" || strings.ContainsAny(name, " @") || !strings.Contains(name, ".") {
+			return errors.New(l.tx("domain"))
+		}
+		return nil
+	}
+	jsonList := func(value string) error {
+		if validateJSONList(value) != nil {
+			return errors.New(l.tx("json"))
+		}
+		return nil
+	}
+	step := func(number int) string { return l.tx("step", number, 4) }
+
+	// 1. How item+ is reached.
+	printHeading(step(1), l.tx("sec.reach"), "")
+	if err := a.selectOne(l.tx("usage.title"), l.tx("usage.text"), &d.Usage,
+		choice{l.tx("usage.local"), usageLocal},
+		choice{l.tx("usage.lan"), usageLAN},
+		choice{l.tx("usage.domain"), usageDomain},
+	); err != nil {
+		return fail(err)
+	}
+	if d.Usage == usageDomain {
+		if err := a.text(l.tx("domain.title"), l.tx("domain.text"), "items.example.com", &d.AppDomain, domain); err != nil {
+			return fail(err)
+		}
+	}
+	d.applyUsage()
+
+	// 2. The database, tried at once: a wrong password is found here, not at the first start.
+	printHeading(step(2), l.tx("sec.data"), l.tx("db.text"))
+	dbOptions := []choice{{l.tx("db.sqlite"), dbSQLite}, {l.tx("db.mysql"), dbMySQL}}
+	if d.currentDB != "" && !strings.HasPrefix(d.currentDB, "sqlite") {
+		dbOptions = append([]choice{{l.tx("db.keep"), dbKeep}}, dbOptions...)
+	}
+	var db *sqlx.DB
+	firstUserRequired := false
+	for db == nil {
+		if err := a.selectOne(l.tx("db.title"), "", &d.Database, dbOptions...); err != nil {
+			return fail(err)
+		}
+		if d.Database == dbMySQL {
+			if err := a.text(l.tx("db.host"), l.tx("db.mysql.text"), "", &d.MySQLHost, required); err != nil {
+				return fail(err)
+			}
+			if err := a.text(l.tx("db.port"), "", "", &d.MySQLPort, port); err != nil {
+				return fail(err)
+			}
+			if err := a.text(l.tx("db.name"), "", "", &d.MySQLName, required); err != nil {
+				return fail(err)
+			}
+			if err := a.text(l.tx("db.user"), "", "", &d.MySQLUser, required); err != nil {
+				return fail(err)
+			}
+			if err := a.password(l.tx("db.password"), "", &d.MySQLPass); err != nil {
+				return fail(err)
+			}
+		}
+		d.resolveDatabaseURL()
+
+		var opened *sqlx.DB
+		openErr := withSpinner(l.tx("db.check"), func() error {
+			var err error
+			opened, firstUserRequired, err = openSetupDatabase(config.SetupValues{DatabaseURL: d.DatabaseURL})
+			return err
+		})
+		if errors.Is(openErr, errSetupCancelled) {
+			return fail(openErr)
+		}
+		if openErr == nil {
+			db = opened
+			printLine("✔", ui().ok, l.tx("db.ok"))
+			lipgloss.Println()
+			break
+		}
+		printBox(l.tx("db.fail.title"), l.tx("db.fail.text", openErr.Error()), ui().bad, ui().bad)
+		retry := true
+		if err := a.confirm(l.tx("db.fail.retry"), "", &retry); err != nil {
+			return fail(err)
+		}
+		if !retry {
+			return fail(errSetupCancelled)
+		}
+	}
+	cancel := func(err error) (config.SetupValues, *sqlx.DB, bool, error) {
+		_ = db.Close()
+		return fail(err)
+	}
+
+	// 3. Signing in.
+	printHeading(step(3), l.tx("sec.signin"), l.tx("mail.text"))
+	mailOptions := []choice{{l.tx("mail.now"), mailNow}, {l.tx("mail.later"), mailLater}}
+	if trim(d.currentSMTP.SMTPHost) != "" && trim(d.currentSMTP.SMTPFromEmail) != "" {
+		mailOptions = append([]choice{{l.tx("mail.keep"), mailKeep}}, mailOptions...)
+	}
+	if err := a.selectOne(l.tx("mail.title"), "", &d.Mail, mailOptions...); err != nil {
+		return cancel(err)
+	}
+	if d.Mail == mailNow {
+		if err := a.text(l.tx("smtp.host"), l.tx("smtp.text")+" "+l.tx("smtp.host.hint"), "smtp.example.com", &d.SMTPHost, required); err != nil {
+			return cancel(err)
+		}
+		if err := a.selectOne(l.tx("smtp.security"), "", &d.SMTPSecurity, choice{l.tx("smtp.ssl"), smtpSSL}, choice{l.tx("smtp.starttls"), smtpStartTLS}); err != nil {
+			return cancel(err)
+		}
+		if err := a.text(l.tx("smtp.user"), l.tx("smtp.user.hint"), "", &d.SMTPUser, nil); err != nil {
+			return cancel(err)
+		}
+		if err := a.password(l.tx("smtp.password"), "", &d.SMTPPassword); err != nil {
+			return cancel(err)
+		}
+		if err := a.text(l.tx("smtp.from"), l.tx("smtp.from.hint"), "", &d.SMTPFromEmail, email); err != nil {
+			return cancel(err)
+		}
+		if err := a.text(l.tx("smtp.fromname"), "", "", &d.SMTPFromName, nil); err != nil {
+			return cancel(err)
+		}
+	}
+	if err := a.confirm(l.tx("people.auto"), l.tx("people.auto.text"), &d.AutoActivated); err != nil {
+		return cancel(err)
+	}
+
+	// 4. Extras, and the advanced settings for those who ask for them.
+	printHeading(step(4), l.tx("extras.title"), l.tx("extras.text"))
+	if err := a.confirm(l.tx("printer.ask"), l.tx("printer.ask.text"), &d.HasPrinter); err != nil {
+		return cancel(err)
+	}
+	if d.HasPrinter {
+		if err := a.text(l.tx("printer.host"), l.tx("printer.host.hint"), "192.168.1.50", &d.PrinterHost, required); err != nil {
+			return cancel(err)
+		}
+		if err := a.text(l.tx("printer.port"), l.tx("printer.port.hint"), "", &d.PrinterPort, port); err != nil {
+			return cancel(err)
+		}
+	}
+	if err := a.selectOne(l.tx("update.title"), l.tx("update.text"), &d.UpdateCheck,
+		choice{l.tx("update.off"), ""},
+		choice{l.tx("update.release"), config.UpdateCheckRelease},
+		choice{l.tx("update.build"), config.UpdateCheckBuild},
+	); err != nil {
+		return cancel(err)
+	}
+	if err := a.confirm(l.tx("advanced.ask"), l.tx("advanced.ask.text"), &d.Advanced); err != nil {
+		return cancel(err)
+	}
+	if d.Advanced {
+		type field struct {
+			title, hint string
+			value       *string
+			validate    func(string) error
+		}
+		for _, entry := range []field{
+			{l.tx("adv.host"), l.tx("adv.host.hint"), &d.Host, required},
+			{l.tx("adv.port"), "", &d.Port, port},
+			{l.tx("adv.upload"), l.tx("adv.upload.hint"), &d.UploadDir, required},
+			{l.tx("adv.logs"), "", &d.LogDir, required},
+			{l.tx("adv.proxies"), l.tx("adv.proxies.hint"), &d.TrustedProxies, nil},
+			{l.tx("adv.cors"), l.tx("adv.cors.hint"), &d.CORSOrigins, jsonList},
+		} {
+			if err := a.text(entry.title, entry.hint, "", entry.value, entry.validate); err != nil {
+				return cancel(err)
+			}
+		}
+		if err := a.confirm(l.tx("adv.review"), l.tx("adv.review.hint"), &d.IOSReviewPermissions); err != nil {
+			return cancel(err)
+		}
+	}
+
+	// The first account, when the database has nobody in it yet.
+	if firstUserRequired {
+		printHeading("", l.tx("admin.title"), l.tx("admin.text"))
+		if err := a.text(l.tx("admin.name"), l.tx("admin.name.hint"), "", &d.AdminName, required); err != nil {
+			return cancel(err)
+		}
+		if err := a.text(l.tx("admin.email"), l.tx("admin.email.hint"), "", &d.AdminEmail, email); err != nil {
+			return cancel(err)
+		}
+		d.AdminEmail = normalizeEmail(d.AdminEmail)
+	} else {
+		d.AdminName, d.AdminEmail = "", ""
+	}
+
+	values, err := d.toSetupValues()
+	if err != nil {
+		return cancel(err)
+	}
+	values.AdminDisplayName = d.AdminName
+	values.AdminEmail = d.AdminEmail
+
+	// What will be saved, in the user's words, before anything is written.
+	lipgloss.Println(renderBox(l.tx("summary.title"), layoutRows(setupSummaryRows(l, d, values, d.AdminName, d.AdminEmail), innerWidth(), ui().dim), ui().dim, ui().accent.Bold(true)))
+	lipgloss.Println()
+	next := "save"
+	if err := a.selectOne(l.tx("summary.save"), "", &next,
+		choice{l.tx("summary.save.yes"), "save"},
+		choice{l.tx("summary.restart"), "restart"},
+		choice{l.tx("summary.save.no"), "cancel"},
+	); err != nil {
+		return cancel(err)
+	}
+	switch next {
+	case "restart":
+		return cancel(errSetupRestart)
+	case "cancel":
+		return cancel(errSetupCancelled)
+	}
+	return values, db, firstUserRequired, nil
+}
+
+// setupSummary lists what was chosen. Passwords are never shown.
+func setupSummary(l setupLang, d *setupDraft, values config.SetupValues, adminName, adminEmail string) string {
+	return strings.Join(layoutRows(setupSummaryRows(l, d, values, adminName, adminEmail), 0, lipgloss.NewStyle()), "\n")
+}
+
+type summaryRow struct{ label, value string }
+
+// layoutRows lines the values up, whatever the longest label is in this
+// language. With a width, a long value continues under its own beginning.
+func layoutRows(rows []summaryRow, width int, labelStyle lipgloss.Style) []string {
+	labels := 0
+	for _, entry := range rows {
+		labels = max(labels, utf8.RuneCountInString(entry.label))
+	}
+	lines := []string{}
+	for _, entry := range rows {
+		values := []string{entry.value}
+		if width > 0 {
+			values = wrapText(entry.value, max(width-labels-1, 10))
+		}
+		for i, value := range values {
+			label := ""
+			if i == 0 {
+				label = entry.label
+			}
+			lines = append(lines, labelStyle.Render(label)+strings.Repeat(" ", labels-utf8.RuneCountInString(label)+1)+value)
+		}
+	}
+	return lines
+}
+
+func setupSummaryRows(l setupLang, d *setupDraft, values config.SetupValues, adminName, adminEmail string) []summaryRow {
+	rows := []summaryRow{}
+	add := func(label, value string) {
+		rows = append(rows, summaryRow{label + ":", value})
+	}
+
+	switch d.Usage {
+	case usageDomain:
+		add(l.tx("sum.reach"), "https://"+values.AppDomain)
+	case usageLocal:
+		add(l.tx("sum.reach"), l.tx("sum.reach.local", setupBaseURL(values)))
+	default:
+		add(l.tx("sum.reach"), l.tx("sum.reach.lan", values.Port))
+	}
+
+	if strings.HasPrefix(values.DatabaseURL, "sqlite") {
+		add(l.tx("sum.db"), l.tx("sum.db.sqlite"))
+	} else if parsed, err := url.Parse(values.DatabaseURL); err == nil {
+		add(l.tx("sum.db"), l.tx("sum.db.mysql", parsed.Host+parsed.Path))
+	}
+
+	if trim(values.SMTPHost) != "" && trim(values.SMTPFromEmail) != "" {
+		add(l.tx("sum.mail"), l.tx("sum.mail.on", values.SMTPHost, values.SMTPFromEmail))
+	} else {
+		add(l.tx("sum.mail"), l.tx("sum.mail.off"))
+	}
+
+	if values.AutoActivated {
+		add(l.tx("sum.people"), l.tx("sum.people.auto"))
+	} else {
+		add(l.tx("sum.people"), l.tx("sum.people.manual"))
+	}
+
+	if trim(values.PrinterHost) != "" {
+		add(l.tx("sum.printer"), fmt.Sprintf("%s:%d", values.PrinterHost, values.PrinterPort))
+	} else {
+		add(l.tx("sum.printer"), l.tx("sum.none"))
+	}
+
+	switch values.UpdateCheck {
+	case config.UpdateCheckRelease:
+		add(l.tx("sum.update"), l.tx("sum.update.release"))
+	case config.UpdateCheckBuild:
+		add(l.tx("sum.update"), l.tx("sum.update.build"))
+	default:
+		add(l.tx("sum.update"), l.tx("sum.update.off"))
+	}
+
+	if adminEmail != "" {
+		add(l.tx("sum.admin"), fmt.Sprintf("%s <%s>", adminName, adminEmail))
+	}
+	add(l.tx("sum.file"), config.C.ConfigPath)
+
+	return rows
 }
 
 func openSetupDatabase(values config.SetupValues) (*sqlx.DB, bool, error) {
@@ -406,36 +761,47 @@ func defaultInt(value, fallback int) int {
 	return value
 }
 
-func printSetupCompletion(values config.SetupValues, db *sqlx.DB, firstUserRequired bool, adminName, adminEmail string) {
-	fmt.Println()
-	fmt.Println("item+ setup finished successfully.")
-	fmt.Printf("Configuration file: %s\n", config.C.ConfigPath)
+// printSetupCompletion says what to do now: the link to sign in with, and
+// what is still missing.
+func printSetupCompletion(l setupLang, values config.SetupValues, db *sqlx.DB, firstUserRequired bool, adminName, adminEmail string) {
+	s := ui()
+	printLine("✔", s.ok, s.bold.Render(l.tx("done.title")))
+	lipgloss.Println("    " + s.dim.Render(l.tx("done.config", config.C.ConfigPath)))
+	lipgloss.Println()
 
-	loginURL := setupLoginURL(values)
 	signInEmail := trim(adminEmail)
-	if firstUserRequired {
-		fmt.Printf("First admin: %s <%s>\n", adminName, adminEmail)
-	} else if signInEmail == "" {
+	if !firstUserRequired && signInEmail == "" {
 		signInEmail = existingAdminEmail(db, values)
 	}
 
+	expiryMinutes := config.C.MagicLinkExpiryMinutes
+	if expiryMinutes <= 0 {
+		expiryMinutes = 30
+	}
+	// The address stands on a line of its own and is never wrapped or
+	// framed, so it can be copied in one piece.
+	address, addressText, problem := setupLoginURL(values), l.tx("done.open"), ""
 	if signInEmail != "" {
 		if magicLinkURL, err := createConsoleMagicLink(db, signInEmail, values); err == nil {
-			fmt.Printf("Sign in with this magic link: %s\n", magicLinkURL)
+			address, addressText = magicLinkURL, l.tx("done.link", expiryMinutes)
 		} else {
-			fmt.Printf("Open this in your browser after startup: %s\n", loginURL)
-			fmt.Printf("Could not create the initial magic link automatically for %s: %v\n", signInEmail, err)
+			problem = l.tx("done.nolink", err)
 		}
-	} else {
-		fmt.Printf("Open this in your browser after startup: %s\n", loginURL)
-		fmt.Println("No admin e-mail could be determined automatically, so no direct magic link was created.")
 	}
-
+	printLine("→", s.accent, addressText)
+	lipgloss.Println()
+	lipgloss.Println("    " + s.accent.Render(address))
+	lipgloss.Println()
+	if problem != "" {
+		printLine("!", s.warn, problem)
+	}
 	if trim(values.SMTPHost) == "" || trim(values.SMTPFromEmail) == "" {
-		fmt.Println("SMTP is still recommended so item+ can send regular magic-link e-mails later on.")
+		printLine("!", s.warn, l.tx("done.nomail"))
 	}
-	fmt.Println("Continuing with the normal server start...")
-	fmt.Println()
+	printLine("·", s.dim, l.tx("done.next"))
+	lipgloss.Println()
+	lipgloss.Println("  " + s.dim.Render(l.tx("done.starting")))
+	lipgloss.Println()
 }
 
 func setupLoginURL(values config.SetupValues) string {

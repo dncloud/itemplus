@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api, type AIProfile, type AIUsage, type AIVendorSuggestionResult, type Vendor, type VendorLogoPreviewResult } from "@/lib/api";
 import { type AIChatEntry, createAIChatId } from "@/lib/ai-chat";
 import { useApp } from "@/lib/app-context";
-import { ChevronRight, Sparkles } from "lucide-react";
+import { ChevronRight, Plus, Sparkles } from "lucide-react";
 import { useDeleteFlow, ConfirmDelete } from "@/components/ui/confirm-delete";
 import { AIDrawerChatMessage, AIDrawerTabs, AIRawDebugPanel, AIInfoDrawer, AIUsageBadges } from "@/components/ai/drawer";
 import {
@@ -27,9 +27,11 @@ import {
   suggestVendorDraft,
   validateVendorDraft,
 } from "./vendors-page-utils";
+import { pageActionClass } from "@/components/ui/list-controls";
+import { aiProviderLabel } from "@/lib/ai-providers";
 
 export default function VendorsPageContent() {
-  const { realm, locale, fmtDateTime, t, can, currentUserLabel, setAiAssistantBusy, setAiAssistantPanelController } = useApp();
+  const { realm, locale, t, can, currentUserLabel, setAiAssistantBusy, setAiAssistantPanelController } = useApp();
   const [tab, setTab] = useState<EntityType>("manufacturers");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -87,7 +89,7 @@ export default function VendorsPageContent() {
   const canDeleteVendors = can("vendors.delete");
   const aiUserName = currentUserLabel || t("vendors.aiUserFallback");
   const aiAssistantName = t("vendors.aiAssistantName");
-  const modelBadge = activeAIProfile ? `${activeAIProfile.provider === "ollama" ? "Ollama" : "OpenAI"} · ${activeAIProfile.model}` : null;
+  const modelBadge = activeAIProfile ? `${aiProviderLabel(activeAIProfile.provider)} · ${activeAIProfile.model}` : null;
 
   const resetAISession = useCallback(() => {
     setAiPrompt("");
@@ -434,6 +436,19 @@ export default function VendorsPageContent() {
           </nav>
           <h2 className="text-2xl font-bold">{t("vendors.title")}</h2>
         </div>
+
+        <div className="flex items-center justify-center gap-2 px-2 py-3 sm:justify-end sm:px-0">
+          {canWriteVendors ? (
+            <button
+              type="button"
+              onClick={() => { resetAISession(); setEditItem({ name: "" }); setIsNew(true); }}
+              className={pageActionClass}
+            >
+              <Plus aria-hidden="true" className="-ml-0.5 size-4" />
+              {t("vendors.newEntry")}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -442,15 +457,13 @@ export default function VendorsPageContent() {
       <VendorSearchBar
         search={search}
         onSearchChange={setSearch}
-        onCreate={() => { resetAISession(); setEditItem({ name: "" }); setIsNew(true); }}
-        canCreate={canWriteVendors}
         t={t}
       />
 
       {canWriteVendors && editItem && isNew ? (
         <div className="overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-900/5 dark:bg-gray-800/50 dark:outline-white/10">
           <div className="border-b border-gray-200 px-4 py-4 sm:px-6 dark:border-white/10">
-            <h3 className="font-semibold text-gray-900 dark:text-white">{t("common.new")} {tabLabel}</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white">{t("vendors.newEntry")} · {tabLabel}</h3>
           </div>
           <div className="px-4 py-4 sm:px-6">
             <VendorInlineForm
@@ -483,7 +496,7 @@ export default function VendorsPageContent() {
       {/* List */}
       {loading ? (
         <div className="flex justify-center py-20">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
         </div>
       ) : items.length === 0 ? (
         <p className="text-center text-gray-500 py-10">{t("vendors.none")}</p>
@@ -491,7 +504,6 @@ export default function VendorsPageContent() {
         <VendorList
           items={items}
           currentTabIcon={currentTab.icon}
-          fmtDateTime={fmtDateTime}
           onEdit={(item) => {
             if (!canWriteVendors) return;
             if (editItem?.id === item.id && !isNew) {
@@ -510,7 +522,7 @@ export default function VendorsPageContent() {
           canEdit={canWriteVendors}
           canDelete={canDeleteVendors}
           renderEditor={(item) => canWriteVendors && editItem?.id === item.id && !isNew ? (
-            <div className="border-t border-gray-100 px-4 py-4 sm:px-6 dark:border-white/10">
+            <div className="px-4 pb-4 sm:px-6">
               <VendorInlineForm
                 editItem={editItem}
                 setEditItem={setEditItem}
@@ -624,7 +636,7 @@ export default function VendorsPageContent() {
                     type="checkbox"
                     checked={aiAllowWebSearch}
                     onChange={(event) => setAiAllowWebSearch(event.target.checked)}
-                    className="accent-blue-500"
+                    className="accent-indigo-600"
                   />
                   {t("chat.allowWebSearch")}
                 </label>
@@ -633,7 +645,7 @@ export default function VendorsPageContent() {
                 type="button"
                 onClick={() => { void runAI(); }}
                 disabled={aiBusy}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Sparkles className="h-4 w-4" />
                 {aiBusy ? t("vendors.aiRunning") : t("common.send")}

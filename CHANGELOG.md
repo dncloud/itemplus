@@ -1,5 +1,68 @@
 # Changelog
 
+## 1.4.0 - 2026-10-11
+
+This release reworks most of the web app, opens loans to every user, adds notifications inside the app, brings Claude as an AI provider and replaces the first-start setup. The separate update program is gone. Please read "Before you update" first.
+
+### Before you update
+- **The update program `itemplus-update` no longer exists.** A release now consists of five server binaries. Update by replacing the server binary; if `itemplus-update` and an `updates/` folder still lie next to your server, you can delete them.
+- **item+ never contacts another server on its own.** A notice about new versions only appears when you set `UPDATE_CHECK=release` (published releases) or `UPDATE_CHECK=build` (also unreleased builds) in `itemplus.conf`. The server then asks `api.github.com` once a day. Nothing is downloaded or installed, and there is no switch for this in the web app.
+- **Every item needs a category.** Creating an item without one is refused, and a change can move an item to another category but not remove it. Items that lost their category or location in the past are listed for administrators under **Settings > Storage > Orphaned items**, where they are restored or assigned.
+- **An item that is lent out cannot be deleted**, neither on its own nor as a bundle with lent parts, and neither can a user with active loans. Return first.
+- **Loans are open to every signed-in user.** Without the right `checkout.manage` people see only their own loans and requests, and they report a return instead of closing the loan themselves (see below).
+- **AI prompts:** the default prompts were rewritten. Profiles that still use the old defaults follow the new ones automatically; prompts you edited stay as they are.
+- On MySQL/MariaDB the server removes rows at startup that deleted items and categories left behind, and on both engines it renumbers attachments that shared a position.
+
+### Loans and notifications
+- The **Loans** page is the one place for lending. Every user finds there what they have borrowed and asked for, in both realms; people with `checkout.manage` see everything in the current realm.
+- A borrower reports a return. The loan stays active until someone with `checkout.manage` confirms it or dismisses the report, so nothing is "returned" without a second pair of eyes.
+- Open requests and reported returns are shown as cards above the list. A request is visible to the person who made it and to those who manage loans.
+- New **notifications**: stored messages for the steps of a loan (requested, approved, rejected, return reported, confirmed, dismissed), with a bell in the header and a messages page. They need neither the iPhone app nor push, are written in the reader's language, and nobody is notified about their own action.
+- Menu badges count what waits in the current realm; the realm switch shows what waits in the other one.
+
+### Web app
+- Navigation: a group tile opens the page last visited in it, and badges show a count.
+- Dashboard: figures, growth, categories, activity by kind of movement, value by category and items by location; in the collection a find of the day and, with a game catalog that offers it, collection progress per platform.
+- Item list: a card and a table view per realm, with per-realm choices of what a card shows and a sort menu. Each item has printing as an icon and a menu with its stock, loans and maintenance; deleting is the last entry there. The badges "lent to" and "due/overdue" lead to the loans and the maintenance of the item.
+- Item page: catalog games show cover and facts side by side, empty fields are hidden, and the QR code has its own popover.
+- Item form: an action bar that stays in view with links to the sections, properties laid out by their configured width, and save errors that are shown.
+- Categories: a layout preview, the width of a property can be switched in place, and a clearer control to open a category. Category and location colours are picked from swatches or freely, with a preview for light and dark mode, and stay readable in both.
+- Categories, locations and master data share one set of list and form controls; deleting sits behind a menu everywhere.
+- Stock is a history grouped by day that can be filtered by item name, kind of movement and period, with calmer warning cards. Stocktaking and maintenance were redesigned.
+- Users, AI usage, the chat and all settings sections follow the same design. Storage, label printer and AI settings use tiles for their choices.
+- Sign-in page on a card layout; while the server does not answer, the app shows a notice and reloads when it is back.
+- Nothing of the app is drawn before the server has confirmed that someone is signed in.
+- Light mode: a grey page background, and fixes for headings and a menu that were white on white.
+
+### Attachments
+- Images can be dragged into order in the item form, like files already could.
+- No two attachments of an item share a position any more. New ones are added at the end whatever a client asks for, and setting a position moves the others out of the way.
+- "Add from source" is a file picker with source tabs, a path you can click through, a filter and a switch for hidden files.
+- The four ways to add something are tiles that say what they do.
+
+### AI assistant
+- **Claude** (Anthropic) is available as a provider next to OpenAI, through Anthropic's official SDK, including web search and image input. Ollama stays as the local option for trying things out.
+- The default prompts are shorter and say what Ina is for. What the server needs for technical reasons (the JSON form, value formats, how to treat text from the web or from users as material and never as instructions) is added by the server and also applies to prompts you wrote yourself.
+- One "Add profile" button with a menu of providers, and AI usage statistics for all three providers.
+
+### First start
+- The first-start setup was rewritten. It asks in German or English what you want to do (use item+ on this computer, in your network, or under your own domain) and derives the technical settings from that; they are only shown on request.
+- The database connection is tried at once, passwords are never shown, a summary comes before anything is saved, and you can start over with your answers kept. At the end the terminal prints a one-time link to sign in with.
+
+### Data integrity
+- Categories and locations that are in use cannot be deleted, as before; an item now always has an existing category.
+- At startup on MySQL/MariaDB, values, movements, maintenance entries and bundle links of deleted items are removed, as are properties of deleted categories that no item points to. Items themselves are never changed automatically.
+
+### Fixes
+- The game catalog import numbered every 25 images from 0 again, and several images uploaded at once all got the same position. Existing items are repaired at startup.
+- The maintenance badge in the item list never appeared.
+- Switching the realm on the stock or loans page jumped back when the address named a realm.
+- A movement list limit above 500 fell back to 100, and movements were sorted by time incorrectly on SQLite.
+- The rounded corners of the loans table.
+
+### Building from source
+- `build.sh` asks what to build when started in a terminal, takes targets as arguments (`local`, `all`, `mac`, `linux`, `win`, or single platforms such as `linux-arm64`), shows progress, and `--clean` keeps configuration, data, logs and uploads.
+
 ## 1.3.4 - 2026-10-09
 
 This release fixes several security problems and a group of failures that only showed on one of the two supported database engines. Updating is recommended for every installation. Please create a new backup after updating: backups made with 1.3.3 or earlier are incomplete (see below).

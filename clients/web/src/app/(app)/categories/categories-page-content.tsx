@@ -11,7 +11,6 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
-import { useRouter } from "next/navigation";
 import { inUseMessage, readInUseInfo, useDeleteFlow, type InUseInfo } from "@/components/ui/confirm-delete";
 import { FloatingNotification, type FloatingNotificationState } from "@/components/ui/floating-notification";
 import { getPropertyTypes } from "./categories-sections";
@@ -30,10 +29,10 @@ import type {
   AIPropertyEnhancementSuggestionResult,
   AIPropertyProposal,
 } from "@/lib/api";
+import { aiProviderLabel } from "@/lib/ai-providers";
 
 export default function CategoriesPageContent() {
-  const { realm, locale, fmtDateTime, t, can, currentUserLabel, setAiAssistantBusy, setAiAssistantPanelController } = useApp();
-  const router = useRouter();
+  const { realm, locale, t, can, currentUserLabel, setAiAssistantBusy, setAiAssistantPanelController } = useApp();
   const [categories, setCategories] = useState<Category[]>([]);
   const [editCat, setEditCat] = useState<Partial<Category> | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -65,10 +64,9 @@ export default function CategoriesPageContent() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const canWriteCategories = can("categories.write");
   const canDeleteCategories = can("categories.delete");
-  const canReadItems = can("items.read");
   const aiUserName = currentUserLabel || t("categories.aiUserFallback");
   const aiAssistantName = t("categories.aiAssistantName");
-  const modelBadge = activeAIProfile ? `${activeAIProfile.provider === "ollama" ? "Ollama" : "OpenAI"} · ${activeAIProfile.model}` : null;
+  const modelBadge = activeAIProfile ? `${aiProviderLabel(activeAIProfile.provider)} · ${activeAIProfile.model}` : null;
   const categoryComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const propertyComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const categoryMessagesRef = useRef<HTMLDivElement | null>(null);
@@ -725,6 +723,17 @@ export default function CategoriesPageContent() {
     if (expanded) loadProps(expanded);
   };
 
+  const setPropertyWidth = async (prop: Property, width: "third" | "half" | "full") => {
+    if (!canWriteCategories) return;
+    // Shown at once; if the server refuses, the list is read again.
+    setProperties((current) => current.map((entry) => (entry.id === prop.id ? { ...entry, display_width: width } : entry)));
+    try {
+      await api.updateProperty(prop.id, { display_width: width });
+    } catch {
+      if (expanded) await loadProps(expanded);
+    }
+  };
+
   return (
     <>
     <FloatingNotification notification={notification} onClose={() => setNotification(null)} t={t} />
@@ -733,7 +742,6 @@ export default function CategoriesPageContent() {
       t={t}
       canWriteCategories={canWriteCategories}
       canDeleteCategories={canDeleteCategories}
-      canReadItems={canReadItems}
       categories={categories}
       editCat={editCat}
       setEditCat={setEditCat}
@@ -799,8 +807,7 @@ export default function CategoriesPageContent() {
       onCatDragEnd={onCatDragEnd}
       onPropDragEnd={onPropDragEnd}
       toggleShowInList={toggleShowInList}
-      fmtDateTime={fmtDateTime}
-      onShowCategoryItems={(categoryId) => router.push(`/items?category=${categoryId}`)}
+      setPropertyWidth={setPropertyWidth}
       pendingCategoryDeleteId={pendingCategoryDeleteId}
       pendingPropertyDeleteId={pendingPropertyDeleteId}
       deleteCat={deleteCat}

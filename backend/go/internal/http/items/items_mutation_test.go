@@ -21,6 +21,15 @@ func mustExec(t *testing.T, query string, args ...interface{}) {
 	}
 }
 
+func countRows(t *testing.T, query string, args ...interface{}) int {
+	t.Helper()
+	var n int
+	if err := database.DB.Get(&n, query, args...); err != nil {
+		t.Fatalf("%s: %v", query, err)
+	}
+	return n
+}
+
 // request sends a JSON request through a router that has the item routes'
 // id check in front of the handler, as the real routes do.
 func request(t *testing.T, method, id string, handler gin.HandlerFunc, body interface{}) (int, map[string]interface{}) {
@@ -68,10 +77,12 @@ func TestItemUpdateOfUnknownItemIsNotFound(t *testing.T) {
 
 func TestQuantitiesMustBeWholeAndNotNegative(t *testing.T) {
 	testdb.Use(t)
-	if status, response := request(t, http.MethodPost, "", createItem("archive"), map[string]interface{}{"name": "Schrauben", "quantity": -5}); status != http.StatusBadRequest {
+	now := database.TimestampNow()
+	mustExec(t, "INSERT INTO archive_categories (name, created_at, updated_at) VALUES ('Kleinteile', ?, ?)", now, now)
+	if status, response := request(t, http.MethodPost, "", createItem("archive"), map[string]interface{}{"name": "Schrauben", "category_id": 1, "quantity": -5}); status != http.StatusBadRequest {
 		t.Fatalf("create with negative quantity: status %d, response %v", status, response)
 	}
-	status, created := request(t, http.MethodPost, "", createItem("archive"), map[string]interface{}{"name": "Schrauben", "quantity": 10})
+	status, created := request(t, http.MethodPost, "", createItem("archive"), map[string]interface{}{"name": "Schrauben", "category_id": 1, "quantity": 10})
 	if status != http.StatusCreated {
 		t.Fatalf("create: status %d, response %v", status, created)
 	}
@@ -95,6 +106,57 @@ func TestQuantitiesMustBeWholeAndNotNegative(t *testing.T) {
 	// Valid changes still work, including zero and clearing the minimum.
 	if status, response := request(t, http.MethodPut, "1", updateItem("archive"), map[string]interface{}{"quantity": 0, "minimum_quantity": nil}); status != http.StatusOK {
 		t.Fatalf("valid update: status %d, response %v", status, response)
+	}
+}
+
+// An item is never without a category: creating one needs a category that
+// exists, and an update may change the category but not remove it. Updates
+// that do not mention the category work as before, also for items that an
+// older version let through without one.
+func TestItemNeedsACategory(t *testing.T) {
+	testdb.Use(t)
+	now := database.TimestampNow()
+	mustExec(t, "INSERT INTO archive_categories (name, created_at, updated_at) VALUES ('Werkzeug', ?, ?)", now, now)
+	mustExec(t, "INSERT INTO archive_categories (name, created_at, updated_at) VALUES ('Kabel', ?, ?)", now, now)
+
+	for name, body := range map[string]map[string]interface{}{
+		"no category":      {"name": "Hammer"},
+		"category null":    {"name": "Hammer", "category_id": nil},
+		"unknown category": {"name": "Hammer", "category_id": 99},
+	} {
+		status, response := request(t, http.MethodPost, "", createItem("archive"), body)
+		if status != http.StatusBadRequest || response["code"] != "category_required" {
+			t.Errorf("create with %s: status %d, response %v; want 400 category_required", name, status, response)
+		}
+	}
+	if n := countRows(t, "SELECT COUNT(*) FROM archive_items"); n != 0 {
+		t.Fatalf("%d items were created without a category", n)
+	}
+
+	if status, response := request(t, http.MethodPost, "", createItem("archive"), map[string]interface{}{"name": "Hammer", "category_id": 1}); status != http.StatusCreated {
+		t.Fatalf("create with a category: status %d, response %v", status, response)
+	}
+	for name, body := range map[string]map[string]interface{}{
+		"category removed":  {"category_id": nil},
+		"unknown category":  {"category_id": 99},
+		"category as text":  {"category_id": "Kabel"},
+		"fractional number": {"category_id": 1.5},
+	} {
+		status, response := request(t, http.MethodPut, "1", updateItem("archive"), body)
+		if status != http.StatusBadRequest || response["code"] != "category_required" {
+			t.Errorf("update with %s: status %d, response %v; want 400 category_required", name, status, response)
+		}
+	}
+	if status, response := request(t, http.MethodPut, "1", updateItem("archive"), map[string]interface{}{"category_id": 2}); status != http.StatusOK {
+		t.Fatalf("moving the item to another category: status %d, response %v", status, response)
+	}
+	if n := countRows(t, "SELECT COUNT(*) FROM archive_items WHERE id = 1 AND category_id = 2"); n != 1 {
+		t.Fatal("the item is not in its new category")
+	}
+
+	mustExec(t, "INSERT INTO archive_items (name, quantity, created_at, updated_at) VALUES ('Altlast', 1, ?, ?)", now, now) // item 2
+	if status, response := request(t, http.MethodPut, "2", updateItem("archive"), map[string]interface{}{"quantity": 3}); status != http.StatusOK {
+		t.Fatalf("partial update of an old item without category: status %d, response %v", status, response)
 	}
 }
 

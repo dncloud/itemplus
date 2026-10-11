@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { FloatingNotification, type FloatingNotificationState } from "@/components/ui/floating-notification";
 import { ChevronRight, RefreshCw } from "lucide-react";
-import { CheckoutRequestsList, CheckoutsPagination } from "./checkouts-sections";
+import { CheckoutRequestsList, CheckoutsPagination, PendingRequestCards, ReturnReportCards } from "./checkouts-sections";
 import {
   buildCheckoutsPageUrl,
   type CheckoutListEntry,
@@ -24,6 +24,10 @@ export default function CheckoutsPage() {
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<FloatingNotificationState>(null);
   const [remindingCheckoutIds, setRemindingCheckoutIds] = useState<Set<number>>(new Set());
+  const [returningKey, setReturningKey] = useState<string | null>(null);
+  // Managing loans means all of them in the current realm. Everyone else
+  // sees what they have borrowed or asked for themselves, in both realms.
+  const canManage = can("checkout.manage");
   const itemID = Number(searchParams.get("item_id") || "") || undefined;
   const filter = searchParams.get("filter") || "all";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
@@ -34,18 +38,18 @@ export default function CheckoutsPage() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     try {
-      setRequests(await fetchCheckoutsPageData());
+      setRequests(await fetchCheckoutsPageData(!canManage));
     } catch {}
     setLoading(false);
     loadingRef.current = false;
-  }, []);
+  }, [canManage]);
 
   useEffect(() => {
     let cancelled = false;
 
     const loadInitial = async () => {
       try {
-        const reqs = await fetchCheckoutsPageData();
+        const reqs = await fetchCheckoutsPageData(!canManage);
         if (!cancelled) {
           setRequests(reqs);
           setLoading(false);
@@ -57,14 +61,19 @@ export default function CheckoutsPage() {
 
     void loadInitial();
     return () => { cancelled = true; };
-  }, [realm]);
+  }, [realm, canManage]);
 
+  // A link may name the area. It is followed once, when it is opened: after
+  // that the switch in the menu decides, also while the address still names it.
+  const urlRealm = searchParams.get("realm");
+  const followedRealm = useRef<string | null>(null);
   useEffect(() => {
-    const urlRealm = searchParams.get("realm");
+    if (urlRealm === followedRealm.current) return;
+    followedRealm.current = urlRealm;
     if (urlRealm === "archive" || urlRealm === "collection") {
       setRealm(urlRealm);
     }
-  }, [searchParams, setRealm]);
+  }, [urlRealm, setRealm]);
 
   useEffect(() => {
     if (!notification) return;
@@ -126,15 +135,58 @@ export default function CheckoutsPage() {
     }
   };
 
+  const sameLoan = (entry: CheckoutListEntry, request: CheckoutListEntry) =>
+    entry.entryType === "checkout" && entry.realm === request.realm && entry.id === request.id;
+
+  // A manager closes the loan. A borrower only reports that the item is
+  // back; the loan stays open until a manager confirms it.
+  const returnLoan = async (request: CheckoutListEntry) => {
+    if (request.entryType !== "checkout") return;
+    const name = request.item_name || t("checkouts.unknownItem");
+    setReturningKey(`${request.entryType}-${request.realm}-${request.id}`);
+    try {
+      if (canManage) {
+        await api.checkinItemIn(request.realm, request.item_id, { checkout_id: request.id });
+        setRequests((current) => current.filter((entry) => !sameLoan(entry, request)));
+        setNotification({ title: t("checkouts.returned"), message: t("checkouts.returnedMessage", { item: name }), tone: "success" });
+      } else {
+        await api.requestCheckoutReturn(request.realm, request.id);
+        setRequests((current) => current.map((entry) => (sameLoan(entry, request) ? { ...entry, return_requested_at: new Date().toISOString() } : entry)));
+        setNotification({ title: t("checkouts.returnReported"), message: t("checkouts.returnReportedMessage", { item: name }), tone: "success" });
+      }
+      await load();
+    } catch (error) {
+      setNotification({ title: t("common.error"), message: (error as Error).message || t("checkouts.returnFailed"), tone: "error" });
+    } finally {
+      setReturningKey(null);
+    }
+  };
+
+  const dismissReturn = async (request: CheckoutListEntry) => {
+    try {
+      await api.dismissCheckoutReturnRequest(request.realm, request.id);
+      setRequests((current) => current.map((entry) => (sameLoan(entry, request) ? { ...entry, return_requested_at: undefined } : entry)));
+      await load();
+    } catch (error) {
+      setNotification({ title: t("common.error"), message: (error as Error).message || t("checkouts.returnFailed"), tone: "error" });
+    }
+  };
+
   const openItem = (request: CheckoutListEntry) => {
     if (request.realm === "archive" || request.realm === "collection") {
       setRealm(request.realm);
     }
   };
 
-  const scopedRequests = filterCheckoutRequests(requests, filter, realm, itemID);
-  const paginated = paginateCheckoutRequests(scopedRequests, page, itemsPerPage);
-  const realmRequests = requests.filter((request) => request.realm === realm && (!itemID || request.item_id === itemID));
+  const listRealm = canManage ? realm : null;
+  const scopedRequests = filterCheckoutRequests(requests, filter, listRealm, itemID);
+  // Waiting requests stand above the table as cards, not in it.
+  const pendingRequests = scopedRequests.filter((entry) => entry.entryType === "request" && entry.status === "pending");
+  // So do returns a borrower has reported, for the manager who has to confirm them.
+  const returnReports = canManage ? scopedRequests.filter((entry) => entry.entryType === "checkout" && entry.status === "active" && entry.return_requested_at) : [];
+  const paginated = paginateCheckoutRequests(scopedRequests.filter((entry) => !pendingRequests.includes(entry) && !returnReports.includes(entry)), page, itemsPerPage);
+  const cardsShown = pendingRequests.length + returnReports.length > 0;
+  const realmRequests = requests.filter((request) => (!listRealm || request.realm === listRealm) && (!itemID || request.item_id === itemID));
   const filterCards = [
     { value: "all", label: t("checkouts.all"), count: realmRequests.filter((entry) => entry.status === "active" || entry.status === "pending").length },
     { value: "active", label: t("checkouts.active"), count: realmRequests.filter((entry) => entry.status === "active").length },
@@ -144,7 +196,7 @@ export default function CheckoutsPage() {
     { value: "completed", label: t("checkouts.completed"), count: realmRequests.filter((entry) => entry.status === "completed").length },
   ];
 
-  if (!can("checkout.manage")) return <p className="text-center text-gray-500 py-10">Keine Berechtigung</p>;
+  const title = canManage ? t("checkouts.title") : t("checkouts.myTitle");
 
   return (
     <div className="space-y-6">
@@ -160,14 +212,19 @@ export default function CheckoutsPage() {
               <li className="flex items-center px-1 opacity-25">
                 <ChevronRight className="inline-block h-5 w-5" />
               </li>
-              <li className="text-gray-500 dark:text-gray-400">{t(`realm.${realm}`)}</li>
-              <li className="flex items-center px-1 opacity-25">
-                <ChevronRight className="inline-block h-5 w-5" />
-              </li>
-              <li className="text-gray-900 dark:text-white">{t("checkouts.title")}</li>
+              {canManage ? (
+                <>
+                  <li className="text-gray-500 dark:text-gray-400">{t(`realm.${realm}`)}</li>
+                  <li className="flex items-center px-1 opacity-25">
+                    <ChevronRight className="inline-block h-5 w-5" />
+                  </li>
+                </>
+              ) : null}
+              <li className="text-gray-900 dark:text-white">{title}</li>
             </ol>
           </nav>
-          <h2 className="text-2xl font-bold">{t("checkouts.title")}</h2>
+          <h2 className="text-2xl font-bold">{title}</h2>
+          {!canManage ? <p className="text-sm text-gray-500 dark:text-gray-400">{t("checkouts.myIntro")}</p> : null}
         </div>
         <div className="flex items-center justify-center gap-2 rounded-sm px-2 py-3 sm:justify-end sm:bg-transparent sm:px-0">
           <button
@@ -193,20 +250,48 @@ export default function CheckoutsPage() {
         ))}
       </div>
 
-      <div className="rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10">
+      {!loading ? (
+        <ReturnReportCards
+          requests={returnReports}
+          fmtDateTime={fmtDateTime}
+          onOpenItem={openItem}
+          onConfirm={(request) => { void returnLoan(request); }}
+          onDismiss={(request) => { void dismissReturn(request); }}
+          busyKey={returningKey}
+          t={t}
+        />
+      ) : null}
+
+      {!loading ? (
+        <PendingRequestCards
+          requests={pendingRequests}
+          canManage={canManage}
+          fmtDateTime={fmtDateTime}
+          onOpenItem={openItem}
+          onApprove={approve}
+          onReject={reject}
+          t={t}
+        />
+      ) : null}
+
+      {/* With only waiting requests to show, the empty table below would say "nothing here". */}
+      {!loading && cardsShown && paginated.total === 0 ? null : (
+      <div className="overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10">
         {loading ? (
           <div className="flex justify-center py-20">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
           </div>
         ) : paginated.total === 0 ? (
           <div className="px-4 py-6 text-sm text-gray-500 dark:text-gray-400 sm:px-6">
-            {t("checkouts.none")}
+            {canManage ? t("checkouts.none") : filter === "all" ? t("checkouts.myNone") : t("checkouts.myNoneFiltered")}
           </div>
         ) : (
           <div className="overflow-hidden">
             <CheckoutRequestsList
               requests={paginated.items}
-              canManage={can("checkout.manage")}
+              canManage={canManage}
+              onReturn={(request) => { void returnLoan(request); }}
+              returningKey={returningKey}
               fmtDate={fmtDate}
               fmtDateTime={fmtDateTime}
               onOpenItem={openItem}
@@ -219,6 +304,7 @@ export default function CheckoutsPage() {
           </div>
         )}
       </div>
+      )}
 
       {!loading && paginated.total > 0 ? (
         <CheckoutsPagination
@@ -250,10 +336,11 @@ function CompactStatCard({
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={`rounded-xl px-4 py-4 text-left outline outline-1 -outline-offset-1 transition ${
         active
-          ? "bg-blue-50 outline-blue-300 dark:bg-blue-500/10 dark:outline-blue-500/30"
+          ? "bg-indigo-50 outline-2 -outline-offset-2 outline-indigo-600 dark:bg-indigo-500/10 dark:outline-indigo-500"
           : "bg-white outline-gray-200 hover:bg-gray-50 dark:bg-gray-800/50 dark:outline-white/10 dark:hover:bg-white/10"
       }`}
     >

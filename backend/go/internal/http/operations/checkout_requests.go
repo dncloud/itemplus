@@ -83,6 +83,7 @@ func createCheckoutRequest(c *gin.Context) {
 
 	newID, _ := result.LastInsertId()
 	ws.M.SendToAdmins("admin.checkout_requested", map[string]interface{}{"request_id": newID})
+	notify(loanManagers(user.ID), notifyLoanRequested, loanFacts(body.Realm, body.ItemID, user.ID), loansLink(body.Realm)+"&filter=pending")
 
 	row, err := loadCheckoutRequestRow("SELECT * FROM checkout_requests WHERE id = ?", newID)
 	if err != nil {
@@ -100,7 +101,8 @@ func listCheckoutRequests(c *gin.Context) {
 	var query string
 	var args []interface{}
 
-	if user.IsAdmin {
+	// Whoever manages checkouts sees every request, everyone else their own.
+	if user.HasPermission("checkout.manage") {
 		query = `SELECT cr.* FROM checkout_requests cr`
 		if statusFilter != "" {
 			query += ` WHERE cr.status = ?`
@@ -247,6 +249,9 @@ func approveCheckoutRequest(c *gin.Context) {
 
 	middleware.Audit(user.ID, "checkout.approve", "request="+id)
 	ws.M.SendToUser(middleware.AsInt(row["user_id"]), "checkout.approved", map[string]interface{}{"request_id": middleware.AsInt(row["id"])})
+	if requester := middleware.AsInt(row["user_id"]); requester != user.ID {
+		notify([]int{requester}, notifyLoanApproved, loanFacts(realm, row["item_id"], 0), loansLink(realm))
+	}
 	ws.M.Broadcast("stats."+realm+"_updated", nil)
 
 	updatedRow, err := loadCheckoutRequestRow("SELECT * FROM checkout_requests WHERE id = ?", id)
@@ -285,5 +290,8 @@ func rejectCheckoutRequest(c *gin.Context) {
 		return
 	}
 	ws.M.SendToUser(middleware.AsInt(row["user_id"]), "checkout.rejected", map[string]interface{}{"request_id": middleware.AsInt(row["id"])})
+	if requester, requestRealm := middleware.AsInt(row["user_id"]), fmt.Sprint(row["realm"]); requester != user.ID {
+		notify([]int{requester}, notifyLoanRejected, loanFacts(requestRealm, row["item_id"], 0), loansLink(requestRealm)+"&filter=rejected")
+	}
 	c.JSON(http.StatusOK, row)
 }

@@ -1,11 +1,14 @@
 "use client";
 
+import { FileKey, Folder, HardDrive, KeyRound, Network, Plus, Server } from "lucide-react";
 import type { ExternalSource } from "@/lib/api";
 import type { ExternalSourceDraft } from "@/components/settings/drafts";
 import { ChoiceTile, ToggleRow } from "@/components/settings/ui";
 
 const storagePrimaryButtonClass =
-  "inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500";
+  "inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs transition hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-indigo-500 dark:shadow-none dark:hover:bg-indigo-400";
+
+const sourceTypeIcon: Record<string, typeof Folder> = { filesystem: Folder, smb: Network, sftp: Server };
 
 export function SettingsStorageSection({
   t,
@@ -84,41 +87,34 @@ export function SettingsStorageSection({
               <p className="text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSources")}</p>
               <p className="mt-1 text-sm/6 text-gray-500 dark:text-gray-400">{t("settings.externalSourcesHint")}</p>
             </div>
-            <button onClick={createNewExternalSource} className={secondaryButtonClass}>
+            <button type="button" onClick={createNewExternalSource} className={`inline-flex items-center gap-x-1.5 ${secondaryButtonClass}`}>
+              <Plus aria-hidden="true" className="-ml-0.5 size-4" />
               {t("settings.newExternalSource")}
             </button>
           </div>
 
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {externalSources.length === 0 ? (
               <div className="rounded-lg border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500 dark:border-gray-700">
                 {t("settings.noExternalSources")}
               </div>
             ) : (
               externalSources.map((source) => (
-                <button
+                <ChoiceTile
                   key={source.id}
+                  active={selectedExternalSourceId === source.id}
                   onClick={() => setSelectedExternalSourceId(source.id)}
-                  className={`w-full rounded-lg border p-4 text-left transition ${selectedExternalSourceId === source.id ? "border-emerald-400 bg-emerald-50 ring-1 ring-emerald-200 dark:border-emerald-500 dark:bg-emerald-500/10 dark:ring-emerald-500/20" : "border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600"}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{source.name}</div>
-                      <div className="truncate text-xs text-gray-500">
-                        {source.source_type === "filesystem"
-                          ? source.base_path
-                          : source.source_type === "smb"
-                            ? `${source.username}@${source.host}:${source.port}/${source.share_name || ""}`
-                            : `${source.username}@${source.host}:${source.port}`}
-                      </div>
-                    </div>
-                    {source.is_active ? (
-                      <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                        {t("settings.activeExternalSource")}
-                      </span>
-                    ) : null}
-                  </div>
-                </button>
+                  icon={sourceTypeIcon[source.source_type] || HardDrive}
+                  title={source.name}
+                  description={
+                    source.source_type === "filesystem"
+                      ? source.base_path
+                      : source.source_type === "smb"
+                        ? `${source.username}@${source.host}:${source.port}/${source.share_name || ""}`
+                        : `${source.username}@${source.host}:${source.port}`
+                  }
+                  badge={source.is_active ? t("settings.activeExternalSource") : undefined}
+                />
               ))
             )}
           </div>
@@ -130,10 +126,11 @@ export function SettingsStorageSection({
               <>
                 <div className="space-y-3 border-b border-gray-200 pb-8 dark:border-white/10">
                   <label className="block text-sm/6 font-medium text-gray-900 dark:text-white">{t("settings.externalSourceType")}</label>
-                  <div className="grid grid-cols-1 gap-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
                     <ChoiceTile
                       active={isFilesystem}
                       onClick={() => applySourceType("filesystem")}
+                      icon={Folder}
                       title={t("settings.externalSourceTypeFilesystem")}
                       description={t("settings.externalSourceTypeFilesystemHint")}
                       accent="emerald"
@@ -141,6 +138,7 @@ export function SettingsStorageSection({
                     <ChoiceTile
                       active={isSMB}
                       onClick={() => applySourceType("smb")}
+                      icon={Network}
                       title={t("settings.externalSourceTypeSmb")}
                       description={t("settings.externalSourceTypeSmbHint")}
                       accent="emerald"
@@ -148,6 +146,7 @@ export function SettingsStorageSection({
                     <ChoiceTile
                       active={isSFTP}
                       onClick={() => applySourceType("sftp")}
+                      icon={Server}
                       title={t("settings.externalSourceTypeSftp")}
                       description={t("settings.externalSourceTypeSftpHint")}
                       accent="emerald"
@@ -199,12 +198,14 @@ export function SettingsStorageSection({
                     <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
                       <ChoiceTile
                         active={externalSourceDraft.auth_type === "password"}
+                        icon={KeyRound}
                         onClick={() => setExternalSourceDraft({ ...externalSourceDraft, auth_type: "password", private_key: "" })}
                         title={t("settings.externalSourceAuthPassword")}
                         accent="emerald"
                       />
                       <ChoiceTile
                         active={externalSourceDraft.auth_type === "ssh_key"}
+                        icon={FileKey}
                         onClick={() => setExternalSourceDraft({ ...externalSourceDraft, auth_type: "ssh_key", password: "" })}
                         title={t("settings.externalSourceAuthKey")}
                         accent="emerald"

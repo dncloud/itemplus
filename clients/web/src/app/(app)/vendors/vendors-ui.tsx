@@ -2,7 +2,8 @@
 
 import React from "react";
 import { isSafeUrl, type Vendor } from "@/lib/api";
-import { Search, Pencil, Plus, Trash2 } from "lucide-react";
+import { Search, Pencil } from "lucide-react";
+import { RowMenu, iconButtonClass } from "@/components/ui/list-controls";
 import type { EntityType } from "./vendors-types";
 import { TABS } from "./vendors-types";
 
@@ -47,11 +48,13 @@ export function VendorTabs({
       {TABS.map(({ key, labelKey, icon: Icon }) => (
         <button
           key={key}
+          type="button"
+          aria-current={tab === key ? "page" : undefined}
           onClick={() => onSelect(key)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition ${
+          className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm transition ${
             tab === key
-              ? "bg-blue-500 text-white"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+              ? "bg-indigo-100 font-medium text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300"
+              : "font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           }`}
         >
           <Icon className="h-4 w-4" /> {t(labelKey)}
@@ -64,14 +67,10 @@ export function VendorTabs({
 export function VendorSearchBar({
   search,
   onSearchChange,
-  onCreate,
-  canCreate = true,
   t,
 }: {
   search: string;
   onSearchChange: (value: string) => void;
-  onCreate: () => void;
-  canCreate?: boolean;
   t: (k: string, vars?: Record<string, string | number>) => string;
 }) {
   return (
@@ -96,15 +95,6 @@ export function VendorSearchBar({
           <Search className="h-4 w-4 text-gray-400 dark:text-gray-300" />
         </button>
       </div>
-      {canCreate ? (
-        <button
-          onClick={onCreate}
-          className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-          title={t("common.new")}
-        >
-          <Plus className="h-4 w-4" />
-        </button>
-      ) : null}
     </div>
   );
 }
@@ -141,7 +131,6 @@ export function VendorField({
 export function VendorList({
   items,
   currentTabIcon: CurrentTabIcon,
-  fmtDateTime,
   onEdit,
   onDelete,
   pendingDeleteId = null,
@@ -152,7 +141,6 @@ export function VendorList({
 }: {
   items: Vendor[];
   currentTabIcon: React.ElementType;
-  fmtDateTime: (value: string) => string;
   onEdit: (item: Vendor) => void;
   onDelete: (id: number) => void;
   pendingDeleteId?: number | null;
@@ -165,7 +153,7 @@ export function VendorList({
     <div className="overflow-hidden divide-y divide-gray-100 bg-white shadow-xs outline outline-1 -outline-offset-1 outline-gray-900/5 sm:rounded-xl dark:divide-white/5 dark:bg-gray-800/50 dark:outline-white/10">
       {items.map((item) => (
         <div key={item.id} className="overflow-hidden">
-          <div className="flex items-center gap-4 px-4 py-5 hover:bg-gray-50 sm:px-6 dark:hover:bg-white/2.5">
+          <div className="flex items-center gap-4 px-4 py-4 hover:bg-gray-50 sm:px-6 dark:hover:bg-white/2.5">
             <VendorLogoThumb
               logo={item.logo}
               background={item.logo_background}
@@ -180,33 +168,15 @@ export function VendorList({
                 {item.phone ? <a href={`tel:${item.phone}`} className="hover:text-blue-500 transition">{item.phone}</a> : null}
                 {item.contact_person ? <span>{item.contact_person}</span> : null}
               </div>
-              {item.created_at ? (
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {t("common.created")} {fmtDateTime(item.created_at)}
-                  {item.updated_at && item.updated_at !== item.created_at ? <> · {t("common.updated")} {fmtDateTime(item.updated_at)}</> : null}
-                </p>
-              ) : null}
             </div>
             {canEdit || canDelete ? (
               <div className="flex gap-1 shrink-0">
                 {canEdit ? (
-                  <button onClick={() => onEdit(item)} className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10">
-                    <Pencil className="h-4 w-4 text-gray-400" />
+                  <button type="button" onClick={() => onEdit(item)} title={t("common.edit")} aria-label={t("common.edit")} className={iconButtonClass}>
+                    <Pencil className="h-4 w-4" />
                   </button>
                 ) : null}
-                {canDelete ? (
-                  <button
-                    onClick={() => onDelete(item.id)}
-                    disabled={pendingDeleteId === item.id}
-                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-1.5 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:hover:bg-red-900/20"
-                  >
-                    {pendingDeleteId === item.id ? (
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
-                    ) : (
-                      <Trash2 className="h-4 w-4 text-red-400" />
-                    )}
-                  </button>
-                ) : null}
+                {canDelete ? <RowMenu t={t} pending={pendingDeleteId === item.id} onDelete={() => onDelete(item.id)} /> : null}
               </div>
             ) : null}
           </div>

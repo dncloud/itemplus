@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import clsx from "clsx";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { DragLines, dragHandleClass } from "@/components/ui/list-controls";
 import {
-  GripVertical,
   FileText,
   Music,
   Pencil,
@@ -79,8 +80,8 @@ export function SortableAttachment({
     <div ref={setNodeRef} style={style} className="overflow-hidden rounded-xl border border-gray-200 bg-white transition-colors hover:bg-gray-50 dark:border-white/10 dark:bg-gray-800/50 dark:hover:bg-white/2.5">
       <div className="flex items-center gap-2 px-4 py-4">
         {!readOnly ? (
-          <button {...attributes} {...listeners} className="cursor-grab p-0.5 active:cursor-grabbing">
-            <GripVertical className="h-3.5 w-3.5 text-gray-400" />
+          <button type="button" {...attributes} {...listeners} title={t("categories.move")} aria-label={t("categories.move")} className={dragHandleClass}>
+            <DragLines className="h-4 w-4" />
           </button>
         ) : null}
         <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg outline -outline-offset-1 outline-white/10 ${bg}`}>
@@ -187,7 +188,7 @@ export function SortableAttachment({
                     href={isSafeUrl(fileUrl) ? fileUrl : "#"}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-600"
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400"
                   >
                     {t("common.open")}
                   </a>
@@ -238,6 +239,34 @@ export function SortableAttachment({
             </div>
           ) : null}
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+// One image of the gallery that can be dragged to another place by its grip.
+export function SortableImageTile({ id, canMove, moveLabel, className, children }: {
+  id: number;
+  canMove: boolean;
+  moveLabel: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: !canMove });
+  return (
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 10 : undefined }} className={clsx(className, isDragging && "opacity-80 shadow-lg")}>
+      {children}
+      {canMove ? (
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          title={moveLabel}
+          aria-label={moveLabel}
+          className="absolute left-1.5 bottom-1.5 z-10 cursor-grab touch-none rounded-md bg-black/50 p-1 text-white hover:bg-black/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 active:cursor-grabbing"
+        >
+          <DragLines className="h-3.5 w-3.5" />
+        </button>
       ) : null}
     </div>
   );

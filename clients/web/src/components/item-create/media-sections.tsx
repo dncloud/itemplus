@@ -35,8 +35,8 @@ export function VendorsSection({
   const showPublisher = isMasterDataRoleVisible(category, "publisher");
 
   return (
-    <ModalSection title={t("items.modalVendorsTitle")} description={t("items.modalVendorsDescription")}>
-      <div className="grid w-full grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <ModalSection id="item-vendors" title={t("items.modalVendorsTitle")} description={t("items.modalVendorsDescription")}>
+      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {showManufacturer ? <TWPSelect
           label={t("items.manufacturer")}
           value={editItem.manufacturer_id}

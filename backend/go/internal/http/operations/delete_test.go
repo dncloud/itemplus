@@ -68,17 +68,46 @@ var (
 
 // The SQLite schema cascades on delete and the MySQL schema has no foreign
 // keys, so on its own each database would do something different. Deleting
-// an item must give the same result on both: its own data goes, loans and
+// an item must give the same result on both: an item that is lent out stays;
+// once it is back, its own data goes, and the record of the loan and the
 // uploaded files stay.
-func TestDeleteItemKeepsLoansAndFiles(t *testing.T) {
+func TestDeleteItemWaitsForReturnThenKeepsLoanHistoryAndFiles(t *testing.T) {
 	useSQLite(t)
 	uploadedFile := seedItemWithEverything(t)
 	now := database.TimestampNow()
 	mustExec(t, "INSERT INTO archive_attachments (item_id, filename, file_path, storage_backend, attachment_type, url, created_at, updated_at) VALUES (1, 'Anleitung', '', 'external_url', 'link', 'https://example.org/a.pdf', ?, ?)", now, now)
 
+	// Lent out: nothing is deleted, and the refusal says why.
 	found, err := itemscore.DeleteItem("archive", 1)
+	var checkedOut *itemscore.CheckedOutError
+	if found || !errors.As(err, &checkedOut) || checkedOut.Active != 1 {
+		t.Fatalf("deleting a lent item: found=%v err=%v, want a CheckedOutError with 1 active loan", found, err)
+	}
+	if n := count(t, "SELECT COUNT(*) FROM archive_items WHERE id = 1"); n != 1 {
+		t.Fatal("the lent item was deleted")
+	}
+	for _, table := range itemOwnedTables {
+		if n := count(t, "SELECT COUNT(*) FROM "+table+" WHERE item_id = 1"); n == 0 {
+			t.Errorf("%s: the refused deletion removed the item's rows", table)
+		}
+	}
+
+	// The same holds for a bundle whose parts are lent with it.
+	mustExec(t, "INSERT INTO archive_items (name, quantity, created_at, updated_at) VALUES ('Koffer', 1, ?, ?)", now, now) // item 3
+	mustExec(t, "UPDATE archive_checkouts SET bundle_parent_item_id = 3 WHERE item_id = 2")
+	if found, err := itemscore.DeleteItem("archive", 3); found || !errors.As(err, &checkedOut) {
+		t.Fatalf("deleting a bundle whose part is lent: found=%v err=%v, want a CheckedOutError", found, err)
+	}
+
+	user, _ := loadTestUser(t)
+	rec := serve(checkinItem, user, gin.Params{{Key: "realm", Value: "archive"}, {Key: "item_id", Value: "1"}}, map[string]interface{}{})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("returning the item: status %d: %s", rec.Code, rec.Body.String())
+	}
+
+	found, err = itemscore.DeleteItem("archive", 1)
 	if err != nil || !found {
-		t.Fatalf("DeleteItem: found=%v err=%v", found, err)
+		t.Fatalf("DeleteItem after the return: found=%v err=%v", found, err)
 	}
 
 	if n := count(t, "SELECT COUNT(*) FROM archive_items WHERE id = 1"); n != 0 {
@@ -101,14 +130,9 @@ func TestDeleteItemKeepsLoansAndFiles(t *testing.T) {
 		t.Error("the former bundle component was deleted as well")
 	}
 
-	// The loan goes on, and can still be listed and returned.
-	if n := count(t, "SELECT COUNT(*) FROM archive_checkouts WHERE item_id = 1 AND status = 'active'"); n != 1 {
-		t.Fatalf("the active loan of the deleted item is gone (%d rows)", n)
-	}
-	user, _ := loadTestUser(t)
-	rec := serve(checkinItem, user, gin.Params{{Key: "realm", Value: "archive"}, {Key: "item_id", Value: "1"}}, map[string]interface{}{})
-	if rec.Code != http.StatusOK || count(t, "SELECT COUNT(*) FROM archive_checkouts WHERE item_id = 1 AND status = 'returned'") != 1 {
-		t.Fatalf("returning the loan of a deleted item: status %d: %s", rec.Code, rec.Body.String())
+	// The record of the loan outlives the item.
+	if n := count(t, "SELECT COUNT(*) FROM archive_checkouts WHERE item_id = 1 AND status = 'returned'"); n != 1 {
+		t.Fatalf("the record of the past loan is gone (%d rows)", n)
 	}
 
 	// The file and its record stay for the administrator; the link, which has
@@ -186,6 +210,7 @@ func TestUnconnectedFilesListAndDelete(t *testing.T) {
 		t.Fatalf("before deleting item 1: %+v; want the stray file and the file of the unknown collection item", before)
 	}
 
+	mustExec(t, "UPDATE archive_checkouts SET status = 'returned' WHERE item_id = 1")
 	if _, err := itemscore.DeleteItem("archive", 1); err != nil {
 		t.Fatal(err)
 	}
@@ -281,6 +306,7 @@ func TestDeletePropertyRemovesItsValues(t *testing.T) {
 func TestDeleteConfirmationNeedsOpenRequestFromIPhone(t *testing.T) {
 	user := useSQLite(t)
 	seedItemWithEverything(t)
+	mustExec(t, "UPDATE archive_checkouts SET status = 'returned' WHERE item_id = 1")
 	confirm := map[string]interface{}{"entity_type": "item", "entity_id": float64(1), "realm": "archive"}
 	itemExists := func() bool { return count(t, "SELECT COUNT(*) FROM archive_items WHERE id = 1") == 1 }
 

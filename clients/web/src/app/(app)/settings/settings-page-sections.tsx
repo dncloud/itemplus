@@ -6,6 +6,7 @@ import { SettingsBrandingSection } from "@/components/settings/branding-section"
 import { SettingsPrinterSection } from "@/components/settings/printer-section";
 import { SettingsStorageSection } from "@/components/settings/storage-section";
 import { SettingsSystemSection } from "@/components/settings/system-section";
+import { SettingsOrphanedItemsSection } from "@/components/settings/orphaned-items-section";
 import { SettingsUnconnectedFilesSection } from "@/components/settings/unconnected-files-section";
 import { SettingsAccountSection } from "./settings-account-section";
 import type { SettingsPageSectionsProps } from "./settings-page-types";
@@ -337,6 +338,15 @@ export function SettingsPageSections({
       {isAdmin && activeSection === "storage" && (
         <SettingsUnconnectedFilesSection
           t={t}
+          secondaryButtonClass={settingsSecondaryButtonClass}
+          dangerButtonClass={settingsDangerButtonClass}
+        />
+      )}
+      {isAdmin && activeSection === "storage" && (
+        <SettingsOrphanedItemsSection
+          t={t}
+          inputClass={settingsInputClass}
+          primaryButtonClass={settingsPrimaryButtonClass}
           secondaryButtonClass={settingsSecondaryButtonClass}
           dangerButtonClass={settingsDangerButtonClass}
         />

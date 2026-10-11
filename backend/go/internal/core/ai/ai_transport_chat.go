@@ -89,6 +89,10 @@ func generateViaChatCompletions(client *http.Client, baseURL, provider, model, a
 }
 
 func generateViaChatCompletionsStream(client *http.Client, baseURL, provider, model, apiKey, instructions, input string, responseSchema map[string]any, onDelta func(string) error, onUsage func(AIUsage) error, onRaw func(string) error) error {
+	if isAnthropicProvider(provider) {
+		return generateViaAnthropicStream(client, baseURL, model, apiKey, instructions, input, onDelta, onUsage, onRaw)
+	}
+
 	payload := map[string]any{
 		"model": model,
 		"messages": []map[string]string{

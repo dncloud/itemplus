@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { ChevronRight, LoaderCircle, RefreshCw, ScanLine } from "lucide-react";
+import { ArrowLeft, ChevronRight, CircleCheck, ClipboardCheck, FileText, LoaderCircle, MapPin, RefreshCw, ScanLine, Search, TriangleAlert } from "lucide-react";
 import { FloatingNotification, type FloatingNotificationState } from "@/components/ui/floating-notification";
 import SelectPicker from "@/components/ui/select-picker";
+import { cancelButtonClass, saveButtonClass } from "@/components/ui/list-controls";
 import {
   api,
   type InventoryCheckDetail,
@@ -29,6 +30,7 @@ export default function InventoryChecksPage() {
   const [scanPending, setScanPending] = useState(false);
   const [selectedReportID, setSelectedReportID] = useState<number | null>(null);
   const [notification, setNotification] = useState<FloatingNotificationState>(null);
+  const [search, setSearch] = useState("");
   const canReadInventory = can("inventory.read");
   const canWriteInventory = can("inventory.write");
 
@@ -250,8 +252,26 @@ export default function InventoryChecksPage() {
   );
   const canScan = iosBridgeStatus === "connected";
 
+  // While walking through: what is still open comes first, and a name typed
+  // into the search narrows the list for confirming by hand.
+  const needle = search.trim().toLowerCase();
+  const expectedShown = useMemo(() => {
+    const matching = needle ? expectedMainEntries.filter((entry) => entry.item_name.toLowerCase().includes(needle)) : expectedMainEntries;
+    return activeSession ? [...matching].sort((a, b) => Number(a.status !== "pending") - Number(b.status !== "pending")) : matching;
+  }, [expectedMainEntries, needle, activeSession]);
+
+  const counts = visibleDetail?.counts;
+  const checkedCount = counts ? counts.expected - counts.pending : 0;
+  const progress = counts && counts.expected > 0 ? Math.round((checkedCount / counts.expected) * 100) : 0;
+  const reportIsClean = Boolean(counts && counts.missing === 0 && counts.location_mismatch === 0 && counts.unexpected === 0);
+
+  const closeReport = () => {
+    setReportDetail(null);
+    setSelectedReportID(null);
+  };
+
   if (!canReadInventory) {
-    return <p className="py-10 text-center text-gray-500 dark:text-gray-400">Keine Berechtigung</p>;
+    return <p className="py-10 text-center text-gray-500 dark:text-gray-400">{t("inventoryChecks.noPermission")}</p>;
   }
 
   return (
@@ -282,70 +302,82 @@ export default function InventoryChecksPage() {
             type="button"
             onClick={() => void loadOverview(selectedReportID)}
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            title={t("common.open")}
-            aria-label={t("common.open")}
+            title={t("common.refresh")}
+            aria-label={t("common.refresh")}
           >
             <RefreshCw className="h-4 w-4" />
           </button>
         </div>
       </div>
 
-      {!activeSession ? (
-        <div className="rounded-xl bg-white p-4 outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10 sm:p-6">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
-            <div>
-              <label className="mb-2 inline-block text-sm/6 font-medium text-gray-900 dark:text-white">{t("inventoryChecks.locationLabel")}</label>
-              <SelectPicker
-                value={selectedLocation}
-                onChange={(value) => setSelectedLocation(typeof value === "number" ? value : value == null ? null : Number(value))}
-                options={locations.map((location) => ({ id: location.id, name: location.name }))}
-                placeholder={t("inventoryChecks.locationAll")}
-                clearLabel={t("inventoryChecks.locationAll")}
-              />
-            </div>
-            <div>
-              <label className="mb-2 inline-block text-sm/6 font-medium text-gray-900 dark:text-white">{t("inventoryChecks.customTitle")}</label>
-              <input
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder={t("inventoryChecks.customTitlePlaceholder")}
-                className="h-[38px] w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-              />
-            </div>
-            {canWriteInventory ? (
-              <button
-                type="button"
-                onClick={() => void startSession()}
-                disabled={busy}
-                className="inline-flex h-[38px] items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-              >
+      {/* Nothing running and no report open: say what a stocktaking is and start one. */}
+      {!activeSession && !reportDetail ? (
+        <div className="rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10">
+          <div className="px-4 py-5 sm:px-6">
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white">{t("inventoryChecks.introTitle")}</h3>
+            <p className="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">{t("inventoryChecks.introText")}</p>
+            <ol className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {([
+                { icon: MapPin, title: "inventoryChecks.stepScopeTitle", text: "inventoryChecks.stepScopeText" },
+                { icon: ClipboardCheck, title: "inventoryChecks.stepWalkTitle", text: canScan ? "inventoryChecks.stepWalkTextScan" : "inventoryChecks.stepWalkTextManual" },
+                { icon: FileText, title: "inventoryChecks.stepReportTitle", text: "inventoryChecks.stepReportText" },
+              ] as const).map((step, index) => (
+                <li key={step.title} className="flex gap-3 rounded-lg bg-gray-50 p-4 dark:bg-white/2.5">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white dark:bg-indigo-500">
+                    <step.icon aria-hidden="true" className="size-5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-gray-900 dark:text-white">{index + 1}. {t(step.title)}</span>
+                    <span className="mt-0.5 block text-sm text-gray-500 dark:text-gray-400">{t(step.text)}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+          {canWriteInventory ? (
+            <div className="grid grid-cols-1 gap-4 border-t border-gray-200 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end dark:border-white/10">
+              <div>
+                <label className="mb-2 inline-block text-sm/6 font-medium text-gray-900 dark:text-white">{t("inventoryChecks.scopeLabel")}</label>
+                <SelectPicker
+                  value={selectedLocation}
+                  onChange={(value) => setSelectedLocation(typeof value === "number" ? value : value == null ? null : Number(value))}
+                  options={locations.map((location) => ({ id: location.id, name: location.name }))}
+                  placeholder={t("inventoryChecks.locationAll")}
+                  clearLabel={t("inventoryChecks.locationAll")}
+                />
+              </div>
+              <div>
+                <label htmlFor="inventory-check-title" className="mb-2 inline-block text-sm/6 font-medium text-gray-900 dark:text-white">{t("inventoryChecks.customTitle")}</label>
+                <input
+                  id="inventory-check-title"
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder={t("inventoryChecks.customTitlePlaceholder")}
+                  className="h-[38px] w-full rounded-md bg-white px-3 py-1.5 text-sm text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500"
+                />
+              </div>
+              <button type="button" onClick={() => void startSession()} disabled={busy} className={clsx("h-[38px] disabled:cursor-not-allowed disabled:opacity-60", saveButtonClass)}>
                 {t("inventoryChecks.startButton")}
               </button>
-            ) : null}
-          </div>
-          {!recentSessions.length ? (
-            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">{t("inventoryChecks.noActive")}</p>
+            </div>
           ) : null}
         </div>
       ) : null}
 
-      {visibleDetail ? (
+      {visibleDetail && counts ? (
         <>
-          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-            <StatCard label={t("inventoryChecks.expected")} value={visibleDetail.counts.expected} />
-            <StatCard label={t("inventoryChecks.pending")} value={visibleDetail.counts.pending} />
-            <StatCard label={t("inventoryChecks.found")} value={visibleDetail.counts.found} />
-            <StatCard label={t("inventoryChecks.checkedOut")} value={visibleDetail.counts.checked_out} />
-            <StatCard label={t("inventoryChecks.missing")} value={visibleDetail.counts.missing} />
-            <StatCard label={t("inventoryChecks.unexpected")} value={visibleDetail.counts.unexpected} />
-            <StatCard label={t("inventoryChecks.locationMismatch")} value={visibleDetail.counts.location_mismatch} />
-            <StatCard label={t("inventoryChecks.corrected")} value={visibleDetail.counts.corrected} />
-          </div>
-
-          <div className="rounded-xl bg-white p-4 outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10 sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t("inventoryChecks.sessionTitle")}</p>
+          <div className="rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10">
+            <div className="flex flex-col gap-4 px-4 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+              <div className="min-w-0">
+                {!activeSession ? (
+                  <button type="button" onClick={closeReport} className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">
+                    <ArrowLeft aria-hidden="true" className="size-4" />
+                    {t("inventoryChecks.backToOverview")}
+                  </button>
+                ) : null}
+                <p className="text-xs font-semibold tracking-wide text-gray-500 uppercase dark:text-gray-400">
+                  {activeSession ? t("inventoryChecks.activeSession") : t("inventoryChecks.report")}
+                </p>
                 <h3 className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
                   {visibleDetail.session.title?.trim() || t("nav.inventoryChecks")}
                 </h3>
@@ -353,44 +385,89 @@ export default function InventoryChecksPage() {
                   {visibleDetail.session.location_name?.trim() || t("inventoryChecks.locationAll")}
                   {visibleDetail.session.completed_at ? ` · ${fmtDateTime(visibleDetail.session.completed_at)}` : ""}
                 </p>
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                  {t("inventoryChecks.found")}: {visibleDetail.counts.found}
-                  {" · "}
-                  {t("inventoryChecks.checkedOut")}: {visibleDetail.counts.checked_out}
-                  {" · "}
-                  {t("inventoryChecks.missing")}: {visibleDetail.counts.missing}
-                  {" · "}
-                  {t("inventoryChecks.unexpected")}: {visibleDetail.counts.unexpected}
-                </p>
               </div>
-              {activeSession ? (
-                <div className="flex flex-wrap items-center gap-2">
+              {activeSession && canWriteInventory ? (
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={requestScan}
                     disabled={busy || scanPending || !canScan}
-                    className="inline-flex h-[38px] items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 text-sm font-semibold text-gray-900 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-white dark:hover:bg-white/5"
+                    className={clsx("inline-flex items-center gap-x-1.5 disabled:cursor-not-allowed disabled:opacity-60", cancelButtonClass)}
                     title={!canScan ? t("inventoryChecks.scanUnavailable") : undefined}
                   >
-                    {scanPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
+                    {scanPending ? <LoaderCircle aria-hidden="true" className="-ml-0.5 size-4 animate-spin" /> : <ScanLine aria-hidden="true" className="-ml-0.5 size-4" />}
                     {scanPending ? t("inventoryChecks.scanWaiting") : t("inventoryChecks.scanButton")}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => void finishSession()}
-                    disabled={busy}
-                    className="inline-flex h-[38px] items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
+                  <button type="button" onClick={() => void finishSession()} disabled={busy} className={clsx("disabled:cursor-not-allowed disabled:opacity-60", saveButtonClass)}>
                     {t("inventoryChecks.finishButton")}
                   </button>
                 </div>
               ) : null}
             </div>
+
+            {activeSession ? (
+              <div className="px-4 pb-5 sm:px-6">
+                <div className="flex items-baseline justify-between gap-4 text-sm">
+                  <span className="font-medium text-gray-900 dark:text-white">{t("inventoryChecks.progress", { done: checkedCount, total: counts.expected })}</span>
+                  <span className="text-gray-500 dark:text-gray-400">{progress} %</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-white/10" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
+                  <div className="h-full rounded-full bg-indigo-600 transition-[width] dark:bg-indigo-500" style={{ width: `${progress}%` }} />
+                </div>
+                {!canScan ? <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">{t("inventoryChecks.manualHint")}</p> : null}
+              </div>
+            ) : (
+              <div className={clsx("mx-4 mb-5 flex items-start gap-3 rounded-md p-4 sm:mx-6", reportIsClean ? "bg-green-50 dark:bg-green-500/10 dark:outline dark:outline-green-500/20" : "bg-yellow-50 dark:bg-yellow-500/10 dark:outline dark:outline-yellow-500/15")}>
+                {reportIsClean
+                  ? <CircleCheck aria-hidden="true" className="size-5 shrink-0 text-green-400" />
+                  : <TriangleAlert aria-hidden="true" className="size-5 shrink-0 text-yellow-400 dark:text-yellow-300" />}
+                <p className={clsx("text-sm font-medium", reportIsClean ? "text-green-800 dark:text-green-200" : "text-yellow-800 dark:text-yellow-100")}>
+                  {reportIsClean
+                    ? t("inventoryChecks.resultClean")
+                    : [
+                        counts.missing > 0 ? t("inventoryChecks.resultMissing", { count: counts.missing }) : "",
+                        counts.location_mismatch > 0 ? t("inventoryChecks.resultMismatch", { count: counts.location_mismatch }) : "",
+                        counts.unexpected > 0 ? t("inventoryChecks.resultUnexpected", { count: counts.unexpected }) : "",
+                      ].filter(Boolean).join(" ")}
+                </p>
+              </div>
+            )}
+
+            {/* The figures in one band; the rarer ones only when there is something to say. */}
+            <dl className="grid grid-cols-2 gap-px border-t border-gray-200 bg-gray-200 sm:grid-cols-4 dark:border-white/10 dark:bg-white/10">
+              {[
+                { label: t("inventoryChecks.expected"), value: counts.expected, always: true },
+                { label: t("inventoryChecks.found"), value: counts.found, always: true },
+                { label: activeSession ? t("inventoryChecks.pending") : t("inventoryChecks.missing"), value: activeSession ? counts.pending : counts.missing, always: true },
+                { label: t("inventoryChecks.checkedOut"), value: counts.checked_out, always: true },
+                { label: t("inventoryChecks.locationMismatch"), value: counts.location_mismatch },
+                { label: t("inventoryChecks.unexpected"), value: counts.unexpected },
+                { label: t("inventoryChecks.corrected"), value: counts.corrected },
+              ].filter((entry) => entry.always || entry.value > 0).map((entry) => (
+                <div key={entry.label} className="bg-white px-4 py-4 sm:px-6 dark:bg-gray-900">
+                  <dt className="text-xs font-medium text-gray-500 dark:text-gray-400">{entry.label}</dt>
+                  <dd className="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{entry.value}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
+
+          {activeSession && expectedMainEntries.length > 8 ? (
+            <div className="grid grid-cols-1">
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t("inventoryChecks.searchPlaceholder")}
+                aria-label={t("inventoryChecks.searchPlaceholder")}
+                className="col-start-1 row-start-1 block w-full rounded-md bg-white py-1.5 pr-3 pl-10 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 sm:pl-9 sm:text-sm/6 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500"
+              />
+              <Search aria-hidden="true" className="pointer-events-none col-start-1 row-start-1 ml-3 size-5 self-center text-gray-400 sm:size-4" />
+            </div>
+          ) : null}
 
           <EntriesTable
             title={t("inventoryChecks.expectedItems")}
-            entries={expectedMainEntries}
+            entries={expectedShown}
             activeSession={Boolean(activeSession)}
             canApprove={canWriteInventory}
             onApprove={(entryID) => void approveEntry(entryID)}
@@ -451,7 +528,8 @@ export default function InventoryChecksPage() {
         </>
       ) : null}
 
-      <div className="rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10">
+      {(reportDetail && !activeSession) || (!loading && recentSessions.length === 0) ? null : (
+      <div className="overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10">
         <div className="border-b border-gray-200 px-4 py-4 dark:border-white/10 sm:px-6">
           <h3 className="text-base font-semibold text-gray-900 dark:text-white">{t("inventoryChecks.recentSessions")}</h3>
         </div>
@@ -490,9 +568,9 @@ export default function InventoryChecksPage() {
                         type="button"
                         onClick={() => void openReport(summary.session.id)}
                         disabled={busy}
-                        className="text-sm font-medium text-blue-600 hover:text-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:text-blue-400 dark:hover:text-blue-300"
+                        className="text-sm font-medium text-indigo-600 hover:text-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:text-indigo-400 dark:hover:text-indigo-300"
                       >
-                        {t("common.open")}
+                        {t("inventoryChecks.openReport")}
                       </button>
                     </td>
                   </tr>
@@ -502,17 +580,9 @@ export default function InventoryChecksPage() {
           </div>
         )}
       </div>
+      )}
 
       <FloatingNotification notification={notification} onClose={() => setNotification(null)} t={t} />
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-xl bg-white px-4 py-4 outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10">
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</div>
-      <div className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{value}</div>
     </div>
   );
 }
@@ -541,7 +611,7 @@ function EntriesTable({
   if (entries.length === 0) return null;
 
   return (
-    <div className="rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10">
+    <div className="overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-200 dark:bg-gray-800/50 dark:outline-white/10">
       <div className="border-b border-gray-200 px-4 py-4 dark:border-white/10 sm:px-6">
         <h3 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h3>
       </div>

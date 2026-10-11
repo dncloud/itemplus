@@ -666,7 +666,7 @@ export function ItemMaintenancePanel({
               <button
                 type="submit"
                 disabled={saving || !title.trim() || !dueDate}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? t("maintenance.saving") : editingId != null ? t("common.save") : t("maintenance.add")}
               </button>

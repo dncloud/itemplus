@@ -17,23 +17,43 @@ func normalizeAIProvider(provider string) string {
 	return provider
 }
 
+// knownAIProvider reports whether item+ can talk to this provider.
+func knownAIProvider(provider string) bool {
+	switch normalizeAIProvider(provider) {
+	case "openai", "anthropic", "ollama":
+		return true
+	}
+	return false
+}
+
+// aiProviderNeedsKey: the hosted providers need an API key, a local Ollama does not.
+func aiProviderNeedsKey(provider string) bool {
+	return normalizeAIProvider(provider) != "ollama"
+}
+
 func defaultAIModel(provider string) string {
-	if normalizeAIProvider(provider) == "ollama" {
+	switch normalizeAIProvider(provider) {
+	case "ollama":
 		return "gpt-oss:20b"
+	case "anthropic":
+		return aicore.DefaultAnthropicModel
 	}
 	return "gpt-5-mini"
 }
 
 func defaultAIBaseURL(provider string) string {
-	if normalizeAIProvider(provider) == "ollama" {
+	switch normalizeAIProvider(provider) {
+	case "ollama":
 		return "http://localhost:11434/v1"
+	case "anthropic":
+		return "https://api.anthropic.com"
 	}
 	return "https://api.openai.com/v1"
 }
 
 func normalizeAIProfile(profile aicore.AISettings, fallbackID, fallbackName string, preserveDisabled bool) aicore.AISettings {
 	profile.Provider = normalizeAIProvider(profile.Provider)
-	if profile.Provider != "openai" && profile.Provider != "ollama" {
+	if !knownAIProvider(profile.Provider) {
 		profile.Provider = "openai"
 	}
 	if strings.TrimSpace(profile.ProfileID) == "" {
@@ -48,22 +68,23 @@ func normalizeAIProfile(profile aicore.AISettings, fallbackID, fallbackName stri
 	if strings.TrimSpace(profile.BaseURL) == "" {
 		profile.BaseURL = defaultAIBaseURL(profile.Provider)
 	}
-	if strings.TrimSpace(profile.ChatPrompt) == "" {
+	// An empty prompt, or one that is still an unedited earlier default, follows the current default.
+	if aicore.IsStockPrompt(profile.ChatPrompt) {
 		profile.ChatPrompt = aicore.DefaultChatPromptTemplateForProvider(profile.Provider)
 	}
-	if strings.TrimSpace(profile.ParseItemPrompt) == "" {
+	if aicore.IsStockPrompt(profile.ParseItemPrompt) {
 		profile.ParseItemPrompt = aicore.DefaultParseItemPromptTemplateForProvider(profile.Provider)
 	}
-	if strings.TrimSpace(profile.CategoryPropertyPrompt) == "" {
+	if aicore.IsStockPrompt(profile.CategoryPropertyPrompt) {
 		profile.CategoryPropertyPrompt = aicore.DefaultCategoryPropertyPromptTemplateForProvider(profile.Provider)
 	}
-	if strings.TrimSpace(profile.PropertyEnhancementPrompt) == "" {
+	if aicore.IsStockPrompt(profile.PropertyEnhancementPrompt) {
 		profile.PropertyEnhancementPrompt = aicore.DefaultPropertyEnhancementPromptTemplateForProvider(profile.Provider)
 	}
-	if strings.TrimSpace(profile.VendorPrompt) == "" {
+	if aicore.IsStockPrompt(profile.VendorPrompt) {
 		profile.VendorPrompt = aicore.DefaultVendorPromptTemplateForProvider(profile.Provider)
 	}
-	if profile.Provider == "openai" {
+	if profile.Provider == "openai" || profile.Provider == "anthropic" {
 		profile.SupportsVision = true
 	}
 	if !preserveDisabled && !profile.Enabled {
@@ -150,11 +171,11 @@ func parseAIProfilePayload(c *gin.Context, persist bool) (aicore.AISettings, err
 
 	profile = normalizeAIProfile(profile, "profile-1", "Primary AI profile", persist)
 
-	if profile.Provider != "openai" && profile.Provider != "ollama" {
+	if !knownAIProvider(profile.Provider) {
 		return aicore.AISettings{}, errBadRequest("Unsupported AI provider")
 	}
-	if profile.Provider == "openai" && strings.TrimSpace(profile.APIKey) == "" {
-		return aicore.AISettings{}, errBadRequest("API key is required for OpenAI")
+	if aiProviderNeedsKey(profile.Provider) && strings.TrimSpace(profile.APIKey) == "" {
+		return aicore.AISettings{}, errBadRequest("API key is required for OpenAI and Claude")
 	}
 
 	return profile, nil
@@ -210,11 +231,11 @@ func parseAISettingsPayload(c *gin.Context) (string, []aicore.AISettings, error)
 		}
 
 		profile = normalizeAIProfile(profile, fallbackID, fallbackName, true)
-		if profile.Provider != "openai" && profile.Provider != "ollama" {
+		if !knownAIProvider(profile.Provider) {
 			return "", nil, errBadRequest("Unsupported AI provider")
 		}
-		if profile.Provider == "openai" && strings.TrimSpace(profile.APIKey) == "" {
-			return "", nil, errBadRequest("API key is required for OpenAI profiles")
+		if aiProviderNeedsKey(profile.Provider) && strings.TrimSpace(profile.APIKey) == "" {
+			return "", nil, errBadRequest("API key is required for OpenAI and Claude profiles")
 		}
 		if _, exists := seenIDs[profile.ProfileID]; exists {
 			return "", nil, errBadRequest("Profile IDs must be unique")

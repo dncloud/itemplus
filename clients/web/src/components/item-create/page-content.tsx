@@ -84,6 +84,7 @@ export function ItemCreatePageContent({
   onGameCatalogPropertiesCreated,
   applyGameCatalogGame,
   save,
+  saveError,
 }: {
   t: (key: string, vars?: Record<string, string | number>) => string;
   realm: "archive" | "collection";
@@ -141,6 +142,7 @@ export function ItemCreatePageContent({
   onGameCatalogPropertiesCreated: (properties: Property[]) => void;
   applyGameCatalogGame: (game: import("@/lib/api").GameCatalogGame, values: Record<string, unknown>, assets: import("@/lib/api").GameCatalogAsset[], itemPatch: Partial<import("@/lib/api").Item>) => void;
   save: () => Promise<void>;
+  saveError: string;
 }) {
   const [catalogProfiles, setCatalogProfiles] = useState<GameCatalogProfile[]>([]);
   const { locale } = useApp();
@@ -194,7 +196,6 @@ export function ItemCreatePageContent({
         t={t}
         realm={realm}
         pageTitle={pageTitle}
-        cancelHref={cancelHref}
         barcodeCapturePending={barcodeCapturePending}
         requestBarcodeCapture={requestBarcodeCapture}
         aiAssistBusy={aiAssistBusy}
@@ -234,25 +235,6 @@ export function ItemCreatePageContent({
         lastUsage={aiLastUsage}
         endAIDrawerSession={clearAiSession}
       />
-
-      {isEditMode && itemId && sourceItem ? (
-        <ModalSection title={t("attachments.title")}>
-          {realm === "collection" ? (
-            <div className="flex justify-end">
-              <a href="#item-catalog-name" className="inline-flex items-center rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">
-                {t("gameCatalog.title")}
-              </a>
-            </div>
-          ) : null}
-          <AttachmentManager
-            itemId={itemId}
-            attachments={sourceItem.attachments || []}
-            onChange={() => {
-              void loadSourceItem();
-            }}
-          />
-        </ModalSection>
-      ) : null}
 
       <ItemCreateBasicsSection
         t={t}
@@ -325,10 +307,12 @@ export function ItemCreatePageContent({
         valuesEqual={valuesEqual}
         applySuggestedField={applySuggestedField}
         setEditItem={setEditItem}
+        realm={realm}
       />
 
       <PropertiesSection
         t={t}
+        collapseEmpty={isEditMode}
         catProperties={catProperties}
         propValues={propValues}
         aiSuggestedPropValues={aiSuggestedPropValues}
@@ -338,23 +322,62 @@ export function ItemCreatePageContent({
         setPropValues={setPropValues}
       />
 
-      <div className="flex items-center justify-end gap-2 border-t border-gray-200 pt-6 dark:border-white/10">
+      {isEditMode && itemId && sourceItem ? (
+        <ModalSection id="item-attachments" title={t("attachments.title")}>
+          {realm === "collection" ? (
+            <div className="flex justify-end">
+              <a href="#item-catalog-name" className="inline-flex items-center rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">
+                {t("gameCatalog.title")}
+              </a>
+            </div>
+          ) : null}
+          <AttachmentManager
+            itemId={itemId}
+            attachments={sourceItem.attachments || []}
+            onChange={() => {
+              void loadSourceItem();
+            }}
+            compact
+          />
+        </ModalSection>
+      ) : null}
+
+      {/* Always in reach: where you are in the form, what went wrong, and saving. */}
+      <div className="sticky bottom-0 z-30 -mx-4 flex items-center gap-x-4 border-t border-gray-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 dark:border-white/10 dark:bg-gray-900/95">
+        <nav aria-label={t("items.jumpTo")} className="hidden min-w-0 flex-1 items-center gap-x-4 overflow-x-auto text-sm font-medium text-gray-500 lg:flex dark:text-gray-400">
+          {[
+            { href: "#item-basics", label: t("items.modalBasicsTitle") },
+            { href: "#item-vendors", label: t("items.modalVendorsTitle") },
+            { href: "#item-stock", label: t("items.modalInventoryTitle") },
+            { href: "#item-properties", label: t("items.properties") },
+            ...(isEditMode ? [{ href: "#item-attachments", label: t("attachments.title") }] : []),
+          ].map((link) => (
+            <a key={link.href} href={link.href} className="whitespace-nowrap hover:text-gray-900 dark:hover:text-white">
+              {link.label}
+            </a>
+          ))}
+        </nav>
+        {saveError ? (
+          <p role="alert" className="min-w-0 flex-1 text-sm font-medium text-red-600 lg:flex-none dark:text-red-400">{saveError}</p>
+        ) : null}
+        <div className="ml-auto flex flex-none items-center gap-2">
         <Link
-          href={cancelHref}
-          className="inline-flex items-center justify-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs inset-ring inset-ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:inset-ring-white/5 dark:hover:bg-white/20"
-        >
-          {t("common.cancel")}
-        </Link>
-        <button
-          type="button"
-          onClick={() => {
-            void save();
-          }}
-          disabled={!editItem?.name?.trim()}
-          className="inline-flex items-center justify-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {t("common.save")}
-        </button>
+            href={cancelHref}
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs inset-ring inset-ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:inset-ring-white/5 dark:hover:bg-white/20"
+          >
+            {t("common.cancel")}
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              void save();
+            }}
+            disabled={!editItem?.name?.trim()}
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {t("common.save")}
+          </button>
+        </div>
       </div>
     </div>
   );

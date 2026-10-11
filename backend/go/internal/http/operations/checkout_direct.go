@@ -158,6 +158,17 @@ func checkinItem(c *gin.Context) {
 		return
 	}
 
+	// Who is told afterwards that their loan is closed: read before it is.
+	closing := []struct {
+		BorrowerID int `db:"user_id"`
+		ItemID     int `db:"item_id"`
+	}{}
+	if body.CheckoutID != nil {
+		_ = database.DB.Select(&closing, fmt.Sprintf("SELECT user_id, item_id FROM %s WHERE id = ? AND item_id = ? AND status = 'active'", table), *body.CheckoutID, itemID)
+	} else {
+		_ = database.DB.Select(&closing, fmt.Sprintf("SELECT user_id, item_id FROM %s WHERE item_id = ? AND status = 'active' AND bundle_parent_item_id IS NULL", table), itemID)
+	}
+
 	now := database.TimestampNow()
 	returnedRows := make([]map[string]interface{}, 0)
 	var result sql.Result
@@ -304,6 +315,11 @@ func checkinItem(c *gin.Context) {
 		}
 	}
 	middleware.Audit(user.ID, "checkout.return", fmt.Sprintf("realm=%s item=%s", realm, itemID))
+	for _, loan := range closing {
+		if loan.BorrowerID != user.ID {
+			notify([]int{loan.BorrowerID}, notifyLoanReturnConfirmed, loanFacts(realm, loan.ItemID, 0), loansLink(realm)+"&filter=completed")
+		}
+	}
 	ws.M.Broadcast("stats."+realm+"_updated", nil)
 	response := gin.H{"status": "returned", "item_id": itemID}
 	if body.CheckoutID != nil {

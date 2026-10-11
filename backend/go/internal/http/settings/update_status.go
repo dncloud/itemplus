@@ -17,10 +17,16 @@ func RegisterUpdateStatusRoutes(api *gin.RouterGroup) {
 }
 
 func getUpdateStatus(c *gin.Context) {
+	// Without the check there is nothing current to report; a result an
+	// earlier check left behind would only go stale.
+	if config.C.UpdateCheck == "" {
+		c.JSON(http.StatusOK, gin.H{"available": false, "check_enabled": false})
+		return
+	}
 	var raw string
 	err := database.DB.Get(&raw, "SELECT value FROM app_settings WHERE `key` = ?", updatescore.UpdateStatusSettingKey)
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusOK, gin.H{"available": false})
+		c.JSON(http.StatusOK, gin.H{"available": false, "check_enabled": true})
 		return
 	}
 	if err != nil {
@@ -34,8 +40,15 @@ func getUpdateStatus(c *gin.Context) {
 		return
 	}
 	normalizeUpdateStatusForRunningServer(&status)
+	// In release mode a newer build is not something to report, whatever an
+	// earlier check in build mode may have stored.
+	if config.C.UpdateCheck != config.UpdateCheckBuild {
+		status.CommitUpdateAvailable = false
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"available":                 status.ReleaseUpdateAvailable || status.CommitUpdateAvailable,
+		"check_enabled":             true,
+		"check_mode":                config.C.UpdateCheck,
 		"checked_at":                status.CheckedAt,
 		"installed_version":         status.InstalledVersion,
 		"installed_build":           status.InstalledBuild,
@@ -45,11 +58,6 @@ func getUpdateStatus(c *gin.Context) {
 		"latest_release_url":        status.LatestReleaseURL,
 		"latest_release_asset_name": status.LatestReleaseAssetName,
 		"latest_commit":             status.LatestCommit,
-		"downloaded_at":             status.DownloadedAt,
-		"downloaded_version":        status.DownloadedVersion,
-		"downloaded_build":          status.DownloadedBuild,
-		"downloaded_path":           status.DownloadedPath,
-		"downloaded_asset_name":     status.DownloadedAssetName,
 		"release_update_available":  status.ReleaseUpdateAvailable,
 		"commit_update_available":   status.CommitUpdateAvailable,
 		"status":                    status.Status,

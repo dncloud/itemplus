@@ -31,6 +31,13 @@ func RegisterCRUD(group *gin.RouterGroup, table string, readPerm, writePerm, del
 		// can show up front that one in use cannot be deleted.
 		if realm, kind, ok := protectedMasterData(table); ok {
 			query = fmt.Sprintf("SELECT t.*, (SELECT COUNT(*) FROM %s_items i WHERE i.%s_id = t.id) AS item_count FROM %s t", realm, kind, table)
+			// A category also says how many properties it defines.
+			if kind == "category" {
+				query = fmt.Sprintf(`SELECT t.*,
+					(SELECT COUNT(*) FROM %[1]s_items i WHERE i.category_id = t.id) AS item_count,
+					(SELECT COUNT(*) FROM %[1]s_properties p WHERE p.category_id = t.id) AS property_count
+					FROM %[2]s t`, realm, table)
+			}
 		}
 		var args []interface{}
 		if search != "" {

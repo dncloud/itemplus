@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api, type Item, type Category, type Location, type Property } from "@/lib/api";
+import { api, type CheckoutRequest, type Item, type Category, type Location, type Property } from "@/lib/api";
 import AttachmentManager from "@/components/attachments/attachment-manager";
-import { useDeleteFlow, ConfirmDelete } from "@/components/ui/confirm-delete";
+import { useDeleteFlow, ConfirmDelete, inUseMessage, readInUseInfo, type InUseInfo } from "@/components/ui/confirm-delete";
 import { useApp } from "@/lib/app-context";
 import { wsClient } from "@/lib/ws";
-import { ItemDetailSections } from "@/app/(app)/items/[id]/item-detail-sections";
+import clsx from "clsx";
+import { ItemDescription, ItemDetailSections, ItemSummaryFacts } from "@/app/(app)/items/[id]/item-detail-sections";
 import {
   ItemCheckoutActiveBanner,
   ItemCheckoutPendingBanner,
@@ -19,9 +20,9 @@ import {
 import {
   fetchItemDetailData,
   fetchItemDisplayMeta,
-  getBadgeStyle,
   requestConnectedDevices,
 } from "@/app/(app)/items/[id]/item-detail-utils";
+import { ColorChip } from "@/components/ui/color-chip";
 
 export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,6 +31,7 @@ export default function ItemDetailPage() {
     realm,
     serverURL,
     can,
+    currentUserId,
     fmtDate,
     fmtDateTime,
     iosBridgeStatus,
@@ -52,7 +54,8 @@ export default function ItemDetailPage() {
   const [checkoutUsers, setCheckoutUsers] = useState<{ id: number; name: string }[]>([]);
   const [selectedCheckoutUserID, setSelectedCheckoutUserID] = useState<number | "">("");
   const [showCheckout, setShowCheckout] = useState(false);
-  const [checkoutSent, setCheckoutSent] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState<CheckoutRequest[]>([]);
+  const [justRequested, setJustRequested] = useState(false);
   const [checkoutBlocked, setCheckoutBlocked] = useState(false);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const [returningCheckoutID, setReturningCheckoutID] = useState<number | null>(null);
@@ -76,7 +79,7 @@ export default function ItemDetailPage() {
       setSelectedCheckoutComponentIDs(data.item.componentItemIds || []);
       setProperties(data.properties);
       setCheckoutBlocked(data.checkoutState.blocked);
-      setCheckoutSent(data.checkoutState.sent);
+      setPendingRequests(data.pendingRequests);
     } catch {
       router.push("/items");
     }
@@ -93,7 +96,7 @@ export default function ItemDetailPage() {
         setSelectedCheckoutComponentIDs(data.item.componentItemIds || []);
         setProperties(data.properties);
         setCheckoutBlocked(data.checkoutState.blocked);
-        setCheckoutSent(data.checkoutState.sent);
+        setPendingRequests(data.pendingRequests);
       } catch {
         if (!cancelled) router.push("/items");
       }
@@ -136,8 +139,14 @@ export default function ItemDetailPage() {
     };
   }, [showCheckout, can]);
 
+  // An item that is lent out stays until it has been returned.
+  const reportInUse = useCallback((info: InUseInfo) => {
+    setNotification({ title: t("items.deleteRefused"), message: inUseMessage(t, info), tone: "error" });
+  }, [t]);
+
   const deleteFlow = useDeleteFlow({
     realm,
+    onInUse: reportInUse,
     onDeleted: useCallback((entityId: number) => {
       if (entityId === Number(id)) router.push("/items");
     }, [id, router]),
@@ -159,7 +168,7 @@ export default function ItemDetailPage() {
         component_item_ids: selectedCheckoutComponentIDs,
         notes: checkoutNote || undefined,
       });
-      setCheckoutSent(true);
+      setJustRequested(true);
       setShowCheckout(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : undefined;
@@ -226,6 +235,11 @@ export default function ItemDetailPage() {
     setTimeout(() => setPhotoRequested(false), 30000); // Reset after 30s
   };
 
+  // A request shows up for the person who made it and for whoever manages
+  // loans; the server sends nobody else's.
+  const checkoutSent = justRequested || pendingRequests.some((request) => currentUserId != null && request.user_id === currentUserId);
+  const othersPending = pendingRequests.filter((request) => currentUserId == null || request.user_id !== currentUserId);
+
   if (!item) {
     return <ItemDetailLoadingView />;
   }
@@ -235,7 +249,19 @@ export default function ItemDetailPage() {
   const canRequestPhoto = can("attachments.write") && iosBridgeStatus === "connected";
   const canReadInventory = can("inventory.read");
   const canReadMaintenance = can("maintenance.read");
-  const usesCollectionGallery = realm === "collection";
+  // A game from the catalog is presented by its cover; everything else, in
+  // either realm, as an ordinary item. The category decides, as in the list.
+  const isGame = properties.some((property) => {
+    if (property.category_id !== item.category_id) return false;
+    const catalog = property.options?.game_catalog;
+    return !!catalog && typeof catalog === "object" && !Array.isArray(catalog);
+  });
+  const hasImages = (item.attachments || []).some((attachment) => /\.(jpe?g|png|gif|webp|svg|bmp|avif)$/i.test(attachment.filename));
+  const edited = item.updated_at && item.created_at && item.updated_at !== item.created_at;
+  const meta = [
+    item.created_at ? `${t("common.created")} ${fmtDateTime(item.created_at)}` : "",
+    edited ? `${t("common.updated")} ${fmtDateTime(item.updated_at as string)}` : "",
+  ].filter(Boolean).join(" · ");
   const openMaintenance = canReadMaintenance
     ? item.maintenance_reminders?.filter((reminder) => reminder.status === "open") || []
     : [];
@@ -272,6 +298,8 @@ export default function ItemDetailPage() {
         canDeleteItems={can("items.delete")}
         pendingDelete={pendingDelete}
         remove={remove}
+        meta={meta}
+        qrCodeURL={`${serverURL}/api/print/qr/${realm}/item/${item.id}.svg?color={color}`}
       />
 
       {showCheckout && (
@@ -295,7 +323,14 @@ export default function ItemDetailPage() {
         />
       )}
 
-      {checkoutSent && !item.checked_out_to ? <ItemCheckoutPendingBanner t={t} /> : null}
+      {!item.checked_out_to && (checkoutSent || othersPending.length > 0) ? (
+        <ItemCheckoutPendingBanner
+          t={t}
+          own={checkoutSent}
+          others={othersPending.map((request) => request.user_name || t("users.deletedUser"))}
+          href={`/checkouts?realm=${realm}&item_id=${item.id}${can("checkout.manage") ? "&filter=pending" : ""}`}
+        />
+      ) : null}
 
       {item.checked_out_to ? (
         <ItemCheckoutActiveBanner
@@ -319,76 +354,71 @@ export default function ItemDetailPage() {
         />
       ) : null}
 
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
-          <div className="flex flex-wrap items-center justify-start gap-2">
+      {(() => {
+        const chips = (
+          <div className="flex flex-wrap items-center justify-start gap-2 empty:hidden">
             {item.category_name && (
-              <span
-                className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${!categories.find((c) => c.id === item.category_id)?.color ? "bg-gray-50 text-gray-600 dark:bg-white/5 dark:text-gray-300" : ""}`}
-                style={getBadgeStyle(categories.find((c) => c.id === item.category_id)?.color)}
-              >
-                {item.category_name}
-              </span>
+              <ColorChip label={item.category_name} color={categories.find((c) => c.id === item.category_id)?.color} />
             )}
             {item.location_name && (
-              <span
-                className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${!locations.find((l) => l.id === item.location_id)?.color ? "bg-gray-50 text-gray-600 dark:bg-white/5 dark:text-gray-300" : ""}`}
-                style={getBadgeStyle(locations.find((l) => l.id === item.location_id)?.color)}
-              >
-                {item.location_name}
-              </span>
+              <ColorChip label={item.location_name} color={locations.find((l) => l.id === item.location_id)?.color} />
             )}
             {item.item_status && item.item_status !== "active" ? (
               <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${itemStatusStyleMap[item.item_status] || itemStatusStyleMap.reserved}`}>
                 {itemStatusLabelMap[item.item_status] || item.item_status}
               </span>
             ) : null}
-            <div className="group relative">
-              <span className="inline-flex cursor-default items-center rounded-md px-2 py-1 text-xs font-medium bg-gray-50 text-gray-600 dark:bg-white/5 dark:text-gray-300">
-                QR-Code
-              </span>
-              <div className="pointer-events-none fixed top-4 right-4 z-40 rounded-xl bg-white p-2 shadow-xs outline outline-1 -outline-offset-1 outline-gray-200 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 dark:bg-gray-800/95 dark:outline-white/10">
-                <div className="rounded-lg bg-gray-50 p-1 dark:bg-gray-900/80">
-                  <img src={`${serverURL}/api/print/qr/${realm}/item/${item.id}.svg?color=000000`} alt="QR" className="h-[128px] w-[128px] dark:hidden" />
-                  <img src={`${serverURL}/api/print/qr/${realm}/item/${item.id}.svg?color=ffffff`} alt="QR" className="hidden h-[128px] w-[128px] dark:block" />
-                </div>
+          </div>
+        );
+        const detailProps = {
+          item,
+          properties,
+          category: categories.find((category) => category.id === item.category_id),
+          realm,
+          isGame,
+          fmtDate,
+          t,
+        };
+        // A game's cover is shown whole; an ordinary photo fills its frame.
+        const presentation = isGame ? "catalog-cover" : "standard";
+        const summary = (
+          <section className="space-y-5 self-start rounded-xl bg-white px-6 py-5 shadow-xs outline outline-1 -outline-offset-1 outline-gray-900/5 dark:bg-gray-800/50 dark:outline-white/10">
+            {chips}
+            <ItemSummaryFacts {...detailProps} />
+            {item.description ? <ItemDescription description={item.description} /> : null}
+          </section>
+        );
+        return (
+          <>
+            {hasImages ? (
+              <div className={clsx("grid grid-cols-1 gap-6", isGame ? "lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]")}>
+                <AttachmentManager
+                  itemId={Number(id)}
+                  attachments={item.attachments || []}
+                  onChange={load}
+                  readOnly
+                  showUploadActions={false}
+                  showFiles={false}
+                  galleryPresentation={presentation}
+                  galleryPart="cover"
+                />
+                {summary}
               </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-start justify-end gap-x-6 gap-y-2">
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                <span className="font-semibold text-gray-700 dark:text-gray-300">{t("common.created")}</span>{" "}
-                {item.created_at ? fmtDateTime(item.created_at) : "—"}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                <span className="font-semibold text-gray-700 dark:text-gray-300">{t("common.updated")}</span>{" "}
-                {item.updated_at ? fmtDateTime(item.updated_at) : "—"}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <AttachmentManager
-        itemId={Number(id)}
-        attachments={item.attachments || []}
-        onChange={load}
-        readOnly
-        showUploadActions={false}
-        showFiles={false}
-        galleryPresentation={usesCollectionGallery ? "catalog-cover" : "standard"}
-      />
-
-      <ItemDetailSections
-        item={item}
-        properties={properties}
-        category={categories.find((category) => category.id === item.category_id)}
-        fmtDate={fmtDate}
-        t={t}
-      />
+            ) : summary}
+            <ItemDetailSections {...detailProps} />
+            <AttachmentManager
+              itemId={Number(id)}
+              attachments={item.attachments || []}
+              onChange={load}
+              readOnly
+              showUploadActions={false}
+              showFiles={false}
+              galleryPresentation={presentation}
+              galleryPart="rest"
+            />
+          </>
+        );
+      })()}
 
       {/* Attachments */}
       <AttachmentManager
@@ -398,7 +428,6 @@ export default function ItemDetailPage() {
         readOnly
         showUploadActions={canUploadAttachmentsOnDetail}
         showGallery={false}
-        galleryPresentation={usesCollectionGallery ? "catalog-cover" : "standard"}
       />
 
       {deleteFlow.confirm?.id === Number(id) && (
@@ -406,7 +435,15 @@ export default function ItemDetailPage() {
           name={deleteFlow.confirm.name}
           t={t}
           onConfirm={async () => {
-            await api.deleteItem(Number(id));
+            try {
+              await api.deleteItem(Number(id));
+            } catch (error) {
+              const inUse = readInUseInfo(error);
+              if (!inUse) throw error;
+              reportInUse(inUse);
+              deleteFlow.cancelConfirm();
+              return;
+            }
             deleteFlow.cancelConfirm();
             router.push("/items");
           }}

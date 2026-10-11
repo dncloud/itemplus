@@ -68,6 +68,11 @@ func RegisterUpdateStatusRoutes(api *gin.RouterGroup) {
 	settingshandlers.RegisterUpdateStatusRoutes(api)
 }
 
+// StartUpdateChecker starts the daily update check, if the configuration asks for it.
+func StartUpdateChecker() bool {
+	return settingshandlers.StartUpdateChecker()
+}
+
 func RegisterAdminRoutes(g *gin.RouterGroup) {
 	operationshandlers.RegisterAdminRoutes(g)
 	g.GET("/ai-settings", aihandlers.AdminGetAISettings)
@@ -78,6 +83,7 @@ func RegisterAdminRoutes(g *gin.RouterGroup) {
 
 func RegisterCheckoutRoutes(api *gin.RouterGroup) {
 	operationshandlers.RegisterCheckoutRoutes(api)
+	operationshandlers.RegisterNotificationRoutes(api)
 }
 
 func RegisterInventoryMovementRoutes(api *gin.RouterGroup) {

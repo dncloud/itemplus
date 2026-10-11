@@ -15,7 +15,7 @@ function getDeleteEventTarget(data: Record<string, unknown>): DeleteTarget {
   };
 }
 
-/** Why the server refused to delete a category or location. */
+/** Why the server refused to delete a category, a location or an item that is lent out. */
 export type InUseInfo = { type: string; items: number; children: number };
 
 /** Reads the refusal details from an API error or a `delete.rejected` event; null when it is something else. */
@@ -33,6 +33,7 @@ export function readInUseInfo(source: unknown): InUseInfo | null {
 
 /** A sentence telling the user what still uses the category or location. */
 export function inUseMessage(t: (k: string, vars?: Record<string, string | number>) => string, info: InUseInfo) {
+  if (info.type === "item") return t("items.inUseCheckedOut");
   if (info.type === "category") return t("categories.inUse", { count: info.items });
   const parts: string[] = [];
   if (info.items > 0) parts.push(t("locations.inUseItems", { count: info.items }));

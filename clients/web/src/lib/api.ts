@@ -137,6 +137,10 @@ export interface ExternalSourcePayload {
 
 export interface UpdateStatus {
   available?: boolean;
+  /** False when the server's configuration does not allow the update check (the default). */
+  check_enabled?: boolean;
+  /** What the server looks for: published releases only, or newer builds too. */
+  check_mode?: "release" | "build";
   checked_at?: string;
   installed_version?: string;
   installed_build?: string;
@@ -146,11 +150,6 @@ export interface UpdateStatus {
   latest_release_url?: string;
   latest_release_asset_name?: string;
   latest_commit?: string;
-  downloaded_at?: string;
-  downloaded_version?: string;
-  downloaded_build?: string;
-  downloaded_path?: string;
-  downloaded_asset_name?: string;
   release_update_available?: boolean;
   commit_update_available?: boolean;
   status?: string;
@@ -181,7 +180,7 @@ export interface ExternalSourceBrowseResult {
 export interface AIProfile {
   id: string;
   name: string;
-  provider: "openai" | "ollama";
+  provider: "openai" | "anthropic" | "ollama";
   model: string;
   base_url: string;
   enabled: boolean;
@@ -208,7 +207,7 @@ export interface AISettings {
 export interface AIProfilePayload {
   id: string;
   name: string;
-  provider: "openai" | "ollama";
+  provider: "openai" | "anthropic" | "ollama";
   model: string;
   base_url: string;
   api_key?: string;
@@ -525,6 +524,14 @@ class Api {
   // -- Unconnected uploads (admin) --
   getUnconnectedFiles = () => this.get<{ files: UnconnectedFile[]; total_size: number }>("/admin/unconnected-files");
   deleteUnconnectedFiles = (paths: string[]) => this.post<{ deleted: string[]; skipped: string[] }>("/admin/unconnected-files/delete", { paths });
+  getOrphanedItems = () => this.get<{ groups: OrphanGroup[] }>("/admin/orphaned-items");
+  restoreOrphanTarget = (group: Pick<OrphanGroup, "realm" | "kind" | "ref_id">, name: string) =>
+    this.post<{ detail: string }>("/admin/orphaned-items/restore", { realm: group.realm, kind: group.kind, ref_id: group.ref_id, name });
+  assignOrphans = (group: Pick<OrphanGroup, "realm" | "kind" | "ref_id">, targetId: number, dryRun: boolean) =>
+    this.post<OrphanAssignment>("/admin/orphaned-items/assign", { realm: group.realm, kind: group.kind, ref_id: group.ref_id, target_id: targetId, dry_run: dryRun });
+  // Categories and locations of a given realm, whichever realm is active.
+  getCategoriesOf = (realm: "archive" | "collection") => this.get<Category[]>(`/${realm}/categories`);
+  getLocationsOf = (realm: "archive" | "collection") => this.get<Location[]>(`/${realm}/locations`);
 
   // -- User --
   getMe = () => this.get<User>("/user");
@@ -553,13 +560,17 @@ class Api {
   getLocationStats = () => this.get<{ warnings: LocationWarning[] }>("/stats/locations");
   getMaintenanceStats = () => this.get<MaintenanceStats>("/stats/maintenance");
   getAIUsageStats = () => this.get<AIUsageStats>("/stats/ai-usage");
-  getInventoryMovements = (params?: { realm?: "archive" | "collection"; item_id?: number; type?: string; limit?: number }) =>
-    this.get<{ movements: InventoryMovement[] }>(
+  /** Stock movements, newest first; `total` and `counts` (per type) describe the whole filtered result. */
+  getInventoryMovements = (params?: { realm?: "archive" | "collection"; item_id?: number; type?: string; q?: string; days?: number; limit?: number; offset?: number }) =>
+    this.get<{ movements: InventoryMovement[]; total?: number; counts?: Record<string, number> }>(
       this.withQuery("/inventory-movements", {
         realm: params?.realm,
         item_id: params?.item_id,
         type: params?.type,
+        q: params?.q,
+        days: params?.days,
         limit: params?.limit,
+        offset: params?.offset,
       }),
     );
   getInventoryChecks = (params?: { realm?: "archive" | "collection" }) =>
@@ -645,6 +656,10 @@ class Api {
   getCollectionProperties = (categoryId: number) => this.get<Property[]>(this.withQuery("/collection/properties", { category_id: categoryId }));
   createCollectionProperty = (data: Partial<Property>) => this.post<Property>("/collection/properties", data);
   updateCollectionProperty = (id: number, data: Partial<Property>) => this.put<Property>(`/collection/properties/${id}`, data);
+  getCollectionProgress = () =>
+    this.get<{ available: boolean; reason?: string; profiles: { key: string; name: string; owned: number; total: number; category_ids: number[] }[] }>(
+      "/collection/items/game-catalog/progress",
+    );
   getCollectionGameCatalogProfiles = () => this.get<GameCatalogContract>("/collection/items/game-catalog/profiles");
 
   getLocations = () => this.get<Location[]>(`/${this.realm}/locations`);
@@ -703,11 +718,28 @@ class Api {
   rejectRequest = (id: number) => this.put<CheckoutRequest>(`/checkout/requests/${id}/reject`);
   sendCheckoutReminder = (realm: string, id: number) => this.post<ActiveCheckout>(`/checkouts/${realm}/${id}/remind`);
   getActiveCheckouts = () => this.get<ActiveCheckout[]>(`/checkouts/${this.realm}/active`);
+  getActiveCheckoutsOf = (realm: "archive" | "collection") => this.get<ActiveCheckout[]>(`/checkouts/${realm}/active`);
   getCheckoutHistory = () => this.get<ActiveCheckout[]>(`/checkouts/${this.realm}/history`);
   getMyOverdueCheckouts = () => this.get<ActiveCheckout[]>("/checkouts/my/overdue");
   getOverdueCheckouts = () => this.get<ActiveCheckout[]>("/checkouts/overdue");
   checkoutItem = (itemId: number, data?: { user_id?: number; notes?: string; due_date?: string; component_item_ids?: number[] }) =>
     this.post<ActiveCheckout>(`/checkout/${this.realm}/${itemId}`, data || {});
+  getNotifications = () => this.get<{ items: AppNotification[]; unread: number }>("/notifications");
+  /** Marks one notification as read, or all of them without an id. */
+  markNotificationsRead = (id?: number) => this.post<{ status: string }>("/notifications/read", id ? { id } : {});
+  deleteNotification = (id: number) => this.del<{ status: string }>(`/notifications/${id}`);
+  /** Removes every notification the user has already read. */
+  deleteReadNotifications = () => this.del<{ status: string }>("/notifications");
+  getCheckoutReturnRequests = () => this.get<ActiveCheckout[]>("/checkouts/return-requests");
+  /** The borrower says the item is back. The loan stays open until a manager confirms. */
+  requestCheckoutReturn = (realm: string, checkoutId: number) =>
+    this.post<{ status: string }>(`/checkouts/${realm}/${checkoutId}/return-request`);
+  /** A manager says the item is not back; the report is removed. */
+  dismissCheckoutReturnRequest = (realm: string, checkoutId: number) =>
+    this.del<{ status: string }>(`/checkouts/${realm}/${checkoutId}/return-request`);
+  /** Closes a loan in a named realm. Only for whoever manages loans. */
+  checkinItemIn = (realm: string, itemId: number, data?: { checkout_id?: number }) =>
+    this.post<{ status: string; checkout_id?: number }>(`/checkin/${realm}/${itemId}`, data || {});
   checkinItem = (itemId: number, data?: { checkout_id?: number }) =>
     this.post<{ status: string; checkout_id?: number }>(`/checkin/${this.realm}/${itemId}`, data || {});
 
@@ -720,6 +752,8 @@ class Api {
   };
   deleteAttachment = (id: number) => this.del(`/${this.realm}/attachments/${id}`);
   updateAttachment = (id: number, data: Partial<Attachment>) => this.put<Attachment>(`/${this.realm}/attachments/${id}`, data);
+  // The attachments named come first, in this order; no two share a position afterwards.
+  reorderAttachments = (itemId: number, ids: number[]) => this.put<{ ids: number[] }>(`/${this.realm}/items/${itemId}/attachments/order`, { ids });
   addLinkAttachment = (itemId: number, data: { url: string; filename?: string; description?: string; order?: number }) =>
     this.post<Attachment>(`/${this.realm}/items/${itemId}/attachments/link`, data);
   addExternalSourceAttachment = (itemId: number, data: { external_source_id: number; external_path: string; filename?: string; description?: string; order?: number; gallery?: boolean }) =>
@@ -837,7 +871,8 @@ export interface Item {
   maintenance_reminders?: MaintenanceReminder[];
   maintenance_history?: MaintenanceReminder[];
   inventory_movements?: InventoryMovement[];
-  maintenance_summary?: {
+  // Open maintenance of the item, as the item list sends it to readers with maintenance.read.
+  maintenance?: {
     open_count?: number;
     due_count?: number;
     overdue_count?: number;
@@ -917,6 +952,7 @@ export interface Category {
   position: number;
   /** Number of items in this category; a category in use cannot be deleted. */
   item_count?: number;
+  property_count?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -1162,7 +1198,7 @@ export interface AIUsageStatsPeriod {
 
 export interface AIUsageStatsBucket {
   bucket: string;
-  provider: "openai" | "ollama" | string;
+  provider: "openai" | "anthropic" | "ollama" | string;
   requests: number;
   successful_requests: number;
   failed_requests: number;
@@ -1224,11 +1260,49 @@ export interface RealmStats {
   top_by_value: { id: number; name: string; value: number }[];
   top_by_quantity: { id: number; name: string; quantity: number }[];
   by_category: CategoryStats[];
+  // Chart figures; a server older than 1.3.5 does not send them.
+  growth?: { month: string; added: number; items: number; value: number }[];
+  activity?: { date: string; count: number; types?: Record<string, number> }[];
+  by_location?: { id: number; name: string; color?: string | null; items: number }[];
+  checked_out?: number;
+  spotlight?: {
+    id: number;
+    name: string;
+    quantity: number;
+    created_at?: string;
+    updated_at?: string;
+    value?: number | null;
+    category_name?: string | null;
+    category_color?: string | null;
+    location_name?: string | null;
+    location_color?: string | null;
+    image_url?: string;
+    date: string;
+  } | null;
+}
+
+/** Items whose category is missing, or whose category or location was deleted. */
+export interface OrphanGroup {
+  realm: "archive" | "collection";
+  kind: "category_missing" | "category_deleted" | "location_deleted";
+  ref_id: number | null;
+  item_count: number;
+  items: { id: number; name: string }[];
+  properties: number;
+  profile_key?: string;
+}
+
+export interface OrphanAssignment {
+  items: number;
+  values_moved: number;
+  values_dropped: number;
+  dropped_properties: string[];
 }
 
 export interface CategoryStats {
   id: number;
   name: string;
+  color?: string | null;
   items: number;
   value: number;
 }
@@ -1249,6 +1323,16 @@ export interface LocationWarning {
   level: "warning" | "almost_full" | "full";
   used: number;
   capacity: number;
+}
+
+/** A stored message for the signed-in user; the client writes the sentence from kind and data. */
+export interface AppNotification {
+  id: number;
+  kind: string;
+  data: Record<string, unknown>;
+  link?: string;
+  read_at?: string | null;
+  created_at: string;
 }
 
 export interface CheckoutRequest {
@@ -1278,6 +1362,8 @@ export interface CheckoutRequest {
   overdue_days?: number;
   user_has_email?: boolean;
   last_reminder_sent_at?: string;
+  /** Set when the borrower says the item is back; the loan stays open until a manager confirms. */
+  return_requested_at?: string;
   reminder_cooldown_active?: boolean;
   next_reminder_at?: string;
 }
@@ -1305,6 +1391,8 @@ export interface ActiveCheckout {
   overdue_days?: number;
   user_has_email?: boolean;
   last_reminder_sent_at?: string;
+  /** Set when the borrower says the item is back; the loan stays open until a manager confirms. */
+  return_requested_at?: string;
   reminder_cooldown_active?: boolean;
   next_reminder_at?: string;
 }

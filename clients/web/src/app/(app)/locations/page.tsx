@@ -14,7 +14,6 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { Plus, ChevronRight } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { ConfirmDelete, inUseMessage, readInUseInfo, useDeleteFlow, type InUseInfo } from "@/components/ui/confirm-delete";
 import { FloatingNotification, type FloatingNotificationState } from "@/components/ui/floating-notification";
 import {
@@ -31,10 +30,10 @@ import {
   getSiblingLocations,
   persistLocationSiblingOrder,
 } from "./locations-page-utils";
+import { pageActionClass } from "@/components/ui/list-controls";
 
 export default function LocationsPage() {
-  const { realm, can, fmtDateTime, printLocationQR, printerBridgeStatus, showPrintFeatures, t } = useApp();
-  const router = useRouter();
+  const { realm, can, printLocationQR, printerBridgeStatus, showPrintFeatures, t } = useApp();
   const [locations, setLocations] = useState<Location[]>([]);
   const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
   const [editLoc, setEditLoc] = useState<Partial<Location> | null>(null);
@@ -190,27 +189,25 @@ export default function LocationsPage() {
           <SortableLocation
             key={loc.id}
             location={loc}
-            hasChildren={children.length > 0}
+            childCount={children.length}
             isOpen={isOpen}
             managerName={loc.manager_id ? users.find((u) => u.id === loc.manager_id)?.name : undefined}
             onToggle={() => toggle(loc.id)}
             onEdit={() => startEditLocation(loc)}
             onDelete={() => remove(loc.id)}
             pendingDelete={pendingDeleteLocationId === loc.id}
-            onShowItems={() => router.push(`/items?location=${loc.id}`)}
             onPrintQR={() => {
               void printLocationQR(loc.id);
             }}
             canWrite={can("locations.write")}
             canDelete={can("locations.delete")}
             canPrint={canPrintActions}
-            fmtDateTime={fmtDateTime}
             t={t}
           >
             {(editLoc?.id === loc.id && !isNew) || (isOpen && children.length > 0) ? (
               <div>
                 {editLoc?.id === loc.id && !isNew ? (
-                  <div className="border-t border-gray-100 px-4 py-4 sm:px-6 dark:border-white/10">
+                  <div className="px-4 py-4 sm:px-6">
                     <LocationInlineForm
                       location={editLoc}
                       onChange={setEditLoc}
@@ -224,32 +221,30 @@ export default function LocationsPage() {
                 ) : null}
 
                 {isOpen && children.length > 0 ? (
-                  <div className="border-t border-gray-100 px-4 py-4 sm:px-6 dark:border-white/10 space-y-2">
-                    <h4 className="mb-2 text-sm/6 font-medium text-gray-900 dark:text-white">Untergeordnete Standorte</h4>
+                  <div className="border-t border-gray-100 px-4 pt-5 pb-6 sm:px-6 dark:border-white/10">
+                    <h4 className="mb-3 text-sm/6 font-medium text-gray-900 dark:text-white">{t("locations.children")}</h4>
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                       <SortableContext items={children.map((c) => c.id)} strategy={verticalListSortingStrategy}>
                         {children.map((child) => (
                           <SortableNestedLocation
                             key={child.id}
                             location={child}
-                            hasChildren={childrenOf(child.id).length > 0}
+                            childCount={childrenOf(child.id).length}
                             isOpen={expanded.has(child.id)}
                             onToggle={() => toggle(child.id)}
                             onEdit={() => startEditLocation(child)}
                             onDelete={() => remove(child.id)}
                             pendingDelete={pendingDeleteLocationId === child.id}
-                            onShowItems={() => router.push(`/items?location=${child.id}`)}
                             onPrintQR={() => {
                               void printLocationQR(child.id);
                             }}
                             canWrite={can("locations.write")}
                             canDelete={can("locations.delete")}
                             canPrint={canPrintActions}
-                            fmtDateTime={fmtDateTime}
                             t={t}
                           >
                             {editLoc?.id === child.id && !isNew ? (
-                              <div className="border-t border-gray-100 px-3 py-4 dark:border-white/10">
+                              <div className="pt-1 pb-3">
                                 <LocationInlineForm
                                   location={editLoc}
                                   onChange={setEditLoc}
@@ -263,7 +258,7 @@ export default function LocationsPage() {
                             ) : null}
 
                             {expanded.has(child.id) && childrenOf(child.id).length > 0 ? (
-                              <div className="mt-2 ml-5 space-y-2 border-l border-gray-200 pl-3 dark:border-gray-700">
+                              <div className="ml-3 border-l border-gray-200 pl-4 dark:border-gray-700">
                                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                                   <SortableContext items={childrenOf(child.id).map((c) => c.id)} strategy={verticalListSortingStrategy}>
                                     {childrenOf(child.id).map((nested) => (
@@ -278,14 +273,12 @@ export default function LocationsPage() {
                                         onEdit={startEditLocation}
                                         onDelete={(id) => remove(id)}
                                         pendingDeleteId={pendingDeleteLocationId}
-                                        onShowItems={(id) => router.push(`/items?location=${id}`)}
                                         onPrintQR={(id) => {
                                           void printLocationQR(id);
                                         }}
                                         canWrite={can("locations.write")}
                                         canDelete={can("locations.delete")}
                                         canPrint={canPrintActions}
-                                        fmtDateTime={fmtDateTime}
                                         editLoc={editLoc}
                                         setEditLoc={setEditLoc}
                                         save={save}
@@ -341,14 +334,15 @@ export default function LocationsPage() {
         <div className="flex items-center justify-center gap-2 rounded-sm px-2 py-3 sm:justify-end sm:bg-transparent sm:px-0">
           {can("locations.write") ? (
             <button
+              type="button"
               onClick={() => {
                 setEditLoc({ name: "" });
                 setIsNew(true);
               }}
-              className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-              title={t("common.new")}
+              className={pageActionClass}
             >
-              <Plus className="h-4 w-4" />
+              <Plus aria-hidden="true" className="-ml-0.5 size-4" />
+              {t("locations.newLocation")}
             </button>
           ) : null}
         </div>
@@ -357,7 +351,7 @@ export default function LocationsPage() {
       {editLoc && isNew ? (
         <div className="overflow-hidden rounded-xl bg-white outline outline-1 -outline-offset-1 outline-gray-900/5 dark:bg-gray-800/50 dark:outline-white/10">
           <div className="border-b border-gray-200 px-4 py-4 sm:px-6 dark:border-white/10">
-            <h3 className="font-semibold text-gray-900 dark:text-white">{t("common.new")}</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white">{t("locations.newLocation")}</h3>
           </div>
           <div className="px-4 py-4 sm:px-6">
             <LocationInlineForm

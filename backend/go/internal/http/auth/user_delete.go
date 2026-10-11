@@ -68,6 +68,9 @@ func DeleteUserAccount(userID int, actorID int, selfService bool) error {
 	if _, err := tx.Exec("DELETE FROM device_sessions WHERE user_id = ?", userID); err != nil {
 		return err
 	}
+	if _, err := tx.Exec("DELETE FROM notifications WHERE user_id = ?", userID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec("DELETE FROM checkout_requests WHERE user_id = ?", userID); err != nil {
 		return err
 	}

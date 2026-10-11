@@ -61,16 +61,6 @@ export const getStoredPrintMode = (): PrintMode => {
   return readStoredValue("itemplus_print_mode") === "ios" ? "ios" : "server";
 };
 
-export const getStoredShowItemImages = (): boolean => {
-  const saved = readStoredValue("itemplus_show_item_images");
-  return saved === null ? true : saved === "true";
-};
-
-export const getStoredShowItemPlaceholders = (): boolean => {
-  const saved = readStoredValue("itemplus_show_item_placeholders");
-  return saved === null ? true : saved === "true";
-};
-
 export const getStoredShowPrintFeatures = (): boolean => {
   const saved = readStoredValue("itemplus_show_print_features");
   return saved === null ? true : saved === "true";
@@ -87,6 +77,24 @@ export const getStoredFlag = (key: string, fallback = true): boolean => {
   const saved = readStoredValue(key);
   return saved === null ? fallback : saved === "true";
 };
+
+// What an item card shows is set per realm: an inventory wants quantities, a
+// collection usually does not. The archive keeps the keys from the time when
+// there was one setting for both; the collection has its own and starts from
+// the archive's choice, except where a different default makes more sense.
+export const itemListFlagKey = (key: string, realm: Realm) => (realm === "collection" ? `${key}_collection` : key);
+
+export const getStoredItemListFlag = (key: string, realm: Realm, collectionDefault?: boolean): boolean => {
+  const own = readStoredValue(itemListFlagKey(key, realm));
+  if (own !== null) return own === "true";
+  if (realm === "collection" && collectionDefault !== undefined) return collectionDefault;
+  return getStoredFlag(key, true);
+};
+
+export type ItemListView = "cards" | "table";
+
+export const getStoredItemListView = (realm: Realm): ItemListView =>
+  readStoredValue(`itemplus_items_view_${realm}`) === "table" ? "table" : "cards";
 
 export const getStoredPercent = (key: string, fallback: number): number => {
   const stored = readStoredValue(key);

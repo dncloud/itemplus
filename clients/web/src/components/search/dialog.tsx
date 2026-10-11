@@ -106,7 +106,7 @@ export default function SearchDialog({ open, onClose }: { open: boolean; onClose
               <div className="max-h-80 overflow-y-auto pb-2">
                 {!query && !loaded ? (
                   <div className="flex justify-center py-8">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
                   </div>
                 ) : null}
 

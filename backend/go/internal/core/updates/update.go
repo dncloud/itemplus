@@ -26,11 +26,6 @@ type UpdateStatus struct {
 	LatestReleaseURL       string `json:"latest_release_url,omitempty"`
 	LatestReleaseAssetName string `json:"latest_release_asset_name,omitempty"`
 	LatestCommit           string `json:"latest_commit,omitempty"`
-	DownloadedAt           string `json:"downloaded_at,omitempty"`
-	DownloadedVersion      string `json:"downloaded_version,omitempty"`
-	DownloadedBuild        string `json:"downloaded_build,omitempty"`
-	DownloadedPath         string `json:"downloaded_path,omitempty"`
-	DownloadedAssetName    string `json:"downloaded_asset_name,omitempty"`
 	ReleaseUpdateAvailable bool   `json:"release_update_available"`
 	CommitUpdateAvailable  bool   `json:"commit_update_available"`
 	Status                 string `json:"status"`
@@ -74,7 +69,19 @@ func CheckForUpdates(ctx context.Context, repo string, client *http.Client) (*Up
 	return CheckForUpdatesForVersion(ctx, repo, client, config.C.AppVersion)
 }
 
+// CheckForUpdatesForVersion compares with the newest release and with the
+// newest build.
 func CheckForUpdatesForVersion(ctx context.Context, repo string, client *http.Client, installedDisplay string) (*UpdateStatus, error) {
+	return checkForUpdates(ctx, repo, client, installedDisplay, true)
+}
+
+// CheckForReleaseUpdate compares with the newest published release only. It
+// does not look at commits, so it asks GitHub one question instead of three.
+func CheckForReleaseUpdate(ctx context.Context, repo string, client *http.Client, installedDisplay string) (*UpdateStatus, error) {
+	return checkForUpdates(ctx, repo, client, installedDisplay, false)
+}
+
+func checkForUpdates(ctx context.Context, repo string, client *http.Client, installedDisplay string, includeBuilds bool) (*UpdateStatus, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
@@ -103,6 +110,10 @@ func CheckForUpdatesForVersion(ctx context.Context, repo string, client *http.Cl
 	status.ReleaseUpdateAvailable = compareVersions(latestVersion, installedVersion) > 0
 	if asset, ok := SelectServerReleaseAsset(release.Assets, "", ""); ok {
 		status.LatestReleaseAssetName = asset.Name
+	}
+
+	if !includeBuilds {
+		return &status, nil
 	}
 
 	if release.TagName != "" {
@@ -218,7 +229,7 @@ func fetchGitHubJSON(ctx context.Context, client *http.Client, url string, targe
 		return err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "itemplus-update")
+	req.Header.Set("User-Agent", "itemplus-server")
 	res, err := client.Do(req)
 	if err != nil {
 		return err

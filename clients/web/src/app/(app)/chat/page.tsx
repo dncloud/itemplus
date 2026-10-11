@@ -8,6 +8,7 @@ import { RefreshCw, Plus, Sparkles } from "lucide-react";
 import { useApp } from "@/lib/app-context";
 import { api, type AIChatMessage, type AIChatStreamEvent, type AIProfile, type AIUsage } from "@/lib/api";
 import { MarkdownView } from "@/components/ui/markdown";
+import { aiProviderLabel } from "@/lib/ai-providers";
 
 type ChatEntry = {
   id: string;
@@ -203,7 +204,7 @@ export default function ChatPage() {
 
   const modelBadge = useMemo(() => {
     if (!activeProfile) return null;
-    return `${activeProfile.provider === "ollama" ? "Ollama" : "OpenAI"} · ${activeProfile.model}`;
+    return `${aiProviderLabel(activeProfile.provider)} · ${activeProfile.model}`;
   }, [activeProfile]);
   const userLabel = currentUserLabel || t("chat.you");
 
@@ -356,7 +357,7 @@ export default function ChatPage() {
             className={clsx(
               "rounded-full px-3 py-1.5 text-sm font-medium transition",
               activeTab === "chat"
-                ? "bg-blue-500 text-white"
+                ? "bg-indigo-600 text-white dark:bg-indigo-500"
                 : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10",
             )}
           >
@@ -368,7 +369,7 @@ export default function ChatPage() {
             className={clsx(
               "rounded-full px-3 py-1.5 text-sm font-medium transition",
               activeTab === "raw"
-                ? "bg-blue-500 text-white"
+                ? "bg-indigo-600 text-white dark:bg-indigo-500"
                 : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10",
             )}
           >
@@ -396,7 +397,7 @@ export default function ChatPage() {
                       className={clsx(
                         "rounded-2xl px-4 py-3 text-sm",
                         message.role === "user"
-                          ? "bg-blue-500 text-white"
+                          ? "bg-indigo-600 text-white dark:bg-indigo-500"
                           : "border border-gray-200 bg-gray-50 text-gray-800 dark:border-white/10 dark:bg-white/5 dark:text-gray-200",
                       )}
                     >
@@ -513,7 +514,7 @@ export default function ChatPage() {
                     type="checkbox"
                     checked={allowWebSearch}
                     onChange={(e) => setAllowWebSearch(e.target.checked)}
-                    className="accent-blue-500"
+                    className="accent-indigo-600"
                   />
                   {t("chat.allowWebSearch")}
                 </label>
@@ -530,7 +531,7 @@ export default function ChatPage() {
                 type="button"
                 onClick={() => void handleSend()}
                 disabled={busy || (!composer.trim() && !pendingUpload)}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500 dark:shadow-none dark:hover:bg-indigo-400"
               >
                 {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 {t("common.send")}

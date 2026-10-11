@@ -8,13 +8,14 @@ import { SESSION_UNAUTHORIZED_EVENT } from "@/lib/api-helpers";
 import { useApp } from "@/lib/app-context";
 import { AppShellContainer, AppShellFooter, AppShellHeader, AppShellLoading } from "@/app/(app)/app-shell";
 import { AppSidebar } from "@/app/(app)/app-sidebar";
+import { ServerUnreachableScreen } from "@/components/branding/server-unreachable";
 import {
   connectAppWebSocket,
   loadAppBadges,
   logoutAppSession,
   registerAppShellEvents,
   sendAppPresence,
-  verifySessionOrRedirect,
+  checkSession,
 } from "@/app/(app)/app-layout-utils";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -25,6 +26,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [badges, setBadges] = useState<Record<string, number>>({});
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [serverReachable, setServerReachable] = useState(true);
+  // Nothing of the app is drawn before the server has said that someone is signed in.
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   const loadBadges = useCallback(async () => {
     setBadges(await loadAppBadges(can, realm));
@@ -41,10 +45,64 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!ready) return;
 
-    void verifySessionOrRedirect(() => {
-      router.replace("/auth");
+    let cancelled = false;
+    void checkSession().then((session) => {
+      if (cancelled) return;
+      if (session === "none") {
+        // Stay on the loading screen until the sign-in page has taken over.
+        router.replace("/auth");
+        return;
+      }
+      setSessionChecked(true);
     });
+    return () => {
+      cancelled = true;
+    };
   }, [ready, router]);
+
+  // Without the server there is no app: while it does not answer, the app is
+  // covered by the same notice the sign-in page shows. A single failed check
+  // is not enough, so a short hiccup or a restart does not interrupt anyone.
+  useEffect(() => {
+    if (!ready) return;
+
+    let cancelled = false;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const check = async () => {
+      if (timer) clearTimeout(timer);
+      let reachable = false;
+      try {
+        reachable = (await api.health()).app === "itemplus";
+      } catch {}
+      if (cancelled) return;
+
+      if (reachable) {
+        if (failures >= 3) {
+          // Back again. Whatever the page tried to load in the meantime has
+          // failed, and the rights and the session may have changed, so the
+          // app starts afresh instead of showing a half-loaded page.
+          window.location.reload();
+          return;
+        }
+        failures = 0;
+        setServerReachable(true);
+      } else {
+        failures += 1;
+        if (failures >= 3) setServerReachable(false);
+      }
+      timer = setTimeout(check, reachable ? 15000 : 3000);
+    };
+
+    void check();
+    window.addEventListener("focus", check);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      window.removeEventListener("focus", check);
+    };
+  }, [ready]);
 
   useEffect(() => {
     if (!ready) return;
@@ -118,7 +176,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  if (!ready) {
+  if (!ready || !sessionChecked) {
     return <AppShellLoading />;
   }
 
@@ -175,6 +233,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <AppPresenceReporter ready={ready} pathname={pathname} realm={realm} />
       </Suspense>
+      {serverReachable ? null : <ServerUnreachableScreen />}
     </AppShellContainer>
   );
 }

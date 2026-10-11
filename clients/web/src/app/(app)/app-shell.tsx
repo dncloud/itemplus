@@ -7,6 +7,7 @@ import { BrandTitle, LogoIcon } from "@/components/branding/logo";
 import type { UpdateStatus } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { UnhandledErrorNotice } from "@/components/ui/unhandled-error-notice";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 
 const UPDATE_BANNER_DISMISSED_KEY = "itemplus.updateBanner.dismissed";
 const UPDATE_BANNER_IGNORED_KEY = "itemplus.updateBanner.ignored";
@@ -21,7 +22,7 @@ export function AppShellLoading() {
           <div className="rounded-2xl border border-white/10 bg-gray-800/80 px-6 py-5 shadow-2xl shadow-black/20">
             <div className="mx-auto flex w-fit flex-col items-center gap-y-4">
               <LogoIcon size={48} className="shrink-0" />
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
               <p className="text-sm text-gray-400">
                 Loading <BrandTitle title={brandingTitle || "item+"} className="inline font-medium text-gray-300" />
               </p>
@@ -155,6 +156,7 @@ export function AppShellHeader({
                 <Sparkles className={clsx("size-4 shrink-0", aiAssistantBusy ? "animate-pulse" : "")} />
               </button>
             ) : null}
+            <NotificationBell />
             <ConnectionStatusIcon
               label="iPhone"
               status={iosBridgeStatus}
@@ -230,7 +232,7 @@ export function AppShellFooter({ serverVersion = null }: { serverVersion?: strin
   const { brandingFooterText } = useApp();
 
   return (
-    <footer className="flex min-h-[60px] flex-none items-center bg-white dark:bg-gray-900">
+    <footer className="flex min-h-[60px] flex-none items-center">
       <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-center gap-y-2 px-4 py-3 text-center lg:px-8">
         {brandingFooterText.trim() ? (
           <p className="max-w-3xl text-xs text-gray-500 dark:text-gray-400">{brandingFooterText}</p>
@@ -267,7 +269,7 @@ export function AppShellContainer({ children }: { children: React.ReactNode }) {
     <div
       id="page-container"
       className={clsx(
-        "mx-auto flex min-h-dvh w-full min-w-80 flex-col bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100",
+        "mx-auto flex min-h-dvh w-full min-w-80 flex-col bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100",
         "lg:pl-72",
       )}
     >

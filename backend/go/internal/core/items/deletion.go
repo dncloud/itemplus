@@ -35,14 +35,36 @@ func itemOwnedTables(realm string) [][2]string {
 	}
 }
 
+// CheckedOutError says that an item cannot be deleted because it is lent out:
+// on its own, or as the bundle whose parts are lent with it.
+type CheckedOutError struct {
+	Active int // loans that have not been returned
+}
+
+func (e *CheckedOutError) Error() string {
+	return fmt.Sprintf("item is checked out (%d active loans)", e.Active)
+}
+
+// ItemActiveCheckouts returns how many unreturned loans involve the item.
+func ItemActiveCheckouts(realm string, itemID interface{}) (int, error) {
+	if !validRealm(realm) {
+		return 0, fmt.Errorf("invalid realm %q", realm)
+	}
+	var active int
+	err := database.DB.Get(&active, fmt.Sprintf(
+		"SELECT COUNT(*) FROM %s_checkouts WHERE status = 'active' AND (item_id = ? OR bundle_parent_item_id = ?)", realm),
+		itemID, itemID)
+	return active, err
+}
+
 // DeleteItem removes an item with its property values, bundle links, stock
 // movements and maintenance entries. It reports false when the item does not
-// exist.
+// exist. An item that is lent out is not deleted; the returned error is then
+// a *CheckedOutError. Whoever has it must return it first.
 //
 // Two things deliberately outlive the item:
-//   - Checkouts. A loan does not end because the item was removed from the
-//     inventory; it stays visible as a loan of an unknown item until it is
-//     returned.
+//   - Past checkouts. The history of who had the item stays, shown as loans
+//     of an unknown item.
 //   - Uploaded files. They are not deleted here. The attachment rows of local
 //     files stay as a record of what the files were, and an administrator
 //     removes them later from the list of unconnected files (see
@@ -55,6 +77,15 @@ func DeleteItem(realm string, itemID interface{}) (bool, error) {
 
 	found := false
 	err := database.WithoutCascades(func(tx *sqlx.Tx) error {
+		var active int
+		if err := tx.Get(&active, fmt.Sprintf(
+			"SELECT COUNT(*) FROM %s_checkouts WHERE status = 'active' AND (item_id = ? OR bundle_parent_item_id = ?)", realm),
+			itemID, itemID); err != nil {
+			return err
+		}
+		if active > 0 {
+			return &CheckedOutError{Active: active}
+		}
 		for _, owned := range itemOwnedTables(realm) {
 			if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE %s = ?", owned[0], owned[1]), itemID); err != nil {
 				return err

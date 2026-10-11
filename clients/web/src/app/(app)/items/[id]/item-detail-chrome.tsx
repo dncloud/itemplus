@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Menu, MenuButton, MenuItem, MenuItems, Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import SelectPicker from "@/components/ui/select-picker";
 import {
   ArrowLeftRight,
@@ -8,12 +9,14 @@ import {
   Check,
   ChevronRight,
   ClipboardList,
+  Ellipsis,
   Smartphone,
   Info,
   Pencil,
   Printer,
   QrCode,
   Trash2,
+  TriangleAlert,
   Wrench,
   X,
 } from "lucide-react";
@@ -23,7 +26,7 @@ import { formatCheckoutRelativeState } from "@/lib/checkout-relative-time";
 export function ItemDetailLoadingView() {
   return (
     <div className="flex justify-center py-20">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
     </div>
   );
 }
@@ -92,10 +95,16 @@ export function ItemDetailHeader({
   canDeleteItems,
   pendingDelete,
   remove,
+  meta,
+  qrCodeURL,
 }: {
   t: (key: string, vars?: Record<string, string | number>) => string;
   realm: "archive" | "collection";
   itemName: string;
+  // One quiet line under the name, for example when the item was created.
+  meta?: string;
+  // Address of the item's QR code picture; "{color}" stands for the hex colour.
+  qrCodeURL?: string;
   checkoutSent: boolean;
   checkoutBlocked: boolean;
   showCheckout: boolean;
@@ -147,6 +156,7 @@ export function ItemDetailHeader({
           </ol>
         </nav>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{itemName}</h1>
+        {meta ? <p className="text-xs text-gray-500 dark:text-gray-400">{meta}</p> : null}
       </div>
       <div className="flex items-center justify-center gap-2 rounded-sm px-2 py-3 sm:justify-end sm:bg-transparent sm:px-0">
         <button
@@ -197,6 +207,25 @@ export function ItemDetailHeader({
             ) : null}
           </Link>
         ) : null}
+        {qrCodeURL ? (
+          <Popover className="relative">
+            <PopoverButton
+              title={t("itemDetail.qrCode")}
+              aria-label={t("itemDetail.qrCode")}
+              className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              <QrCode className="h-4 w-4" />
+            </PopoverButton>
+            <PopoverPanel
+              anchor="bottom end"
+              transition
+              className="z-50 mt-2 rounded-xl bg-white p-3 shadow-lg outline-1 outline-black/5 transition data-[closed]:scale-95 data-[closed]:opacity-0 dark:bg-gray-800 dark:shadow-none dark:-outline-offset-1 dark:outline-white/10"
+            >
+              <img src={qrCodeURL.replace("{color}", "000000")} alt={t("itemDetail.qrCode")} className="h-40 w-40 dark:hidden" />
+              <img src={qrCodeURL.replace("{color}", "ffffff")} alt={t("itemDetail.qrCode")} className="hidden h-40 w-40 dark:block" />
+            </PopoverPanel>
+          </Popover>
+        ) : null}
         {canPrintActions ? (
           <button
             type="button"
@@ -231,26 +260,44 @@ export function ItemDetailHeader({
         {canWriteItems ? (
           <Link
             href={editHref}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            title={t("itemDetail.edit")}
+            className="inline-flex items-center gap-x-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 outline-1 -outline-offset-1 outline-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:outline-gray-700 dark:hover:bg-white/20"
           >
-            <Pencil className="h-4 w-4" />
+            <Pencil aria-hidden="true" className="-ml-0.5 size-4 text-gray-400 dark:text-gray-300" />
+            {t("itemDetail.edit")}
           </Link>
         ) : null}
         {canDeleteItems ? (
-          <button
-            type="button"
-            onClick={remove}
-            disabled={pendingDelete}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            title={t("common.delete")}
-          >
-            {pendingDelete ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            ) : (
-              <Trash2 className="h-4 w-4" />
-            )}
-          </button>
+          pendingDelete ? (
+            <span className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 dark:border-gray-700">
+              <span className="block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            </span>
+          ) : (
+            <Menu as="div" className="relative">
+              <MenuButton
+                title={t("items.moreActions")}
+                aria-label={t("items.moreActions")}
+                className="inline-flex items-center justify-center rounded-lg border border-gray-300 p-2 text-sm text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <Ellipsis className="h-4 w-4" />
+              </MenuButton>
+              <MenuItems
+                anchor="bottom end"
+                transition
+                className="z-50 mt-2 w-44 origin-top-right rounded-md bg-white py-1 shadow-lg outline-1 outline-black/5 transition data-[closed]:scale-95 data-[closed]:opacity-0 dark:bg-gray-800 dark:shadow-none dark:-outline-offset-1 dark:outline-white/10"
+              >
+                <MenuItem>
+                  <button
+                    type="button"
+                    onClick={remove}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 data-[focus]:bg-red-50 data-[focus]:outline-hidden dark:text-red-400 dark:data-[focus]:bg-red-500/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {t("common.delete")}
+                  </button>
+                </MenuItem>
+              </MenuItems>
+            </Menu>
+          )
         ) : null}
       </div>
     </div>
@@ -301,116 +348,131 @@ export function ItemCheckoutRequestPanel({
     );
   };
 
+  const inputClass =
+    "block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 disabled:opacity-60 sm:text-sm/6 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500";
+  const labelClass = "block text-sm/6 font-medium text-gray-900 dark:text-white";
+  const secondaryButtonClass =
+    "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs inset-ring inset-ring-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/10 dark:text-gray-100 dark:shadow-none dark:inset-ring-white/5 dark:hover:bg-white/20";
+
+  // A card in the page, like the item's other sections.
   return (
-    <section className="space-y-4 border-b border-gray-200 pb-6 dark:border-white/10">
-      <h3 className="text-sm font-semibold">{t("itemDetail.requestTitle")}</h3>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">{t("itemDetail.duration")}</label>
-          <input
-            type="number"
-            min={1}
-            value={checkoutDays}
-            onChange={(e) => setCheckoutDays(Number(e.target.value))}
-            disabled={checkoutSubmitting}
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">{t("itemDetail.note")}</label>
-          <input
-            value={checkoutNote}
-            onChange={(e) => setCheckoutNote(e.target.value)}
-            placeholder={t("itemDetail.noteHint")}
-            disabled={checkoutSubmitting}
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900"
-          />
-        </div>
-      </div>
-      {canManageCheckout && checkoutNow ? (
-        <div>
-          <SelectPicker
-            label={t("itemDetail.checkoutUser")}
-            value={selectedCheckoutUserID}
-            onChange={(value) => setSelectedCheckoutUserID(typeof value === "number" ? value : "")}
-            options={checkoutUsers.map((user) => ({ id: user.id, name: user.name }))}
-            placeholder={t("itemDetail.checkoutCurrentUser")}
-            clearLabel={t("itemDetail.checkoutCurrentUser")}
-          />
-        </div>
-      ) : null}
-      {canManageCheckout && hasBundleComponents ? (
-        <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50/70 p-3 dark:border-white/10 dark:bg-white/5">
-          <div>
-            <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{t("itemDetail.includeComponents")}</p>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t("itemDetail.includeComponentsHint")}</p>
+    <section className="rounded-xl bg-white shadow-xs outline outline-1 -outline-offset-1 outline-gray-900/5 dark:bg-gray-800/50 dark:outline-white/10">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          requestCheckout();
+        }}
+      >
+        <div className="space-y-6 px-6 py-5">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">{t("itemDetail.requestTitle")}</h3>
+          <div className="grid grid-cols-1 gap-x-6 gap-y-6 sm:grid-cols-6">
+            <div className="sm:col-span-2">
+              <label htmlFor="checkout-days" className={labelClass}>{t("itemDetail.duration")}</label>
+              <div className="mt-2">
+                <input
+                  id="checkout-days"
+                  type="number"
+                  min={1}
+                  value={checkoutDays}
+                  onChange={(e) => setCheckoutDays(Number(e.target.value))}
+                  disabled={checkoutSubmitting}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+            <div className="sm:col-span-4">
+              <label htmlFor="checkout-note" className={labelClass}>{t("itemDetail.note")}</label>
+              <div className="mt-2">
+                <input
+                  id="checkout-note"
+                  value={checkoutNote}
+                  onChange={(e) => setCheckoutNote(e.target.value)}
+                  placeholder={t("itemDetail.noteHint")}
+                  disabled={checkoutSubmitting}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+            {canManageCheckout && checkoutNow ? (
+              <div className="sm:col-span-3">
+                <SelectPicker
+                  label={t("itemDetail.checkoutUser")}
+                  value={selectedCheckoutUserID}
+                  onChange={(value) => setSelectedCheckoutUserID(typeof value === "number" ? value : "")}
+                  options={checkoutUsers.map((user) => ({ id: user.id, name: user.name }))}
+                  placeholder={t("itemDetail.checkoutCurrentUser")}
+                  clearLabel={t("itemDetail.checkoutCurrentUser")}
+                />
+              </div>
+            ) : null}
           </div>
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            {item.components?.map((component) => {
-              const selected = selectedComponentIDs.includes(component.id);
-              return (
-                <label
-                  key={component.id}
-                  className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 text-sm transition ${
-                    selected
-                      ? "border-blue-400 bg-blue-100/80 dark:border-blue-500 dark:bg-blue-500/10"
-                      : "border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900/40"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() => toggleComponent(component.id)}
-                    disabled={checkoutSubmitting}
-                    className="mt-0.5 size-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-gray-900 dark:text-white">{component.name}</p>
-                  </div>
-                </label>
-              );
-            })}
-          </div>
+          {canManageCheckout && hasBundleComponents ? (
+            <fieldset>
+              <legend className={labelClass}>{t("itemDetail.includeComponents")}</legend>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t("itemDetail.includeComponentsHint")}</p>
+              <div className="mt-3 grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+                {item.components?.map((component) => (
+                  <label key={component.id} className="flex cursor-pointer items-center gap-3 border-t border-gray-200 py-3 text-sm dark:border-white/10">
+                    <input
+                      type="checkbox"
+                      checked={selectedComponentIDs.includes(component.id)}
+                      onChange={() => toggleComponent(component.id)}
+                      disabled={checkoutSubmitting}
+                      className="size-4 rounded-sm border-gray-300 text-indigo-600 focus:ring-indigo-600 dark:border-white/10 dark:bg-white/5"
+                    />
+                    <span className="min-w-0 truncate font-medium text-gray-900 dark:text-white">{component.name}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
         </div>
-      ) : null}
-      <div className="flex gap-2">
-        <button
-          onClick={requestCheckout}
-          disabled={checkoutSubmitting}
-          className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {checkoutSubmitting ? t("common.loading") : t("itemDetail.sendRequest")}
-        </button>
-        {canManageCheckout && checkoutNow ? (
-          <button
-            onClick={checkoutNow}
-            disabled={checkoutSubmitting}
-            className="rounded-lg border border-blue-300 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
-          >
-            {t("itemDetail.checkoutNow")}
+
+        <div className="flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 px-6 py-4 dark:border-white/10">
+          <button type="button" onClick={close} disabled={checkoutSubmitting} className={secondaryButtonClass}>
+            {t("common.cancel")}
           </button>
-        ) : null}
-        <button
-          onClick={close}
-          disabled={checkoutSubmitting}
-          className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-        >
-          {t("common.cancel")}
-        </button>
-      </div>
+          {canManageCheckout && checkoutNow ? (
+            <button type="button" onClick={checkoutNow} disabled={checkoutSubmitting} className={secondaryButtonClass}>
+              {t("itemDetail.checkoutNow")}
+            </button>
+          ) : null}
+          <button
+            type="submit"
+            disabled={checkoutSubmitting}
+            className="inline-flex justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:shadow-none dark:hover:bg-indigo-400 dark:focus-visible:outline-indigo-500"
+          >
+            {checkoutSubmitting ? t("common.loading") : t("itemDetail.sendRequest")}
+          </button>
+        </div>
+      </form>
     </section>
   );
 }
 
-export function ItemCheckoutPendingBanner({ t }: { t: (key: string) => string }) {
+// A waiting loan request. The requester reads that it is waiting; a manager
+// reads who asked. Deciding happens on the loans page, so this only links there.
+export function ItemCheckoutPendingBanner({ t, own, others, href }: {
+  t: (key: string, vars?: Record<string, string | number>) => string;
+  own: boolean;
+  others: string[];
+  href: string;
+}) {
   return (
-    <section className="border-b border-gray-200 pb-6 dark:border-white/10">
+    <section className="rounded-md bg-blue-50 p-4 dark:bg-blue-500/10 dark:outline dark:outline-blue-500/20">
       <div className="flex items-start gap-3">
-        <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-blue-900 dark:text-blue-300">{t("itemDetail.requested")}</p>
-          <p className="mt-1 text-sm text-blue-800/80 dark:text-blue-200/80">{t("itemDetail.requestTitle")}</p>
+        <Info aria-hidden="true" className="size-5 shrink-0 text-blue-400" />
+        <div className="min-w-0 flex-1 text-sm text-blue-700 dark:text-blue-300">
+          {own ? <p className="font-medium text-blue-800 dark:text-blue-200">{t("itemDetail.requestWaitingOwn")}</p> : null}
+          {others.length > 0 ? (
+            <p className={own ? "mt-1" : "font-medium text-blue-800 dark:text-blue-200"}>
+              {t("itemDetail.requestWaitingFrom", { users: others.join(", ") })}
+            </p>
+          ) : null}
         </div>
+        <Link href={href} className="shrink-0 text-sm font-medium whitespace-nowrap text-blue-700 hover:text-blue-600 dark:text-blue-300 dark:hover:text-blue-200">
+          {t("itemDetail.requestOpenLoans")} <span aria-hidden="true">&rarr;</span>
+        </Link>
       </div>
     </section>
   );
@@ -490,21 +552,28 @@ export function ItemCheckoutActiveBanner({
     compact: true,
   });
   const isOverdue = Boolean(item.checked_out_to.is_overdue);
-  const bannerIconClass = isOverdue
-    ? "mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400"
-    : "mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400";
+  // An alert in the app's usual style: green while the loan is in time,
+  // yellow once it is overdue.
+  const BannerIcon = isOverdue ? TriangleAlert : CircleCheck;
+  const bannerClass = isOverdue
+    ? "rounded-md bg-yellow-50 p-4 dark:bg-yellow-500/10 dark:outline dark:outline-yellow-500/15"
+    : "rounded-md bg-green-50 p-4 dark:bg-green-500/10 dark:outline dark:outline-green-500/20";
+  const bannerIconClass = isOverdue ? "size-5 shrink-0 text-yellow-400 dark:text-yellow-300" : "size-5 shrink-0 text-green-400";
   const bannerTitleClass = isOverdue
-    ? "text-sm font-medium text-amber-900 dark:text-amber-300"
-    : "text-sm font-medium text-emerald-900 dark:text-emerald-300";
+    ? "text-sm font-medium text-yellow-800 dark:text-yellow-100"
+    : "text-sm font-medium text-green-800 dark:text-green-200";
   const bannerMetaClass = isOverdue
-    ? "mt-1 text-sm text-amber-800/90 dark:text-amber-200/90"
-    : "mt-1 text-sm text-emerald-800/80 dark:text-emerald-200/80";
+    ? "mt-1 text-sm text-yellow-700 dark:text-yellow-100/80"
+    : "mt-1 text-sm text-green-700 dark:text-green-200/85";
+  const bannerButtonClass = isOverdue
+    ? "bg-white text-yellow-800 inset-ring-yellow-600/25 hover:bg-yellow-100 dark:bg-yellow-500/15 dark:text-yellow-100 dark:inset-ring-yellow-400/30 dark:hover:bg-yellow-500/25"
+    : "bg-white text-green-800 inset-ring-green-600/25 hover:bg-green-100 dark:bg-green-500/15 dark:text-green-100 dark:inset-ring-green-400/30 dark:hover:bg-green-500/25";
 
   return (
-    <section className="border-b border-gray-200 pb-6 dark:border-white/10">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <section className={bannerClass}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <CircleCheck className={bannerIconClass} />
+          <BannerIcon aria-hidden="true" className={bannerIconClass} />
           <div className="min-w-0">
             <p className={bannerTitleClass}>
               {t("itemDetail.checkedOutTo")} {checkoutLabel}
@@ -578,7 +647,8 @@ export function ItemCheckoutActiveBanner({
           <button
             onClick={() => checkinItem(checkoutUsers[0]?.checkout_id)}
             disabled={returningCheckoutID !== null}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:focus-visible:outline-emerald-500"
+            type="button"
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold shadow-xs inset-ring disabled:cursor-not-allowed disabled:opacity-60 dark:shadow-none ${bannerButtonClass}`}
           >
             {returningCheckoutID !== null ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />

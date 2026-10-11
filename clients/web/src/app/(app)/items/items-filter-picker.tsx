@@ -53,7 +53,7 @@ export function ItemsFilterPicker({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Suchen..."
-              className="w-full rounded-lg border-none bg-gray-50 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900"
+              className="w-full rounded-lg border-none bg-gray-50 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-900"
             />
           </div>
 

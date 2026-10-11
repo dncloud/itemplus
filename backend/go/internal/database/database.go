@@ -386,6 +386,18 @@ func schemaStatementsBase() []string {
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
+		// Notifications: messages for one user (loan requested, decided, return reported)
+		`CREATE TABLE IF NOT EXISTS notifications (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			kind TEXT NOT NULL,
+			data TEXT,
+			link TEXT,
+			read_at TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read_at)`,
+
 		// AI usage events
 		`CREATE TABLE IF NOT EXISTS ai_usage_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -647,6 +659,7 @@ func realmTables(p string) []string {
 			due_date TEXT,
 			returned_at TEXT,
 			last_reminder_sent_at TEXT,
+			return_requested_at TEXT,
 			notes TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP

@@ -3,24 +3,15 @@
 import { type ReactNode } from "react";
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react";
 import { ChevronsUpDown } from "lucide-react";
-import { Check } from "lucide-react";
+import { Check, type LucideIcon } from "lucide-react";
 
 type SettingsAccent = "blue" | "emerald";
 
-const choiceTileActiveClasses: Record<SettingsAccent, string> = {
-  blue: "border-blue-400 bg-blue-50/60 text-blue-700 dark:border-blue-600 dark:bg-blue-900/10 dark:text-blue-300",
-  emerald: "border-emerald-400 bg-emerald-50/60 text-emerald-700 dark:border-emerald-500 dark:bg-emerald-500/10 dark:text-emerald-300",
-};
-
-const choiceTileDotClasses: Record<SettingsAccent, string> = {
-  blue: "border-blue-500 bg-blue-500",
-  emerald: "border-emerald-500 bg-emerald-500",
-};
-
-const toggleActiveClasses: Record<SettingsAccent, string> = {
-  blue: "bg-blue-500",
-  emerald: "bg-emerald-500",
-};
+// Both accent names give the app's indigo: a setting that is chosen or
+// switched on looks the same everywhere. Green is left to states such as
+// "active" or "reachable".
+const indigoToggle = "bg-indigo-600 dark:bg-indigo-500";
+const toggleActiveClasses: Record<SettingsAccent, string> = { blue: indigoToggle, emerald: indigoToggle };
 
 export function SelectField({
   label,
@@ -72,35 +63,59 @@ export function SelectField({
   );
 }
 
+/**
+ * One option among a few, or one entry of a short list to pick from: an icon,
+ * a title and a line of explanation, as on the attachment tiles. The chosen
+ * one is framed in indigo, its icon filled, and it carries a check mark.
+ */
 export function ChoiceTile({
   active,
   title,
   description,
   onClick,
-  accent = "blue",
+  icon: Icon,
+  badge,
 }: {
   active: boolean;
   title: ReactNode;
   description?: ReactNode;
   onClick: () => void;
+  icon?: LucideIcon;
+  /** A state such as "active" or "default", shown next to the title. */
+  badge?: ReactNode;
+  /** Kept for callers; every tile uses the app's indigo. */
   accent?: SettingsAccent;
 }) {
   return (
     <button
+      type="button"
+      aria-pressed={active}
       onClick={onClick}
-      className={`relative flex w-full items-start gap-3 rounded-md border px-3 py-2.5 text-left transition ${
+      className={`group flex w-full items-center gap-3 rounded-lg p-3 text-left transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-600 dark:focus-visible:outline-indigo-500 ${
         active
-          ? choiceTileActiveClasses[accent]
-          : "border-gray-200 bg-transparent hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
+          ? "bg-indigo-50 outline-2 -outline-offset-2 outline-indigo-600 dark:bg-indigo-500/10 dark:outline-indigo-500"
+          : "bg-white outline-1 -outline-offset-1 outline-gray-200 hover:bg-gray-50 hover:outline-indigo-500 dark:bg-white/5 dark:outline-white/10 dark:hover:bg-white/10 dark:hover:outline-indigo-400"
       }`}
     >
+      {Icon ? (
+        <span
+          className={`flex size-9 shrink-0 items-center justify-center rounded-lg transition ${
+            active
+              ? "bg-indigo-600 text-white dark:bg-indigo-500"
+              : "bg-gray-100 text-gray-500 group-hover:bg-indigo-600 group-hover:text-white dark:bg-white/10 dark:text-gray-400 dark:group-hover:bg-indigo-500"
+          }`}
+        >
+          <Icon aria-hidden="true" className="size-4" />
+        </span>
+      ) : null}
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold">{title}</span>
-        {description ? <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{description}</span> : null}
+        <span className="flex items-center gap-2">
+          <span className="truncate text-sm font-semibold text-gray-900 dark:text-white">{title}</span>
+          {badge ? <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">{badge}</span> : null}
+        </span>
+        {description ? <span className="mt-0.5 block text-xs break-words text-gray-500 dark:text-gray-400">{description}</span> : null}
       </span>
-      <span className={`mt-0.5 h-5 w-5 rounded-full border transition ${active ? choiceTileDotClasses[accent] : "border-gray-300 dark:border-gray-600"}`}>
-        {active ? <span className="block h-full w-full scale-50 rounded-full bg-white" /> : null}
-      </span>
+      <Check aria-hidden="true" className={`size-4 shrink-0 text-indigo-600 dark:text-indigo-400 ${active ? "" : "invisible"}`} />
     </button>
   );
 }

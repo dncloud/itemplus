@@ -282,6 +282,11 @@ func tryStreamParseIntent(cfg *resolvedAIConfig, settings AISettings, req ParseI
 	if cfg.Provider == "openai" || parseCtx.ImageInput != nil {
 		return "", "", nil, false
 	}
+	// Claude searches the web as part of the request; the streamed path does
+	// not carry that tool, so a request that may search goes the other way.
+	if isAnthropicProvider(cfg.Provider) && req.AllowWebSearch {
+		return "", "", nil, false
+	}
 
 	var builder strings.Builder
 	var usage *AIUsage

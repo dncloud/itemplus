@@ -15,14 +15,16 @@ import {
   getStoredPrintMode,
   getStoredRealm,
   getStoredShowPrintFeatures,
-  getStoredShowItemImages,
-  getStoredShowItemPlaceholders,
+  getStoredItemListFlag,
+  getStoredItemListView,
+  itemListFlagKey,
   getStoredTheme,
   setStoredBoolean,
   setStoredNumber,
   setStoredString,
   setStoredValue,
   type DateFormat,
+  type ItemListView,
   type PrintMode,
   type Realm,
   type Theme,
@@ -45,6 +47,7 @@ interface AppContextValue {
   ready: boolean;
   isAdmin: boolean;
   currentUserLabel: string;
+  currentUserId: number | null;
   can: (perm: string) => boolean;
   locale: Locale;
   setLocale: (l: Locale) => void;
@@ -78,6 +81,8 @@ interface AppContextValue {
   setShowItemProperties: (v: boolean) => void;
   showItemActivity: boolean;
   setShowItemActivity: (v: boolean) => void;
+  itemListView: ItemListView;
+  setItemListView: (view: ItemListView) => void;
   showAttachmentUploadOnItemDetail: boolean;
   setShowAttachmentUploadOnItemDetail: (v: boolean) => void;
   itemStockWarningPercent: number;
@@ -136,17 +141,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [iosDeleteConfirm, _setIosDeleteConfirm] = useState(getStoredIosDeleteConfirm);
   const [printMode, _setPrintMode] = useState<PrintMode>(getStoredPrintMode);
   const [showPrintFeatures, _setShowPrintFeatures] = useState(getStoredShowPrintFeatures);
-  const [showItemImages, _setShowItemImages] = useState(getStoredShowItemImages);
-  const [showItemPlaceholders, _setShowItemPlaceholders] = useState(getStoredShowItemPlaceholders);
-  const [showItemCategory, _setShowItemCategory] = useState(() => getStoredFlag("itemplus_show_item_category", true));
-  const [showItemLocation, _setShowItemLocation] = useState(() => getStoredFlag("itemplus_show_item_location", true));
-  const [showItemDescription, _setShowItemDescription] = useState(() => getStoredFlag("itemplus_show_item_description", true));
-  const [showItemStock, _setShowItemStock] = useState(() => getStoredFlag("itemplus_show_item_stock", true));
-  const [showItemConsumable, _setShowItemConsumable] = useState(() => getStoredFlag("itemplus_show_item_consumable", true));
-  const [showItemPrice, _setShowItemPrice] = useState(() => getStoredFlag("itemplus_show_item_price", true));
-  const [showItemTotal, _setShowItemTotal] = useState(() => getStoredFlag("itemplus_show_item_total", true));
-  const [showItemProperties, _setShowItemProperties] = useState(() => getStoredFlag("itemplus_show_item_properties", true));
-  const [showItemActivity, _setShowItemActivity] = useState(() => getStoredFlag("itemplus_show_item_activity", true));
+  const [showItemImages, _setShowItemImages] = useState(() => getStoredItemListFlag("itemplus_show_item_images", getStoredRealm()));
+  const [showItemPlaceholders, _setShowItemPlaceholders] = useState(() => getStoredItemListFlag("itemplus_show_item_placeholders", getStoredRealm()));
+  const [showItemCategory, _setShowItemCategory] = useState(() => getStoredItemListFlag("itemplus_show_item_category", getStoredRealm()));
+  const [showItemLocation, _setShowItemLocation] = useState(() => getStoredItemListFlag("itemplus_show_item_location", getStoredRealm()));
+  const [showItemDescription, _setShowItemDescription] = useState(() => getStoredItemListFlag("itemplus_show_item_description", getStoredRealm()));
+  const [showItemStock, _setShowItemStock] = useState(() => getStoredItemListFlag("itemplus_show_item_stock", getStoredRealm(), false));
+  const [showItemConsumable, _setShowItemConsumable] = useState(() => getStoredItemListFlag("itemplus_show_item_consumable", getStoredRealm(), false));
+  const [showItemPrice, _setShowItemPrice] = useState(() => getStoredItemListFlag("itemplus_show_item_price", getStoredRealm()));
+  const [showItemTotal, _setShowItemTotal] = useState(() => getStoredItemListFlag("itemplus_show_item_total", getStoredRealm()));
+  const [showItemProperties, _setShowItemProperties] = useState(() => getStoredItemListFlag("itemplus_show_item_properties", getStoredRealm()));
+  const [itemListView, _setItemListView] = useState<ItemListView>(() => getStoredItemListView(getStoredRealm()));
+  const [showItemActivity, _setShowItemActivity] = useState(() => getStoredItemListFlag("itemplus_show_item_activity", getStoredRealm()));
   const [showAttachmentUploadOnItemDetail, _setShowAttachmentUploadOnItemDetail] = useState(() => getStoredFlag("itemplus_show_attachment_upload_on_item_detail", false));
   const [itemStockWarningPercent, _setItemStockWarningPercent] = useState(() => getStoredPercent("itemplus_item_stock_warning_percent", 100));
   const [itemStockCriticalPercent, _setItemStockCriticalPercent] = useState(() => getStoredPercent("itemplus_item_stock_critical_percent", 15));
@@ -164,6 +170,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [locale, _setLocale] = useState<Locale>(getStoredLocale);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserLabel, setCurrentUserLabel] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
 
   const can = useCallback((perm: string) => isAdmin || permissions.includes(perm), [isAdmin, permissions]);
@@ -225,6 +232,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const u = meResult.value;
         setIsAdmin(u.is_admin);
         setCurrentUserLabel((u.name || u.email || "").trim());
+        setCurrentUserId(u.id ?? null);
         setPermissions(u.permissions || []);
         if (u.locale === "de" || u.locale === "en") {
           applyLocale(u.locale);
@@ -266,10 +274,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [theme]);
 
-  const setRealm = (r: Realm) => {
+  // Stable, so an effect that depends on it does not run on every render.
+  const setRealm = useCallback((r: Realm) => {
     _setRealm(r);
     api.realm = r;
     setStoredValue("itemplus_realm", r);
+    // The item list is set up per realm.
+    _setShowItemImages(getStoredItemListFlag("itemplus_show_item_images", r));
+    _setShowItemPlaceholders(getStoredItemListFlag("itemplus_show_item_placeholders", r));
+    _setShowItemCategory(getStoredItemListFlag("itemplus_show_item_category", r));
+    _setShowItemLocation(getStoredItemListFlag("itemplus_show_item_location", r));
+    _setShowItemDescription(getStoredItemListFlag("itemplus_show_item_description", r));
+    _setShowItemStock(getStoredItemListFlag("itemplus_show_item_stock", r, false));
+    _setShowItemConsumable(getStoredItemListFlag("itemplus_show_item_consumable", r, false));
+    _setShowItemPrice(getStoredItemListFlag("itemplus_show_item_price", r));
+    _setShowItemTotal(getStoredItemListFlag("itemplus_show_item_total", r));
+    _setShowItemProperties(getStoredItemListFlag("itemplus_show_item_properties", r));
+    _setShowItemActivity(getStoredItemListFlag("itemplus_show_item_activity", r));
+    _setItemListView(getStoredItemListView(r));
+  }, []);
+
+  const setItemListView = (view: ItemListView) => {
+    _setItemListView(view);
+    setStoredValue(`itemplus_items_view_${realm}`, view);
   };
 
   const setTheme = (t: Theme) => {
@@ -297,47 +324,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const setShowItemImages = (v: boolean) => {
-    setStoredBoolean(_setShowItemImages, "itemplus_show_item_images", v);
+    setStoredBoolean(_setShowItemImages, itemListFlagKey("itemplus_show_item_images", realm), v);
   };
 
   const setShowItemPlaceholders = (v: boolean) => {
-    setStoredBoolean(_setShowItemPlaceholders, "itemplus_show_item_placeholders", v);
+    setStoredBoolean(_setShowItemPlaceholders, itemListFlagKey("itemplus_show_item_placeholders", realm), v);
   };
 
   const setShowItemCategory = (v: boolean) => {
-    setStoredBoolean(_setShowItemCategory, "itemplus_show_item_category", v);
+    setStoredBoolean(_setShowItemCategory, itemListFlagKey("itemplus_show_item_category", realm), v);
   };
 
   const setShowItemLocation = (v: boolean) => {
-    setStoredBoolean(_setShowItemLocation, "itemplus_show_item_location", v);
+    setStoredBoolean(_setShowItemLocation, itemListFlagKey("itemplus_show_item_location", realm), v);
   };
 
   const setShowItemDescription = (v: boolean) => {
-    setStoredBoolean(_setShowItemDescription, "itemplus_show_item_description", v);
+    setStoredBoolean(_setShowItemDescription, itemListFlagKey("itemplus_show_item_description", realm), v);
   };
 
   const setShowItemStock = (v: boolean) => {
-    setStoredBoolean(_setShowItemStock, "itemplus_show_item_stock", v);
+    setStoredBoolean(_setShowItemStock, itemListFlagKey("itemplus_show_item_stock", realm), v);
   };
 
   const setShowItemConsumable = (v: boolean) => {
-    setStoredBoolean(_setShowItemConsumable, "itemplus_show_item_consumable", v);
+    setStoredBoolean(_setShowItemConsumable, itemListFlagKey("itemplus_show_item_consumable", realm), v);
   };
 
   const setShowItemPrice = (v: boolean) => {
-    setStoredBoolean(_setShowItemPrice, "itemplus_show_item_price", v);
+    setStoredBoolean(_setShowItemPrice, itemListFlagKey("itemplus_show_item_price", realm), v);
   };
 
   const setShowItemTotal = (v: boolean) => {
-    setStoredBoolean(_setShowItemTotal, "itemplus_show_item_total", v);
+    setStoredBoolean(_setShowItemTotal, itemListFlagKey("itemplus_show_item_total", realm), v);
   };
 
   const setShowItemProperties = (v: boolean) => {
-    setStoredBoolean(_setShowItemProperties, "itemplus_show_item_properties", v);
+    setStoredBoolean(_setShowItemProperties, itemListFlagKey("itemplus_show_item_properties", realm), v);
   };
 
   const setShowItemActivity = (v: boolean) => {
-    setStoredBoolean(_setShowItemActivity, "itemplus_show_item_activity", v);
+    setStoredBoolean(_setShowItemActivity, itemListFlagKey("itemplus_show_item_activity", realm), v);
   };
 
   const setShowAttachmentUploadOnItemDetail = (v: boolean) => {
@@ -496,7 +523,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [aiAssistantPanelController]);
 
   return (
-    <AppContext.Provider value={{ iosBridgeStatus, printerBridgeStatus, aiAssistantBusy, aiAssistantPanelAvailable: aiAssistantPanelController?.available ?? false, aiAssistantPanelOpen: aiAssistantPanelController?.open ?? false, realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, currentUserLabel, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showPrintFeatures, setShowPrintFeatures, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, printItemQR, printLocationQR, brandingLogo, brandingTitle, brandingTitleSize, brandingTitlePosition, brandingSubtitle, brandingFooterText, brandingWidth, brandingLogoBackground, brandingLogoPadding, brandingLogoRadius, refreshBranding, fmtDate, fmtDateTime, t, setAiAssistantBusy, setAiAssistantPanelController, toggleAiAssistantPanel }}>
+    <AppContext.Provider value={{ iosBridgeStatus, printerBridgeStatus, aiAssistantBusy, aiAssistantPanelAvailable: aiAssistantPanelController?.available ?? false, aiAssistantPanelOpen: aiAssistantPanelController?.open ?? false, realm, setRealm, serverURL, theme, setTheme, isDark, ready, isAdmin, currentUserLabel, currentUserId, can, locale, setLocale, dateFormat, setDateFormat, iosDeleteConfirm, setIosDeleteConfirm, printMode, setPrintMode, showPrintFeatures, setShowPrintFeatures, showItemImages, setShowItemImages, showItemPlaceholders, setShowItemPlaceholders, showItemCategory, setShowItemCategory, showItemLocation, setShowItemLocation, showItemDescription, setShowItemDescription, showItemStock, setShowItemStock, showItemConsumable, setShowItemConsumable, showItemPrice, setShowItemPrice, showItemTotal, setShowItemTotal, showItemProperties, setShowItemProperties, showItemActivity, setShowItemActivity, itemListView, setItemListView, showAttachmentUploadOnItemDetail, setShowAttachmentUploadOnItemDetail, itemStockWarningPercent, setItemStockWarningPercent, itemStockCriticalPercent, setItemStockCriticalPercent, itemsPerPage, setItemsPerPage, printItemQR, printLocationQR, brandingLogo, brandingTitle, brandingTitleSize, brandingTitlePosition, brandingSubtitle, brandingFooterText, brandingWidth, brandingLogoBackground, brandingLogoPadding, brandingLogoRadius, refreshBranding, fmtDate, fmtDateTime, t, setAiAssistantBusy, setAiAssistantPanelController, toggleAiAssistantPanel }}>
       {children}
     </AppContext.Provider>
   );
